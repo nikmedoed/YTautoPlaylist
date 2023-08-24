@@ -1,0 +1,32 @@
+{
+	"manifest_version": 2,
+	"name": "Subscriptions to Watch Later Autoplaylist",
+	"short_name": "YT AutoWL",
+	"description": "Automatic playlist collector from YouTube subscriptions",
+	"version": "0.1.0",
+	"version_name": "α.dev",
+	"icons": {
+		"128": "icon/icon.png"
+	},
+	"options_page": "settings/settings.html",
+	"browser_action": {
+		"default_icon": "icon/icon.png"
+	},
+	"background": {
+		"page": "background.html",
+		"persistent": true
+	},
+	"oauth2": {
+		"client_id": "63911817448-jqopokpb65qot40t4h4mlde2nlbphmkc.apps.googleusercontent.com",
+		"scopes": [
+			"https://www.googleapis.com/auth/youtube"
+		]
+	},
+	"permissions": [
+		"storage",
+		"identity",
+		"unlimitedStorage",
+		"notifications"
+	],
+	"content_security_policy": "script-src 'self' https://apis.google.com/; object-src 'self'"
+}

@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link rel="stylesheet" type="text/css" href="bootstrap/bootstrap.css">
+
+    <title>YT AutoWL settings</title>
+</head>
+
+<body>
+    <div class="container mb-5">
+        <div class="py-5 text-center">
+            <h2>Automatic playlist collector from YouTube subscriptions</h2>
+            <p class="lead">This extension regularly adds new subscription videos to the "watch later" playlist</p>
+
+        </div>
+
+        <div class="card-deck">
+            <div class="card bg-light mb-3">
+                <div class="card-header">On this page, you can configure filters to ignore some videos</div>
+                <div class="card-body">
+                    <p>This is useful if you don't like:</p>
+                    <ul class="card-text">
+                        <li>live broadcasts of some users</li>
+                        <li>very short or very long videos</li>
+                        <li>specific video categories or themes</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card text-white bg-primary mb-3 col-sm-5 pr-0 pl-0">
+                <div class="card-header">Start date for next collecting iteration</div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <div class="input-group" id="datetimepicker1">
+                            <input type="datetime-local" class="form-control" id="startDate" required />
+                            <span class="input-group-addon">
+                                <span class="glyphicon glyphicon-calendar"></span>
+                            </span>
+                        </div>
+
+                    </div>
+                    <p class="card-text">Videos published after this date will be added to the playlist in next
+                        iteration</p>
+
+                </div>
+            </div>
+
+        </div>
+
+
+
+
+        <div class="row">
+
+            <div class="col-sm">
+                <h4 class="mb-3">Filters</h4>
+                <p class="lead">Create conditions for <mark>ignoring</mark> the video.<br>These conditions will apply to
+                    each video together. If you need to apply conditions singly (as 'or'), create several filters.</p>
+                <hr class="mb-3">
+                <form class="needs-validation" novalidate>
+                    <div class="mb-3">
+                        <label for="channel">Select channel</label>
+                        <select class="custom-select d-block w-100" id="channel" required>
+                            <option value="">All</option>
+                            <option>California</option>
+                        </select>
+                        <div class="invalid-feedback">
+                            Please provide a valid state.
+                        </div>
+                    </div>
+
+
+                    <div class="row">
+
+                        <div class="col-md-5 mb-3">
+                            <label for="channel">Type of video</label>
+
+                            <div class="d-block my-3">
+                                <div class="custom-control custom-radio">
+                                    <input id="credit" name="paymentMethod" type="radio" class="custom-control-input"
+                                        checked required>
+                                    <label class="custom-control-label" for="credit">Any</label>
+                                </div>
+                                <div class="custom-control custom-radio">
+                                    <input id="debit" name="paymentMethod" type="radio" class="custom-control-input"
+                                        required>
+                                    <label class="custom-control-label" for="debit">Broadcasts </label>
+                                </div>
+                                <div class="custom-control custom-radio">
+                                    <input id="paypal" name="paymentMethod" type="radio" class="custom-control-input"
+                                        required>
+                                    <label class="custom-control-label" for="paypal">No broadcasts </label>
+                                </div>
+                            </div>
+
+
+                        </div>
+
+                        <div class="col-md mb-3">
+                            <label for="duration">Duration</label>
+
+                            <input type="text" class="form-control mb-1" id="duration" placeholder="" value="" required>
+                            <div class="invalid-feedback">
+                                Valid last name is required.
+                            </div>
+                            <small class="text-muted" id="durationMessadge">example: <mark>"&gt; 43:10 ; &lt;
+                                    1:45:00"</mark><br>will ignore videos with a duration of 43 minutes and 10 seconds
+                                to 1 hour and 45 minutes</small>
+
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+
+                        </div>
+                    </div>
+
+
+                    <div class="form-group">
+                        <label for="stopWords">Words or phrases in the name</label>
+                        <textarea class="form-control" id="stopWords" rows="3"
+                            placeholder="Words or phrases that will be contained in the name at the same time ';' Separated by semicolons ';' Ignore the case"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="stopTags">Tags combination</label>
+                        <textarea class="form-control" id="stopTags" rows="2"
+                            placeholder="Tags ';' Separated by semicolons ';' Ignore the case"></textarea>
+                    </div>
+
+
+
+                    <hr class="mb-4">
+                    <button class="btn btn-primary btn-lg btn-block" type="submit">Create filter</button>
+                </form>
+
+
+                Сделать список фильтров с возможностью удаления
+            </div>
+
+
+            <div class="col-sm-5 mb-4">
+                <div class="card text-center">
+                    <div class="card-header">
+                        <ul class="nav nav-tabs card-header-tabs">
+                            <li class="nav-item">
+                                <a class="nav-link active" href="#">Queue</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="#">Subscriptions</a>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div class="card-body">
+                        <p class="card-text">Queue for adding to WL</p>
+                    </div>
+
+                    <h4 class="d-flex justify-content-between align-items-center mb-3">
+                        <span class="text-muted">Your cart</span>
+                        <span class="badge badge-secondary badge-pill">3</span>
+                    </h4>
+                    <ul class="list-group mb-3">
+                        <li class="list-group-item d-flex justify-content-between lh-condensed">
+                            <div>
+                                <h6 class="my-0">Product name</h6>
+                                <small class="text-muted">Brief description</small>
+                            </div>
+                            <span class="text-muted">$12</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between lh-condensed">
+                            <div>
+                                <h6 class="my-0">Second product</h6>
+                                <small class="text-muted">Brief description</small>
+                            </div>
+                            <span class="text-muted">$8</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between lh-condensed">
+                            <div>
+                                <h6 class="my-0">Third item</h6>
+                                <small class="text-muted">Brief description</small>
+                            </div>
+                            <span class="text-muted">$5</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between bg-light">
+                            <div class="text-success">
+                                <h6 class="my-0">Promo code</h6>
+                                <small>EXAMPLECODE</small>
+                            </div>
+                            <span class="text-success">-$5</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Total (USD)</span>
+                            <strong>$20</strong>
+                        </li>
+                    </ul>
+
+                    <form class="card p-2">
+                        <div class="input-group">
+                            <input type="text" class="form-control" placeholder="Promo code">
+                            <div class="input-group-append">
+                                <button type="submit" class="btn btn-secondary">Redeem</button>
+                            </div>
+                        </div>
+                    </form>
+
+                </div>
+            </div>
+
+        </div>
+
+        <!--
+        <footer class="my-5 pt-5 text-muted text-center text-small">
+          <p class="mb-1">&copy; 2017-{{ site.time | date: "%Y" }} Company Name</p>
+          <ul class="list-inline">
+            <li class="list-inline-item"><a href="#">Privacy</a></li>
+            <li class="list-inline-item"><a href="#">Terms</a></li>
+            <li class="list-inline-item"><a href="#">Support</a></li>
+          </ul>
+        </footer>
+-->
+    </div>
+
+</body>
+<script src="bootstrap/jquery-3.5.0.min.js"></script>
+<script src="settings.js"></script>
+<script src="bootstrap/bootstrap.bundle.js"></script>
+
+</html>
