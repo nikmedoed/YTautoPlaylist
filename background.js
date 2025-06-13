@@ -111,7 +111,7 @@ function main(startDate = new Date(new Date() - 604800000)) {
         console.log('New Videos:', list)
         // console.log(list.map(e => `${formatDate(e.pubDate)}`).join("\n"))
         console.log(list.map(e => [
-          parseDuration(formatDate(e.duration)),
+          parseDuration(e.duration),
           formatDate(e.pubDate),
           e.channelTitle,
           e.title,
