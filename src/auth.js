@@ -4,9 +4,23 @@ if (typeof chrome !== "undefined") {
 }
 let currentToken = null;
 
+export function clearToken() {
+  if (typeof chrome !== "undefined" && currentToken) {
+    chrome.identity.removeCachedAuthToken({ token: currentToken }, () => {});
+  }
+  currentToken = null;
+  if (typeof chrome !== "undefined") {
+    chrome.storage.local.set({ authStatus: false });
+  }
+}
+
 export function signInUser() {
   if (typeof chrome === "undefined") {
     return Promise.reject(new Error("chrome API unavailable"));
+  }
+  if (currentToken) {
+    chrome.identity.removeCachedAuthToken({ token: currentToken }, () => {});
+    currentToken = null;
   }
   return new Promise((resolve, reject) => {
     chrome.identity.getAuthToken({ interactive: true }, (token) => {
@@ -29,11 +43,17 @@ export function getToken() {
   }
   if (currentToken) return Promise.resolve(currentToken);
   return new Promise((resolve, reject) => {
-    chrome.identity.getAuthToken({ interactive: false }, (token) => {
+    chrome.identity.getAuthToken({ interactive: false }, async (token) => {
       if (chrome.runtime.lastError || !token) {
-        reject(chrome.runtime.lastError);
+        try {
+          const t = await signInUser();
+          resolve(t);
+        } catch (err) {
+          reject(err);
+        }
       } else {
         currentToken = token;
+        chrome.storage.local.set({ authStatus: true });
         resolve(token);
       }
     });
@@ -51,8 +71,14 @@ export function initAuthListeners(processCallback) {
     }
   }
 
-  function signIn() {
-    signInUser().catch((err) => console.error("Sign-in failed", err));
+  async function signIn() {
+    console.log("Requesting YouTube authorization");
+    try {
+      await signInUser();
+      processCallback();
+    } catch (err) {
+      console.error("Sign-in failed", err);
+    }
   }
 
   chrome.storage.onChanged.addListener((changes) => {
