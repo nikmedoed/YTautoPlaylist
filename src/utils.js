@@ -8,9 +8,14 @@ export function logMessage(level, vId, count, message) {
 }
 
 export function storeDate(date) {
-  if (typeof chrome === 'undefined') return Promise.resolve();
-  return chrome.storage.sync.set({ lastVideoDate: date.toString() }, () => {
-    console.log('lastVideoDate is set to ' + date);
+  if (typeof chrome === 'undefined') {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    chrome.storage.sync.set({ lastVideoDate: date.toString() }, () => {
+      console.log('lastVideoDate is set to ' + date);
+      resolve();
+    });
   });
 }
 
