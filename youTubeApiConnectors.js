@@ -64,6 +64,7 @@ function getNewVideos(
   startDate = new Date(new Date() - 604800000),
   nextP
 ) {
+  let newVid = [];
   return gapi.client.youtube.playlistItems
     .list({
       part: "contentDetails",
@@ -72,13 +73,13 @@ function getNewVideos(
       pageToken: nextP,
     })
     .then(
-      function (response) {
-        newVid = response.result.items
-          .map((element) => {
-            return {
-              vId: element.contentDetails.videoId,
-              pubDate: new Date(element.contentDetails.videoPublishedAt),
-              videoInfo: element,
+        function (response) {
+          newVid = response.result.items
+            .map((element) => {
+              return {
+                vId: element.contentDetails.videoId,
+                pubDate: new Date(element.contentDetails.videoPublishedAt),
+                videoInfo: element,
             };
           })
           .filter((item) => item.pubDate > startDate);
@@ -96,12 +97,12 @@ function getNewVideos(
         } else {
           return newVid;
         }
-      },
-      function (err) {
-        console.error("Execute error", err, playlist);
-        return [];
-      }
-    );
+        },
+        function (err) {
+          console.error("Execute error", err, playlist);
+          return [];
+        }
+      );
 }
 
 function errorMessage(vId, count, message) {
@@ -202,6 +203,7 @@ function isShort(video) {
 }
 
 function getVideoInfo(idList, nextP) {
+  let info = [];
   return gapi.client.youtube.videos
     .list({
       part: "snippet,contentDetails,liveStreamingDetails", //statistics

@@ -135,6 +135,10 @@ function formatDate(date) {
 }
 
 function createListAndAddVideos(list) {
+  if (!list.length) {
+    console.log('No new videos to process');
+    return Promise.resolve();
+  }
   title = `WL ${formatDate(list[0].pubDate)} - ${formatDate(list[list.length - 1].pubDate)}`
   return createPlayList(title)
     .then(plst => {
