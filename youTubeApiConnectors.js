@@ -1,231 +1,223 @@
-// return promise with auth user subscritions list of dicts {title: "Channel name", id: "....", videos: tempVideoCount}
-function getSubscriptionsId(pTok) {
-  return gapi.client.youtube.subscriptions
-    .list({
-      part: "snippet,contentDetails",
-      maxResults: 50,
-      mine: true,
-      pageToken: pTok,
-    })
-    .then(
-      (response) => {
-        console.log(
-          "Items count",
-          response.result.items.length,
-          "NextPage",
-          response.result.nextPageToken
-        );
-        // console.log("Items", response.result.items);
-        let subs = response.result.items.map((element) => {
-          return {
-            title: element.snippet.title,
-            id: element.snippet.resourceId.channelId,
-            videos: element.contentDetails.totalItemCount,
-          };
-        });
-        // console.log("Items", subs);
-        if (response.result.nextPageToken) {
-          return getSubscriptionsId(response.result.nextPageToken).then(
-            (response) => subs.concat(response)
-          );
-        } else {
-          return subs;
-        }
-      },
-      (err) => {
-        console.error("Execute error", err);
-      }
-    );
+// Utility for calling YouTube Data API via fetch
+async function callApi(path, params = {}, method = 'GET', body = null) {
+  const token = await getToken();
+  const url = new URL('https://www.googleapis.com/youtube/v3/' + path);
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null) url.searchParams.set(k, v);
+  });
+  const init = {
+    method,
+    headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }
+  };
+  if (body) {
+    init.headers['Content-Type'] = 'application/json';
+    init.body = JSON.stringify(body);
+  }
+  const resp = await fetch(url.toString(), init);
+  if (!resp.ok) {
+    const text = await resp.text();
+    const err = new Error('API ' + path + ' failed: ' + resp.status);
+    err.status = resp.status;
+    err.body = text;
+    try {
+      err.error = JSON.parse(text);
+    } catch (_) {
+      err.error = text;
+    }
+    throw err;
+  }
+  return resp.json();
 }
 
-//  return promise with uploads list id by userid
-function getUploadsLists(userid) {
-  return gapi.client.youtube.channels
-    .list({
-      part: "contentDetails",
-      id: userid.join(","),
-      maxResults: 50,
-    })
-    .then(
-      function (response) {
-        // console.log("Response getUploadsLists", response);
-        return response.result.items.map(
-          (element) => element.contentDetails.relatedPlaylists.uploads
-        );
-      },
-      function (err) {
-        console.error("userid", userid, "Execute error getUploadsLists", err);
-      }
-    );
+// return promise with auth user subscriptions list of dicts {title, id, videos}
+async function getSubscriptionsId(pageToken) {
+  const data = await callApi('subscriptions', {
+    part: 'snippet,contentDetails',
+    maxResults: 50,
+    mine: true,
+    pageToken
+  });
+  const subs = data.items.map(el => ({
+    title: el.snippet.title,
+    id: el.snippet.resourceId.channelId,
+    videos: el.contentDetails.totalItemCount
+  }));
+  if (data.nextPageToken) {
+    const next = await getSubscriptionsId(data.nextPageToken);
+    return subs.concat(next);
+  }
+  return subs;
 }
 
-function getNewVideos(
-  playlist,
-  startDate = new Date(new Date() - 604800000),
-  nextP
-) {
-  return gapi.client.youtube.playlistItems
-    .list({
-      part: "contentDetails",
-      maxResults: 50,
-      playlistId: playlist,
-      pageToken: nextP,
-    })
-    .then(
-      function (response) {
-        newVid = response.result.items
-          .map((element) => {
-            return {
-              vId: element.contentDetails.videoId,
-              pubDate: new Date(element.contentDetails.videoPublishedAt),
-              videoInfo: element,
-            };
-          })
-          .filter((item) => item.pubDate > startDate);
-        const pageInfo = response.result.pageInfo;
-        if (pageInfo && pageInfo.totalResults == newVid.length && response.result.nextPageToken) {
-          return getNewVideos(playlist, startDate, response.result.nextPageToken).then(
-            (e) => newVid.concat(e)
-          );
-        } else {
-          return newVid;
-        }
-      },
-      function (err) {
-        console.error("Execute error", err, playlist);
-        return [];
+// return promise with uploads list id by userid
+async function getUploadsLists(userids) {
+  const data = await callApi('channels', {
+    part: 'contentDetails',
+    id: userids.join(','),
+    maxResults: 50
+  });
+  return data.items.map(el => el.contentDetails.relatedPlaylists.uploads);
+}
+
+async function getRecentVideosBySearch(channelId, startDate, nextPage, origin = channelId, pages = 1) {
+  const data = await callApi('search', {
+    part: 'snippet',
+    channelId,
+    type: 'video',
+    order: 'date',
+    maxResults: 50,
+    pageToken: nextPage,
+    publishedAfter: startDate.toISOString()
+  });
+  const vids = data.items.map(el => ({
+    vId: el.id.videoId,
+    pubDate: new Date(el.snippet.publishedAt),
+    videoInfo: el,
+    playlist: origin
+  }));
+  if (data.nextPageToken) {
+    const rest = await getRecentVideosBySearch(channelId, startDate, data.nextPageToken, origin, pages + 1);
+    return { videos: vids.concat(rest.videos), pages: rest.pages };
+  }
+  return { videos: vids, pages };
+}
+
+async function getNewVideos(playlist, startDate = new Date(Date.now() - 604800000)) {
+  const videos = [];
+  let nextPage;
+  let pages = 0;
+  while (true) {
+    let data;
+    try {
+      data = await callApi('playlistItems', {
+        part: 'contentDetails',
+        maxResults: 50,
+        playlistId: playlist,
+        pageToken: nextPage
+      });
+    } catch (err) {
+      const reason = err.error?.error?.errors?.[0]?.reason;
+      if (err.status === 404 && reason === 'playlistNotFound') {
+        console.warn('Uploads playlist not found', playlist, 'falling back to search');
+        const channelId = playlist.startsWith('UU') ? 'UC' + playlist.slice(2) : playlist;
+        return getRecentVideosBySearch(channelId, startDate, undefined, playlist);
       }
-    );
+      throw err;
+    }
+    pages++;
+    const items = data.items.map(el => ({
+      vId: el.contentDetails.videoId,
+      pubDate: new Date(el.contentDetails.videoPublishedAt),
+      videoInfo: el,
+      playlist
+    }));
+    for (const it of items) {
+      if (it.pubDate > startDate) videos.push(it);
+    }
+    const last = data.items[data.items.length - 1];
+    const lastDate = last ? new Date(last.contentDetails.videoPublishedAt) : null;
+    if (!data.nextPageToken || (lastDate && lastDate <= startDate)) break;
+    nextPage = data.nextPageToken;
+  }
+  if (videos.length > 0 || pages > 1) {
+    const msg = [`Playlist ${playlist}`];
+    if (pages > 1) msg.push(`${pages} pages`);
+    msg.push('new videos', videos.length);
+    console.log(msg.join(' '));
+  }
+  return { videos, pages };
 }
 
 function errorMessage(vId, count, message) {
   console.log(`Video id: ${vId} :: Count: ${count}\n${message}`);
 }
 
-//ToDo:  Упростить, сделать линейнее
-function addListToWL(storeDateFunction, playlistId, list, count = 0) {
+async function addListToWL(storeDateFunction, playlistId, list, count = 0) {
   if (count == list.length) {
-    let mes = "OK, added: " + count;
-    console.log(mes);
+    console.log('OK, added: ' + count);
     return count;
-  } else {
-    let targetVideo = list[count];
-    let vId = targetVideo.vId;
-    return addVideoToWL(vId, playlistId)
-      .then((succ) => {
-        console.log(`OK: ${vId}, count ${count}/${list.length}`);
-        // storeDateFunction(targetVideo.pubDate)
+  }
+  const targetVideo = list[count];
+  try {
+    await addVideoToWL(targetVideo.vId, playlistId);
+    console.log(`OK: ${targetVideo.vId}, count ${count}/${list.length}`);
+    return addListToWL(storeDateFunction, playlistId, list, count + 1);
+  } catch (err) {
+    const reason = err.error?.errors?.[0]?.reason || '';
+    switch (reason) {
+      case 'videoAlreadyInPlaylist':
+        errorMessage(targetVideo.vId, count, err.error.message);
         return addListToWL(storeDateFunction, playlistId, list, count + 1);
-      })
-      .catch((err) => {
-        switch (err.result.error.errors[0].reason) {
-          case "videoAlreadyInPlaylist":
-            errorMessage(vId, count, err.result.error.message);
-            return addListToWL(storeDateFunction, playlistId, list, count + 1);
-          case "backendError":
-            errorMessage(vId, count, "Backend Error");
-            return addListToWL(storeDateFunction, playlistId, list, count);
-          case "rateLimitExceeded":
-            errorMessage(vId, count, "rate Limit Exceeded, 8 min pause");
-            return new Promise((resolve, reject) => {
-              setTimeout(() => {
-                resolve(
-                  addListToWL(storeDateFunction, playlistId, list, count)
-                );
-              }, 8 * 60 * 1000 + 500);
-            });
-          case "quotaExceeded":
-            errorMessage(vId, count, "Quota exceeded");
-            return count;
-          default:
-            errorMessage(vId, count, err.result.error.message);
-            console.error(err.result, err);
-            return count;
-        }
-      });
+      case 'backendError':
+        errorMessage(targetVideo.vId, count, 'Backend Error');
+        return addListToWL(storeDateFunction, playlistId, list, count);
+      case 'rateLimitExceeded':
+        errorMessage(targetVideo.vId, count, 'Rate Limit Exceeded, 8 min pause');
+        await new Promise(r => setTimeout(r, 8 * 60 * 1000 + 500));
+        return addListToWL(storeDateFunction, playlistId, list, count);
+      case 'quotaExceeded':
+        errorMessage(targetVideo.vId, count, 'Quota exceeded');
+        return count;
+      default:
+        errorMessage(targetVideo.vId, count, err.error?.message || err.message);
+        return count;
+    }
   }
 }
 
-function createPlayList(title) {
-  return gapi.client.youtube.playlists.insert({
-    part: "snippet,status",
-    resource: {
-      status: { privacyStatus: "unlisted" },
-      snippet: { title: title },
-    },
+async function createPlayList(title) {
+  return callApi('playlists', { part: 'snippet,status' }, 'POST', {
+    snippet: { title },
+    status: { privacyStatus: 'unlisted' }
   });
 }
 
-function addVideoToWL(vId, playlistId) {
-  return gapi.client.youtube.playlistItems.insert({
-    part: "snippet",
-    resource: {
-      snippet: {
-        playlistId: playlistId,
-        resourceId: {
-          kind: "youtube#video",
-          videoId: vId,
-        },
-      },
-    },
+async function addVideoToWL(vId, playlistId) {
+  return callApi('playlistItems', { part: 'snippet' }, 'POST', {
+    snippet: {
+      playlistId,
+      resourceId: { kind: 'youtube#video', videoId: vId }
+    }
   });
 }
 
 async function isShort(video) {
-  const videoId = video.id
-  const url = `https://www.youtube.com/shorts/${videoId}`;
+  const videoId = video.id || video.vId;
   try {
-    const response = await fetch(url, {
-      method: "HEAD",
-      redirect: "manual",
-    });
-    // 200 — шортс, 3xx — редирект на watch → не шортс
-    return response.status === 200;
+    const res = await fetch(`https://www.youtube.com/shorts/${videoId}`, { method: 'HEAD', redirect: 'manual' });
+    return res.status === 200;
   } catch (err) {
-    console.error("Failed to detect Short for", videoId, err);
+    console.error('Failed to detect Short for', videoId, err);
     return false;
   }
 }
-function getVideoInfo(idList, nextP) {
-  return gapi.client.youtube.videos
-    .list({
-      part: "snippet,contentDetails,liveStreamingDetails", //statistics
-      maxResults: 50,
-      id: idList.join(","),
-      pageToken: nextP,
-    })
-    .then(
-      function (response) {
-        // console.log(response)
-        info = response.result.items
-          // .filter((v) => !isShort(v))
-          .map((el) => {
-            return {
-              vId: el.id,
-              pubDate: el.snippet.publishedAt,
-              id: el.id,
-              ...el.snippet,
-              ...el.contentDetails,
-              // date: el.snippet.publishedAt,
-              // channel: el.snippet.channelId,
-              // title: el.snippet.title,
-              // channelTitle: el.snippet.channelTitle,
-              // tags: el.snippet.tags,
-              // broadcast: el.snippet.liveBroadcastContent,
-              // duration: el.contentDetails.duration, //PT1H43M45S,
-              liveStreamingDetails: el.liveStreamingDetails,
-            };
-          });
-        if (response.result.nextPageToken) {
-          return getVideoInfo(idList, response.result.nextPageToken).then((e) =>
-            info.concat(e)
-          );
-        } else {
-          return info;
-        }
-      },
-      function (err) {
-        console.error("Execute error", err);
-      }
-    );
+
+async function getVideoInfo(idList, nextPage) {
+  const data = await callApi('videos', {
+    part: 'snippet,contentDetails,liveStreamingDetails',
+    maxResults: 50,
+    id: idList.join(','),
+    pageToken: nextPage
+  });
+  const info = data.items.map(el => ({
+    vId: el.id,
+    pubDate: el.snippet.publishedAt,
+    id: el.id,
+    ...el.snippet,
+    ...el.contentDetails,
+    liveStreamingDetails: el.liveStreamingDetails
+  }));
+  if (data.nextPageToken) {
+    const rest = await getVideoInfo(idList, data.nextPageToken);
+    return info.concat(rest);
+  }
+  return info;
 }
+
+if (typeof module !== 'undefined') {
+  module.exports = {
+    getNewVideos,
+    __setCallApi: fn => callApi = fn
+  };
+}
+
