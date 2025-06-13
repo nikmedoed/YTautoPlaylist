@@ -186,11 +186,26 @@ function createListAndAddVideos(list) {
     .then(plst => {
       let playlistId = plst.id
       console.log(`Created playlist https://www.youtube.com/playlist?list=${playlistId}`)
-      addListToWL(storeDate, playlistId, list)
+      return addListToWL(storeDate, playlistId, list)
         .then(count => {
           storeDate((list[count - 1] || list[list.length - 1]).pubDate)
           console.log(`https://www.youtube.com/playlist?list=${playlistId}`)
+          return count
         })
+    })
+    .catch(err => {
+      const reason = err.error?.errors?.[0]?.reason || ''
+      switch (reason) {
+        case 'rateLimitExceeded':
+          console.error('Rate limit exceeded while creating playlist')
+          break
+        case 'quotaExceeded':
+          console.error('Quota exceeded while creating playlist')
+          break
+        default:
+          console.error('Failed to create playlist', err.error?.message || err.message)
+      }
+      return 0
     })
 }
 
@@ -274,22 +289,35 @@ async function filterID(list) {
   console.log('After basic filters:', toCheck.length, 'videos');
   const videos = [];
   const shorts = [];
-  const quickShort = v => parseDuration(v.duration) < 60 ||
+  const quickShort = v =>
+    parseDuration(v.duration) < 60 ||
     (v.tags && v.tags.some(t => /shorts/i.test(t))) ||
     v.title.toLowerCase().includes('#short');
-  for (const video of toCheck) {
-    if (quickShort(video)) {
-      shorts.push(video.vId);
-      continue;
-    }
-    try {
-      const short = await isShort(video);
-      if (short) shorts.push(video.vId); else videos.push(video);
-    } catch (err) {
-      console.error('Failed short check', err);
-      videos.push(video);
+  let checked = 0;
+  const concurrency = 5;
+  let index = 0;
+  async function worker() {
+    while (index < toCheck.length) {
+      const video = toCheck[index++];
+      if (quickShort(video)) {
+        shorts.push(video.vId);
+        checked++;
+        continue;
+      }
+      try {
+        const short = await isShort(video);
+        if (short) shorts.push(video.vId); else videos.push(video);
+      } catch (err) {
+        console.error('Failed short check', err);
+        videos.push(video);
+      }
+      checked++;
+      if (checked % 5 === 0 || checked === toCheck.length) {
+        console.log('Short checks', checked, '/', toCheck.length);
+      }
     }
   }
+  await Promise.all(Array(concurrency).fill(0).map(worker));
   console.log('After short filter:', videos.length, 'videos');
   return { videos, shorts, filtered };
 }
