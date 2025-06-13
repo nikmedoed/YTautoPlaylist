@@ -16,7 +16,7 @@ api.__setCallApi(async (path) => {
 
 (async () => {
   const res = await api.getNewVideos('UUstub');
-  assert.deepStrictEqual(res, []);
+  assert.deepStrictEqual(res, { videos: [], pages: 1 });
   assert.deepStrictEqual(calls, ['playlistItems', 'search']);
   console.log('getNewVideos falls back to search');
 })();

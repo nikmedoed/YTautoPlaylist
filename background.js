@@ -110,19 +110,27 @@ function main(startDate = new Date(new Date() - 604800000)) {
       })
       .then((e) => {
         console.log('Loading videos from', e.length, 'playlists');
-        return Promise.all(e.map((el) => getNewVideos(el, startDate)))
-          .then((e) => [].concat(...e));
+        return Promise.all(e.map(pl => getNewVideos(pl, startDate).then(r => ({ playlist: pl, videos: r.videos, pages: r.pages }))))
+          .then(res => res);
       })
-      .then(allVideos => {
-        console.log('Fetched', allVideos.length, 'videos');
+      .then(results => {
+        const allVideos = [];
         const playlistMap = {};
         const stats = {};
-        allVideos.forEach(v => {
-          playlistMap[v.vId] = v.playlist;
-          if (!stats[v.playlist]) stats[v.playlist] = { new: 0, shorts: 0, add: 0 };
-          stats[v.playlist].new++;
+        results.forEach(r => {
+          if (r.videos.length === 0 && r.pages === 1) return;
+          stats[r.playlist] = { new: r.videos.length, filtered: 0, shorts: 0, add: 0 };
+          r.videos.forEach(v => {
+            playlistMap[v.vId] = r.playlist;
+            allVideos.push(v);
+          });
         });
-        return filterID(allVideos.map(a => a.vId)).then(({ videos, shorts }) => {
+        console.log('Fetched', allVideos.length, 'videos');
+        return filterID(allVideos.map(a => a.vId)).then(({ videos, shorts, filtered }) => {
+          filtered.forEach(id => {
+            const pl = playlistMap[id];
+            if (stats[pl]) stats[pl].filtered++;
+          });
           videos.forEach(v => {
             const pl = playlistMap[v.vId];
             stats[pl].add++;
@@ -133,7 +141,7 @@ function main(startDate = new Date(new Date() - 604800000)) {
             if (stats[pl]) stats[pl].shorts++;
           });
           Object.entries(stats).forEach(([pl, st]) => {
-            console.log(`Playlist ${pl} new ${st.new}, shorts ${st.shorts}, to playlist ${st.add}`);
+            console.log(`Playlist ${pl} new ${st.new}, filtered ${st.filtered}, shorts ${st.shorts}, to playlist ${st.add}`);
           });
           console.log('After filtering:', videos.length, 'videos');
           return videos;
@@ -175,8 +183,7 @@ function createListAndAddVideos(list) {
   return createPlayList(title)
     .then(plst => {
       let playlistId = plst.id
-      console.log(`Created playlist`)
-      console.log(playlistId)
+      console.log(`Created playlist https://www.youtube.com/playlist?list=${playlistId}`)
       addListToWL(storeDate, playlistId, list)
         .then(count => {
           storeDate((list[count - 1] || list[list.length - 1]).pubDate)
@@ -253,10 +260,26 @@ async function filterID(list) {
   }
   let info = [].concat(...chunks);
   console.log('Got details for', info.length, 'videos');
-  info = info.filter(video => filters.every(fltr => fltr(video)));
+  const toCheck = [];
+  const filtered = [];
+  for (const video of info) {
+    if (filters.every(fltr => fltr(video))) {
+      toCheck.push(video);
+    } else {
+      filtered.push(video.vId);
+    }
+  }
+  console.log('After basic filters:', toCheck.length, 'videos');
   const videos = [];
   const shorts = [];
-  for (const video of info) {
+  const quickShort = v => parseDuration(v.duration) < 60 ||
+    (v.tags && v.tags.some(t => /shorts/i.test(t))) ||
+    v.title.toLowerCase().includes('#short');
+  for (const video of toCheck) {
+    if (quickShort(video)) {
+      shorts.push(video.vId);
+      continue;
+    }
     try {
       const short = await isShort(video);
       if (short) shorts.push(video.vId); else videos.push(video);
@@ -266,7 +289,7 @@ async function filterID(list) {
     }
   }
   console.log('After short filter:', videos.length, 'videos');
-  return { videos, shorts };
+  return { videos, shorts, filtered };
 }
 
 // document.querySelector('#go-to-options').addEventListener(function() {

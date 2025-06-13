@@ -59,7 +59,7 @@ async function getUploadsLists(userids) {
   return data.items.map(el => el.contentDetails.relatedPlaylists.uploads);
 }
 
-async function getRecentVideosBySearch(channelId, startDate, nextPage, origin = channelId) {
+async function getRecentVideosBySearch(channelId, startDate, nextPage, origin = channelId, pages = 1) {
   const data = await callApi('search', {
     part: 'snippet',
     channelId,
@@ -76,13 +76,13 @@ async function getRecentVideosBySearch(channelId, startDate, nextPage, origin = 
     playlist: origin
   }));
   if (data.nextPageToken) {
-    const rest = await getRecentVideosBySearch(channelId, startDate, data.nextPageToken, origin);
-    return vids.concat(rest);
+    const rest = await getRecentVideosBySearch(channelId, startDate, data.nextPageToken, origin, pages + 1);
+    return { videos: vids.concat(rest.videos), pages: rest.pages };
   }
-  return vids;
+  return { videos: vids, pages };
 }
 
-async function getNewVideos(playlist, startDate = new Date(Date.now() - 604800000), nextPage) {
+async function getNewVideos(playlist, startDate = new Date(Date.now() - 604800000), nextPage, pages = 1) {
   // silent per-request logs to reduce noise
   let data;
   try {
@@ -110,13 +110,17 @@ async function getNewVideos(playlist, startDate = new Date(Date.now() - 60480000
     }))
     .filter(item => item.pubDate > startDate);
   if (data.nextPageToken) {
-    const rest = await getNewVideos(playlist, startDate, data.nextPageToken);
-    const total = newVid.length + rest.length;
-    if (!nextPage) console.log('Playlist', playlist, 'total new videos', total);
-    return newVid.concat(rest);
+    const rest = await getNewVideos(playlist, startDate, data.nextPageToken, pages + 1);
+    newVid.push(...rest.videos);
+    pages = rest.pages;
   }
-  if (!nextPage) console.log('Playlist', playlist, 'new videos', newVid.length);
-  return newVid;
+  if (!nextPage && (newVid.length > 0 || pages > 1)) {
+    const msg = [`Playlist ${playlist}`];
+    if (pages > 1) msg.push(`${pages} pages`);
+    msg.push('new videos', newVid.length);
+    console.log(msg.join(' '));
+  }
+  return { videos: newVid, pages };
 }
 
 function errorMessage(vId, count, message) {
