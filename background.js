@@ -1,4 +1,14 @@
-importScripts('keys.js', 'auth.js', 'youTubeApiConnectors.js');
+import { signInUser } from './auth.js';
+import {
+  getSubscriptionsId,
+  getUploadsLists,
+  getNewVideos,
+  addListToWL,
+  createPlayList,
+  getVideoInfo,
+  isShort,
+  logMessage
+} from './youTubeApiConnectors.js';
 
 const originalLog = console.log.bind(console);
 const logMessages = [];
@@ -43,9 +53,10 @@ function signIn() {
   signInUser().catch(err => console.error('Sign-in failed', err));
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+// Legacy helper used for notification progress examples
+// function sleep(ms) {
+//   return new Promise(resolve => setTimeout(resolve, ms));
+// }
 
 function process() {
 
@@ -69,94 +80,83 @@ function process() {
 // button.innerHTML = "Save to Google Spreadsheets";
 
 
-function main(startDate = new Date(new Date() - 604800000)) {
-  return (
-    getSubscriptionsId()
-      .then((res) => {
-        console.log("Subscriptions count:", res.length);
-        console.log("Subscriptions list:", res);
-        return res;
-      })
-      .then((res) => res.map((item) => item.id))
-      .then((l) => Promise.all(
-        l.slice(0, Math.ceil(l.length / 50))
-          .map((elem) => getUploadsLists(l.splice(-50)))
-      )
-        .then((e) => [].concat(...e))
-      )
-      .then((res) => {
-        console.log("Subscriptions upload lists count:", res.length);
-        console.log("Subscriptions getUploadsLists:", res);
-        return res;
-      })
-      .then((e) => {
-        console.log('Loading videos from', e.length, 'playlists');
-        return Promise.all(e.map(pl => getNewVideos(pl, startDate).then(r => ({ playlist: pl, videos: r.videos, pages: r.pages }))))
-          .then(res => res);
-      })
-      .then(results => {
-        const allVideos = [];
-        const playlistMap = {};
-        const stats = {};
-        results.forEach(r => {
-          if (r.videos.length === 0) return;
-          stats[r.playlist] = { new: r.videos.length, filtered: 0, shorts: 0, add: 0 };
-          r.videos.forEach(v => {
-            playlistMap[v.vId] = r.playlist;
-            allVideos.push(v);
-          });
-        });
-        console.log('Fetched', allVideos.length, 'videos');
-        return filterID(allVideos.map(a => a.vId)).then(({ videos, shorts, filtered }) => {
-          filtered.forEach(id => {
-            const pl = playlistMap[id];
-            if (stats[pl]) stats[pl].filtered++;
-          });
-          videos.forEach(v => {
-            const pl = playlistMap[v.vId];
-            stats[pl].add++;
-            v.playlist = pl;
-          });
-          shorts.forEach(id => {
-            const pl = playlistMap[id];
-            if (stats[pl]) stats[pl].shorts++;
-          });
-          Object.entries(stats).forEach(([pl, st]) => {
-            if (st.new || st.filtered || st.shorts || st.add) {
-              console.log(`Playlist ${pl} new ${st.new}, filtered ${st.filtered}, shorts ${st.shorts}, to playlist ${st.add}`);
-            }
-          });
-          console.log('After filtering:', videos.length, 'videos');
-          return videos;
-        });
-      })
-      .then((el) => {
-        const sorted = el.sort((a, b) => new Date(a.pubDate) - new Date(b.pubDate));
-        const seen = new Set();
-        const unique = [];
-        for (const v of sorted) {
-          if (!seen.has(v.vId)) {
-            seen.add(v.vId);
-            unique.push(v);
-          }
-        }
-        return unique;
-      })
-      .then(list => {
-        console.log('New Videos:', list)
-        // console.log(list.map(e => `${formatDate(e.pubDate)}`).join("\n"))
-        console.log(list.map(e => [
-          parseDuration(e.duration),
-          formatDate(e.pubDate),
-          e.channelTitle,
-          e.title,
-          e.vId].join('\t')).join("\n"))
-        return list
-      })
-      .then(createListAndAddVideos)
-  );
-}
 
+async function main(startDate = new Date(Date.now() - 604800000)) {
+  const subs = await getSubscriptionsId();
+  console.log('Subscriptions count:', subs.length);
+  console.log('Subscriptions list:', subs);
+
+  const ids = subs.map(s => s.id);
+  const uploads = [];
+  while (ids.length) {
+    uploads.push(...await getUploadsLists(ids.splice(-50)));
+  }
+  console.log('Subscriptions upload lists count:', uploads.length);
+  console.log('Subscriptions getUploadsLists:', uploads);
+
+  console.log('Loading videos from', uploads.length, 'playlists');
+  const results = await Promise.all(
+    uploads.map(pl => getNewVideos(pl, startDate).then(r => ({ playlist: pl, videos: r.videos, pages: r.pages })))
+  );
+
+  const allVideos = [];
+  const playlistMap = {};
+  const stats = {};
+  for (const r of results) {
+    if (r.videos.length === 0) continue;
+    stats[r.playlist] = { new: r.videos.length, filtered: 0, shorts: 0, add: 0 };
+    for (const v of r.videos) {
+      playlistMap[v.vId] = r.playlist;
+      allVideos.push(v);
+    }
+  }
+  console.log('Fetched', allVideos.length, 'videos');
+
+  const { videos, shorts, filtered } = await filterID(allVideos.map(a => a.vId));
+  for (const id of filtered) {
+    const pl = playlistMap[id];
+    if (stats[pl]) stats[pl].filtered++;
+  }
+  for (const v of videos) {
+    const pl = playlistMap[v.vId];
+    stats[pl].add++;
+    v.playlist = pl;
+  }
+  for (const id of shorts) {
+    const pl = playlistMap[id];
+    if (stats[pl]) stats[pl].shorts++;
+  }
+  for (const [pl, st] of Object.entries(stats)) {
+    if (st.new || st.filtered || st.shorts || st.add) {
+      console.log(`Playlist ${pl} new ${st.new}, filtered ${st.filtered}, shorts ${st.shorts}, to playlist ${st.add}`);
+    }
+  }
+  console.log('After filtering:', videos.length, 'videos');
+
+  const unique = [];
+  const seen = new Set();
+  for (const v of videos.sort((a, b) => new Date(a.pubDate) - new Date(b.pubDate))) {
+    if (!seen.has(v.vId)) {
+      seen.add(v.vId);
+      unique.push(v);
+    }
+  }
+
+  console.log('New Videos:', unique);
+  console.log(
+    unique
+      .map(e => [
+        parseDuration(e.duration),
+        formatDate(e.pubDate),
+        e.channelTitle,
+        e.title,
+        e.vId
+      ].join('\t'))
+      .join('\n')
+  );
+
+  return createListAndAddVideos(unique);
+}
 function formatDate(date) {
   const options = {
     year: '2-digit',
@@ -174,7 +174,7 @@ function createListAndAddVideos(list) {
     console.warn('No videos to add');
     return Promise.resolve(0);
   }
-  title = `WL ${formatDate(list[0].pubDate)} - ${formatDate(list[list.length - 1].pubDate)}`
+  const title = `WL ${formatDate(list[0].pubDate)} - ${formatDate(list[list.length - 1].pubDate)}`
   return createPlayList(title)
     .then(plst => {
       let playlistId = plst.id
@@ -345,116 +345,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return true;
 });
 
-// chrome.notifications.create(null,
-//     {
-//         title: "J{J{J{J{J",
-//         message: "sdfsfkjshdfkjsdfkjhsdfjhk",
-//         type: "progress",
-//         iconUrl: "icon/icon.png",
-//         priority: 2,
-//         progress: 0,
-//         silent: true,
-//         buttons: [{title: "OK"}]
-//     },
-//     async e => {
-//         let id = e
-//         console.log(id)
-//         for (var i = 1; i < 101; i++) {
-//             chrome.notifications.update(id,
-//             {
-//                 title: `Добавление ${i}/100`,
-//                 progress: i
-//             },function() { return true})
-//             await sleep(1500);
-//         }
-//         return
-//     })
-//             chrome.notifications.update(id,
-//         for (var i = 1; i < 101; i++) {
-//             chrome.notifications.update(id,
-//             {
-//                 title: `Добавление ${i}/100`,
-//                 progress: i
-//             },function() { return true})
-//             await sleep(1500);
-//         }
-//         return
-//     })
-//             {
-//         for (var i = 1; i < 101; i++) {
-//             chrome.notifications.update(id,
-//             {
-//                 title: `Добавление ${i}/100`,
-//                 progress: i
-//             },function() { return true})
-//             await sleep(1500);
-//         }
-//         return
-//     })
-//                 title: `Добавление /100`,
-//         for (var i = 1; i < 101; i++) {
-//             chrome.notifications.update(id,
-//             {
-//                 title: `Добавление ${i}/100`,
-//                 progress: i
-//             },function() { return true})
-//             await sleep(1500);
-//         }
-//         return
-//     })
-//                 progress: i
-//         for (var i = 1; i < 101; i++) {
-//             chrome.notifications.update(id,
-//             {
-//                 title: `Добавление ${i}/100`,
-//                 progress: i
-//             },function() { return true})
-//             await sleep(1500);
-//         }
-//         return
-//     })
-//             },function() { return true})
-//         for (var i = 1; i < 101; i++) {
-//             chrome.notifications.update(id,
-//             {
-//                 title: `Добавление ${i}/100`,
-//                 progress: i
-//             },function() { return true})
-//             await sleep(1500);
-//         }
-//         return
-//     })
-//             await sleep(1500);
-//         for (var i = 1; i < 101; i++) {
-//             chrome.notifications.update(id,
-//             {
-//                 title: `Добавление ${i}/100`,
-//                 progress: i
-//             },function() { return true})
-//             await sleep(1500);
-//         }
-//         return
-//     })
-//         }
-//         for (var i = 1; i < 101; i++) {
-//             chrome.notifications.update(id,
-//             {
-//                 title: `Добавление ${i}/100`,
-//                 progress: i
-//             },function() { return true})
-//             await sleep(1500);
-//         }
-//         return
-//     })
-//         return
-//         for (var i = 1; i < 101; i++) {
-//             chrome.notifications.update(id,
-//             {
-//                 title: `Добавление ${i}/100`,
-//                 progress: i
-//             },function() { return true})
-//             await sleep(1500);
-//         }
-//         return
-//     })
+// Example of progress notification, kept for future reference
+// chrome.notifications.create(null, {/* ... */});
 

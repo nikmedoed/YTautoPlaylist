@@ -1,8 +1,13 @@
 // Manage OAuth token using chrome.identity without gapi
-chrome.storage.local.set({ authStatus: false });
+if (typeof chrome !== 'undefined') {
+  chrome.storage.local.set({ authStatus: false });
+}
 let currentToken = null;
 
-function signInUser() {
+export function signInUser() {
+  if (typeof chrome === 'undefined') {
+    return Promise.reject(new Error('chrome API unavailable'));
+  }
   return new Promise((resolve, reject) => {
     chrome.identity.getAuthToken({ interactive: true }, token => {
       if (chrome.runtime.lastError || !token) {
@@ -18,7 +23,10 @@ function signInUser() {
   });
 }
 
-function getToken() {
+export function getToken() {
+  if (typeof chrome === 'undefined') {
+    return Promise.reject(new Error('chrome API unavailable'));
+  }
   if (currentToken) return Promise.resolve(currentToken);
   return new Promise((resolve, reject) => {
     chrome.identity.getAuthToken({ interactive: false }, token => {

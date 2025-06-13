@@ -1,3 +1,5 @@
+import { getToken } from './auth.js';
+
 // Utility for calling YouTube Data API via fetch
 async function callApi(path, params = {}, method = 'GET', body = null) {
   const token = await getToken();
@@ -231,10 +233,20 @@ async function getVideoInfo(idList, nextPage) {
   return info;
 }
 
-if (typeof module !== 'undefined') {
-  module.exports = {
-    getNewVideos,
-    __setCallApi: fn => callApi = fn
-  };
+export function __setCallApi(fn) {
+  callApi = fn;
 }
+
+export {
+  getSubscriptionsId,
+  getUploadsLists,
+  getRecentVideosBySearch,
+  getNewVideos,
+  logMessage,
+  addListToWL,
+  createPlayList,
+  addVideoToWL,
+  isShort,
+  getVideoInfo
+};
 
