@@ -5,7 +5,11 @@ const calls = [];
 api.__setCallApi(async (path) => {
   calls.push(path);
   if (path === 'playlistItems') {
-    throw new Error('API playlistItems failed: 404 {"error":{"errors":[{"reason":"playlistNotFound","location":"playlistId"}]}}');
+    const err = new Error('API playlistItems failed');
+    err.status = 404;
+    err.body = '{"error":{"errors":[{"reason":"playlistNotFound","location":"playlistId"}]}}';
+    err.error = { error: { errors: [{ reason: 'playlistNotFound' }] } };
+    throw err;
   }
   return { items: [] };
 });

@@ -16,7 +16,15 @@ async function callApi(path, params = {}, method = 'GET', body = null) {
   const resp = await fetch(url.toString(), init);
   if (!resp.ok) {
     const text = await resp.text();
-    throw new Error('API ' + path + ' failed: ' + resp.status + ' ' + text);
+    const err = new Error('API ' + path + ' failed: ' + resp.status);
+    err.status = resp.status;
+    err.body = text;
+    try {
+      err.error = JSON.parse(text);
+    } catch (_) {
+      err.error = text;
+    }
+    throw err;
   }
   return resp.json();
 }
@@ -83,7 +91,8 @@ async function getNewVideos(playlist, startDate = new Date(Date.now() - 60480000
       pageToken: nextPage
     });
   } catch (err) {
-    if (err.message && err.message.includes('playlistId')) {
+    const reason = err.error?.error?.errors?.[0]?.reason;
+    if (err.status === 404 && reason === 'playlistNotFound') {
       console.warn('Uploads playlist not found', playlist, 'falling back to search');
       const channelId = playlist.startsWith('UU') ? 'UC' + playlist.slice(2) : playlist;
       return getRecentVideosBySearch(channelId, startDate);
