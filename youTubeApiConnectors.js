@@ -82,45 +82,50 @@ async function getRecentVideosBySearch(channelId, startDate, nextPage, origin = 
   return { videos: vids, pages };
 }
 
-async function getNewVideos(playlist, startDate = new Date(Date.now() - 604800000), nextPage, pages = 1) {
-  // silent per-request logs to reduce noise
-  let data;
-  try {
-    data = await callApi('playlistItems', {
-      part: 'contentDetails',
-      maxResults: 50,
-      playlistId: playlist,
-      pageToken: nextPage
-    });
-  } catch (err) {
-    const reason = err.error?.error?.errors?.[0]?.reason;
-    if (err.status === 404 && reason === 'playlistNotFound') {
-      console.warn('Uploads playlist not found', playlist, 'falling back to search');
-      const channelId = playlist.startsWith('UU') ? 'UC' + playlist.slice(2) : playlist;
-      return getRecentVideosBySearch(channelId, startDate, undefined, playlist);
+async function getNewVideos(playlist, startDate = new Date(Date.now() - 604800000)) {
+  const videos = [];
+  let nextPage;
+  let pages = 0;
+  while (true) {
+    let data;
+    try {
+      data = await callApi('playlistItems', {
+        part: 'contentDetails',
+        maxResults: 50,
+        playlistId: playlist,
+        pageToken: nextPage
+      });
+    } catch (err) {
+      const reason = err.error?.error?.errors?.[0]?.reason;
+      if (err.status === 404 && reason === 'playlistNotFound') {
+        console.warn('Uploads playlist not found', playlist, 'falling back to search');
+        const channelId = playlist.startsWith('UU') ? 'UC' + playlist.slice(2) : playlist;
+        return getRecentVideosBySearch(channelId, startDate, undefined, playlist);
+      }
+      throw err;
     }
-    throw err;
-  }
-  const newVid = data.items
-    .map(el => ({
+    pages++;
+    const items = data.items.map(el => ({
       vId: el.contentDetails.videoId,
       pubDate: new Date(el.contentDetails.videoPublishedAt),
       videoInfo: el,
       playlist
-    }))
-    .filter(item => item.pubDate > startDate);
-  if (data.nextPageToken) {
-    const rest = await getNewVideos(playlist, startDate, data.nextPageToken, pages + 1);
-    newVid.push(...rest.videos);
-    pages = rest.pages;
+    }));
+    for (const it of items) {
+      if (it.pubDate > startDate) videos.push(it);
+    }
+    const last = data.items[data.items.length - 1];
+    const lastDate = last ? new Date(last.contentDetails.videoPublishedAt) : null;
+    if (!data.nextPageToken || (lastDate && lastDate <= startDate)) break;
+    nextPage = data.nextPageToken;
   }
-  if (!nextPage && (newVid.length > 0 || pages > 1)) {
+  if (videos.length > 0 || pages > 1) {
     const msg = [`Playlist ${playlist}`];
     if (pages > 1) msg.push(`${pages} pages`);
-    msg.push('new videos', newVid.length);
+    msg.push('new videos', videos.length);
     console.log(msg.join(' '));
   }
-  return { videos: newVid, pages };
+  return { videos, pages };
 }
 
 function errorMessage(vId, count, message) {

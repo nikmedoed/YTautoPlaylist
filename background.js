@@ -118,7 +118,7 @@ function main(startDate = new Date(new Date() - 604800000)) {
         const playlistMap = {};
         const stats = {};
         results.forEach(r => {
-          if (r.videos.length === 0 && r.pages === 1) return;
+          if (r.videos.length === 0) return;
           stats[r.playlist] = { new: r.videos.length, filtered: 0, shorts: 0, add: 0 };
           r.videos.forEach(v => {
             playlistMap[v.vId] = r.playlist;
@@ -141,7 +141,9 @@ function main(startDate = new Date(new Date() - 604800000)) {
             if (stats[pl]) stats[pl].shorts++;
           });
           Object.entries(stats).forEach(([pl, st]) => {
-            console.log(`Playlist ${pl} new ${st.new}, filtered ${st.filtered}, shorts ${st.shorts}, to playlist ${st.add}`);
+            if (st.new || st.filtered || st.shorts || st.add) {
+              console.log(`Playlist ${pl} new ${st.new}, filtered ${st.filtered}, shorts ${st.shorts}, to playlist ${st.add}`);
+            }
           });
           console.log('After filtering:', videos.length, 'videos');
           return videos;
