@@ -82,8 +82,9 @@ function getNewVideos(
             };
           })
           .filter((item) => item.pubDate > startDate);
-        if (response.totalResults == newVid.length && response.nextPageToken) {
-          return getNewVideos(playlist, startDate, response.nextPageToken).then(
+        const pageInfo = response.result.pageInfo;
+        if (pageInfo && pageInfo.totalResults == newVid.length && response.result.nextPageToken) {
+          return getNewVideos(playlist, startDate, response.result.nextPageToken).then(
             (e) => newVid.concat(e)
           );
         } else {
@@ -215,8 +216,8 @@ function getVideoInfo(idList, nextP) {
               liveStreamingDetails: el.liveStreamingDetails,
             };
           });
-        if (response.nextPageToken) {
-          return getVideoInfo(idList, response.nextPageToken).then((e) =>
+        if (response.result.nextPageToken) {
+          return getVideoInfo(idList, response.result.nextPageToken).then((e) =>
             info.concat(e)
           );
         } else {
