@@ -59,7 +59,7 @@ async function getUploadsLists(userids) {
   return data.items.map(el => el.contentDetails.relatedPlaylists.uploads);
 }
 
-async function getRecentVideosBySearch(channelId, startDate, nextPage) {
+async function getRecentVideosBySearch(channelId, startDate, nextPage, origin = channelId) {
   const data = await callApi('search', {
     part: 'snippet',
     channelId,
@@ -72,19 +72,18 @@ async function getRecentVideosBySearch(channelId, startDate, nextPage) {
   const vids = data.items.map(el => ({
     vId: el.id.videoId,
     pubDate: new Date(el.snippet.publishedAt),
-    videoInfo: el
+    videoInfo: el,
+    playlist: origin
   }));
   if (data.nextPageToken) {
-    const rest = await getRecentVideosBySearch(channelId, startDate, data.nextPageToken);
+    const rest = await getRecentVideosBySearch(channelId, startDate, data.nextPageToken, origin);
     return vids.concat(rest);
   }
   return vids;
 }
 
 async function getNewVideos(playlist, startDate = new Date(Date.now() - 604800000), nextPage) {
-  if (!nextPage) {
-    console.log('Requesting playlist items for', playlist);
-  }
+  // silent per-request logs to reduce noise
   let data;
   try {
     data = await callApi('playlistItems', {
@@ -98,12 +97,17 @@ async function getNewVideos(playlist, startDate = new Date(Date.now() - 60480000
     if (err.status === 404 && reason === 'playlistNotFound') {
       console.warn('Uploads playlist not found', playlist, 'falling back to search');
       const channelId = playlist.startsWith('UU') ? 'UC' + playlist.slice(2) : playlist;
-      return getRecentVideosBySearch(channelId, startDate);
+      return getRecentVideosBySearch(channelId, startDate, undefined, playlist);
     }
     throw err;
   }
   const newVid = data.items
-    .map(el => ({ vId: el.contentDetails.videoId, pubDate: new Date(el.contentDetails.videoPublishedAt), videoInfo: el }))
+    .map(el => ({
+      vId: el.contentDetails.videoId,
+      pubDate: new Date(el.contentDetails.videoPublishedAt),
+      videoInfo: el,
+      playlist
+    }))
     .filter(item => item.pubDate > startDate);
   if (data.nextPageToken) {
     const rest = await getNewVideos(playlist, startDate, data.nextPageToken);

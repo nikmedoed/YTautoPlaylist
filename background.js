@@ -113,13 +113,31 @@ function main(startDate = new Date(new Date() - 604800000)) {
         return Promise.all(e.map((el) => getNewVideos(el, startDate)))
           .then((e) => [].concat(...e));
       })
-      .then(el => {
-        console.log('Fetched', el.length, 'videos');
-        return filterID(el.map(a => a.vId));
-      })
-      .then(el => {
-        console.log('After filtering:', el.length, 'videos');
-        return el;
+      .then(allVideos => {
+        console.log('Fetched', allVideos.length, 'videos');
+        const playlistMap = {};
+        const stats = {};
+        allVideos.forEach(v => {
+          playlistMap[v.vId] = v.playlist;
+          if (!stats[v.playlist]) stats[v.playlist] = { new: 0, shorts: 0, add: 0 };
+          stats[v.playlist].new++;
+        });
+        return filterID(allVideos.map(a => a.vId)).then(({ videos, shorts }) => {
+          videos.forEach(v => {
+            const pl = playlistMap[v.vId];
+            stats[pl].add++;
+            v.playlist = pl;
+          });
+          shorts.forEach(id => {
+            const pl = playlistMap[id];
+            if (stats[pl]) stats[pl].shorts++;
+          });
+          Object.entries(stats).forEach(([pl, st]) => {
+            console.log(`Playlist ${pl} new ${st.new}, shorts ${st.shorts}, to playlist ${st.add}`);
+          });
+          console.log('After filtering:', videos.length, 'videos');
+          return videos;
+        });
       })
       .then((el) => {
         elems = el.sort((a, b) => new Date(a.pubDate) - new Date(b.pubDate));
@@ -188,10 +206,8 @@ function parseDuration(duration) {
 // тег
 // длительность
 // трансляция ли + канал/название
-function filterID(list) {
-
+async function filterID(list) {
   console.log('Fetching info for', list.length, 'videos');
-
   const TITLEFILTER = {
     'UC7Elc-kLydl-NAV4g204pDQ': ['новости |', 'военное положение |'],
     'UCt7sv-NKh44rHAEb-qCCxvA': ['ostronews', 'iphone'],
@@ -199,9 +215,7 @@ function filterID(list) {
     'UC3cJiUuZlpF-pkzqvSskTpg': ['разгоны #', 'чувс', 'книжный клуб'],
     'UCixlrqz8w-oa4UzdKyHLMaA': ['yet another podcast'],
     'UCn9bv143ECsDMw-kJCNN7QA': ['подземелья чикен']
-  }
-  
-
+  };
   const BROADCASTFILLTER = [
     'UC7Elc-kLydl-NAV4g204pDQ',
     'UCt7sv-NKh44rHAEb-qCCxvA',
@@ -216,8 +230,7 @@ function filterID(list) {
     'UCUmlB9SwrBVevETZV0wrVRw',
     'UCQ_LYRUJzBfh-mvU14xCNMw',
     'UCTUyoZMfksbNIHfWJjwr5aQ'
-  ]
-
+  ];
   const filters = [
     video => parseDuration(video.duration) > 61,
     video => {
@@ -229,39 +242,31 @@ function filterID(list) {
       return true;
     },
     video => !(
-      video.liveStreamingDetails
-      && video.liveStreamingDetails.actualStartTime != video.liveStreamingDetails.scheduledStartTime
-      && BROADCASTFILLTER.includes(video.channelId)
+      video.liveStreamingDetails &&
+      video.liveStreamingDetails.actualStartTime != video.liveStreamingDetails.scheduledStartTime &&
+      BROADCASTFILLTER.includes(video.channelId)
     )
-  ]
-
-  return Promise.all(list
-    .slice(0, Math.ceil(list.length / 50))
-    .map(elem => getVideoInfo(list.splice(-50))))
-    .then(e => [].concat(...e))
-    .then(list => {
-      console.log('Got details for', list.length, 'videos');
-      return list.filter(video => filters.every(fltr => fltr(video)));
-    })
-    .then(list => Promise.all(
-      list.map(async video => {
-        try {
-          const short = await isShort(video);
-          return short ? null : video;
-        } catch (err) {
-          console.error('Failed short check', err);
-          return video;
-        }
-      })
-    ).then(res => res.filter(Boolean)))
-    .then(list => {
-      console.log('After short filter:', list.length, 'videos');
-      return list;
-    })
-
-  // .then(list => list
-  //   .filter(video => !filters.every(fltr => fltr(video)))
-  // )
+  ];
+  const chunks = [];
+  while (list.length) {
+    chunks.push(await getVideoInfo(list.splice(-50)));
+  }
+  let info = [].concat(...chunks);
+  console.log('Got details for', info.length, 'videos');
+  info = info.filter(video => filters.every(fltr => fltr(video)));
+  const videos = [];
+  const shorts = [];
+  for (const video of info) {
+    try {
+      const short = await isShort(video);
+      if (short) shorts.push(video.vId); else videos.push(video);
+    } catch (err) {
+      console.error('Failed short check', err);
+      videos.push(video);
+    }
+  }
+  console.log('After short filter:', videos.length, 'videos');
+  return { videos, shorts };
 }
 
 // document.querySelector('#go-to-options').addEventListener(function() {
