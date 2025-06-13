@@ -5,22 +5,19 @@ import {
   getNewVideos,
   addListToWL,
   createPlayList,
+  getVideoInfo,
 } from "./youTubeApiConnectors.js";
-import { logMessage, storeDate, parseDuration, formatDate } from "./utils.js";
+import {
+  logMessage,
+  storeDate,
+  parseDuration,
+  formatDate,
+  logMessages,
+  setupLogCapture,
+} from "./utils.js";
 import { filterID } from "./filter.js";
-import { DEV } from "./config.js";
-
-const originalLog = console.log.bind(console);
-const logMessages = [];
-console.log = (...args) => {
-  logMessages.push(
-    args
-      .map((a) => (typeof a === "object" ? JSON.stringify(a) : String(a)))
-      .join(" ")
-  );
-  if (logMessages.length > 100) logMessages.shift();
-  originalLog(...args);
-};
+import { DEV_MODE } from "../config.js";
+setupLogCapture();
 
 chrome.storage.sync.get(["lastVideoDate"], function (result) {
   if (!result.lastVideoDate) {
@@ -29,21 +26,24 @@ chrome.storage.sync.get(["lastVideoDate"], function (result) {
 });
 
 initAuthListeners(process);
-const DEV_MODE = DEV;
-function process() {
+function process(videoIds) {
   if (DEV_MODE) {
     main(new Date(Date.now() - 24 * 60 * 60 * 1000));
   } else {
-    chrome.storage.sync.get(["lastVideoDate"], function (result) {
-      const mainDate = new Date(result.lastVideoDate);
-      // сделать, чтобы можно было укзатаь id видео и mainDate = await getVideoInfo(["fzmm4cCXPs4"]), иначе оно бралось из стора.
-      // Да, эту дату надо будет сохранить до начала в этом случае. Ранее было:
-      // getVideoInfo(["fzmm4cCXPs4"]).then((e) => {
-      //   storeDate(new Date(e[0].pubDate));
-      // });
-      console.log("startDate", mainDate);
-      main(mainDate);
-    });
+    if (Array.isArray(videoIds) && videoIds.length > 0) {
+      getVideoInfo(videoIds).then((info) => {
+        const mainDate = new Date(info[0].pubDate);
+        storeDate(mainDate);
+        console.log("startDate", mainDate);
+        main(mainDate);
+      });
+    } else {
+      chrome.storage.sync.get(["lastVideoDate"], function (result) {
+        const mainDate = new Date(result.lastVideoDate);
+        console.log("startDate", mainDate);
+        main(mainDate);
+      });
+    }
   }
 }
 
@@ -198,7 +198,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       signInUser().catch((err) => console.error("Sign-in failed", err));
       break;
     case "process":
-      process();
+      process(request.videoIds);
       break;
     case "getLogs":
       sendResponse({ logs: logMessages });

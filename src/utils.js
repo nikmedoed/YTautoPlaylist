@@ -40,3 +40,17 @@ export function parseDuration(duration) {
   }
   return totalseconds;
 }
+
+export const logMessages = [];
+export function setupLogCapture() {
+  const originalLog = console.log.bind(console);
+  console.log = (...args) => {
+    logMessages.push(
+      args
+        .map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a)))
+        .join(' ')
+    );
+    if (logMessages.length > 100) logMessages.shift();
+    originalLog(...args);
+  };
+}
