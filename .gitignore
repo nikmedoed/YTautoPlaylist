@@ -20,7 +20,7 @@ debug.log
 .env
 
 # Ignore any local or user-specific configuration files
-config.js
+/config.js
 config.json
 *.sublime-*
 

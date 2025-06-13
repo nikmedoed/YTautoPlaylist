@@ -39,3 +39,29 @@ export function getToken() {
     });
   });
 }
+
+export function initAuthListeners(processCallback) {
+  function updateSigninStatus(isSignedIn) {
+    if (isSignedIn) {
+      chrome.action.onClicked.removeListener(signIn);
+      chrome.action.onClicked.addListener(processCallback);
+    } else {
+      chrome.action.onClicked.removeListener(processCallback);
+      chrome.action.onClicked.addListener(signIn);
+    }
+  }
+
+  function signIn() {
+    signInUser().catch((err) => console.error('Sign-in failed', err));
+  }
+
+  chrome.storage.onChanged.addListener((changes) => {
+    if ('authStatus' in changes) {
+      updateSigninStatus(changes['authStatus'].newValue);
+    }
+  });
+  chrome.storage.local.get(['authStatus'], (result) => {
+    updateSigninStatus(result.authStatus);
+  });
+}
+
