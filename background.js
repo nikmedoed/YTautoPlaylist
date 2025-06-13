@@ -1,5 +1,12 @@
-importScripts('keys.js', 'auth.js', 'youTubeApiConnectors.js', 'gapi.js');
-onGAPILoad();
+importScripts('keys.js', 'auth.js', 'youTubeApiConnectors.js');
+
+const originalLog = console.log.bind(console);
+const logMessages = [];
+console.log = (...args) => {
+  logMessages.push(args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '));
+  if (logMessages.length > 100) logMessages.shift();
+  originalLog(...args);
+};
 
 chrome.storage.sync.get(["lastVideoDate"], function (result) {
   if (!result.lastVideoDate) {
@@ -33,10 +40,7 @@ function updateSigninStatus(isSignedIn) {
 }
 
 function signIn() {
-  authenticate()
-    .then(() => loadClient())
-    .then(() => setToken())
-    .catch(err => console.error('Sign-in failed', err));
+  signInUser().catch(err => console.error('Sign-in failed', err));
 }
 
 function sleep(ms) {
@@ -274,6 +278,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     case 'process':
       process();
       break;
+    case 'getLogs':
+      sendResponse({ logs: logMessages });
+      return true;
   }
   return true;
 });
@@ -302,3 +309,92 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 //         }
 //         return
 //     })
+//             chrome.notifications.update(id,
+//         for (var i = 1; i < 101; i++) {
+//             chrome.notifications.update(id,
+//             {
+//                 title: `Добавление ${i}/100`,
+//                 progress: i
+//             },function() { return true})
+//             await sleep(1500);
+//         }
+//         return
+//     })
+//             {
+//         for (var i = 1; i < 101; i++) {
+//             chrome.notifications.update(id,
+//             {
+//                 title: `Добавление ${i}/100`,
+//                 progress: i
+//             },function() { return true})
+//             await sleep(1500);
+//         }
+//         return
+//     })
+//                 title: `Добавление /100`,
+//         for (var i = 1; i < 101; i++) {
+//             chrome.notifications.update(id,
+//             {
+//                 title: `Добавление ${i}/100`,
+//                 progress: i
+//             },function() { return true})
+//             await sleep(1500);
+//         }
+//         return
+//     })
+//                 progress: i
+//         for (var i = 1; i < 101; i++) {
+//             chrome.notifications.update(id,
+//             {
+//                 title: `Добавление ${i}/100`,
+//                 progress: i
+//             },function() { return true})
+//             await sleep(1500);
+//         }
+//         return
+//     })
+//             },function() { return true})
+//         for (var i = 1; i < 101; i++) {
+//             chrome.notifications.update(id,
+//             {
+//                 title: `Добавление ${i}/100`,
+//                 progress: i
+//             },function() { return true})
+//             await sleep(1500);
+//         }
+//         return
+//     })
+//             await sleep(1500);
+//         for (var i = 1; i < 101; i++) {
+//             chrome.notifications.update(id,
+//             {
+//                 title: `Добавление ${i}/100`,
+//                 progress: i
+//             },function() { return true})
+//             await sleep(1500);
+//         }
+//         return
+//     })
+//         }
+//         for (var i = 1; i < 101; i++) {
+//             chrome.notifications.update(id,
+//             {
+//                 title: `Добавление ${i}/100`,
+//                 progress: i
+//             },function() { return true})
+//             await sleep(1500);
+//         }
+//         return
+//     })
+//         return
+//         for (var i = 1; i < 101; i++) {
+//             chrome.notifications.update(id,
+//             {
+//                 title: `Добавление ${i}/100`,
+//                 progress: i
+//             },function() { return true})
+//             await sleep(1500);
+//         }
+//         return
+//     })
+

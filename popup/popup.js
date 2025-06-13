@@ -1,9 +1,12 @@
 var authorizeButton = document.getElementById('authorize-button');
 var addButton = document.getElementById('add-button');
+var logsButton = document.getElementById('logs-button');
+var logArea = document.getElementById('log');
 
 
 authorizeButton.onclick = handleAuthClick;
 addButton.onclick = handleAdd;
+logsButton.onclick = handleLogs;
 
 chrome.storage.onChanged.addListener(function(changes, namespace) {
     if ("authStatus" in changes){
@@ -31,6 +34,14 @@ function handleAuthClick(event) {
 
 function handleAdd(event) {
     chrome.runtime.sendMessage({type: "process"})
+}
+
+function handleLogs(event) {
+    chrome.runtime.sendMessage({type: 'getLogs'}, response => {
+        if (response && response.logs) {
+            logArea.textContent = response.logs.join('\n');
+        }
+    })
 }
 
 
