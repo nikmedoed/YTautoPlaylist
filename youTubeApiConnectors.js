@@ -52,12 +52,21 @@ async function getUploadsLists(userids) {
 }
 
 async function getNewVideos(playlist, startDate = new Date(Date.now() - 604800000), nextPage) {
-  const data = await callApi('playlistItems', {
-    part: 'contentDetails',
-    maxResults: 50,
-    playlistId: playlist,
-    pageToken: nextPage
-  });
+  let data;
+  try {
+    data = await callApi('playlistItems', {
+      part: 'contentDetails',
+      maxResults: 50,
+      playlistId: playlist,
+      pageToken: nextPage
+    });
+  } catch (err) {
+    if (err.message && err.message.includes('playlistId')) {
+      console.error('Uploads playlist not found', playlist);
+      return [];
+    }
+    throw err;
+  }
   const newVid = data.items
     .map(el => ({ vId: el.contentDetails.videoId, pubDate: new Date(el.contentDetails.videoPublishedAt), videoInfo: el }))
     .filter(item => item.pubDate > startDate);
@@ -152,5 +161,12 @@ async function getVideoInfo(idList, nextPage) {
     return info.concat(rest);
   }
   return info;
+}
+
+if (typeof module !== 'undefined') {
+  module.exports = {
+    getNewVideos,
+    __setCallApi: fn => callApi = fn
+  };
 }
 

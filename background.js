@@ -148,7 +148,7 @@ function createListAndAddVideos(list) {
   title = `WL ${formatDate(list[0].pubDate)} - ${formatDate(list[list.length - 1].pubDate)}`
   return createPlayList(title)
     .then(plst => {
-      let playlistId = plst.result.id
+      let playlistId = plst.id
       console.log(`Created playlist`)
       console.log(playlistId)
       addListToWL(storeDate, playlistId, list)
