@@ -141,13 +141,18 @@ function main(startDate = new Date(new Date() - 604800000)) {
           });
           Object.entries(stats).forEach(([pl, st]) => {
             if (st.new || st.filtered || st.shorts || st.add) {
-              console.log(
-                `Playlist ${pl} new ${st.new}, filtered ${st.filtered}, shorts ${st.shorts}, to playlist ${st.add}`
-              );
-            }
-          });
-          console.log("After filtering:", videos.length, "videos");
-          return videos;
+        console.log(
+          list
+            .map(e => [
+              parseDuration(e.duration),
+              formatDate(e.pubDate),
+              e.channelTitle,
+              e.title,
+              e.vId
+            ].join('\t'))
+            .join('\n')
+        );
+  let seenIds = new Set();
         }
       );
     })
