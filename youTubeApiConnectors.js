@@ -128,8 +128,13 @@ async function getNewVideos(playlist, startDate = new Date(Date.now() - 60480000
   return { videos, pages };
 }
 
-function errorMessage(vId, count, message) {
-  console.log(`Video id: ${vId} :: Count: ${count}\n${message}`);
+function logMessage(level, vId, count, message) {
+  const text = `Video id: ${vId} :: Count: ${count}\n${message}`;
+  if (level === 'warn') {
+    console.warn(text);
+  } else {
+    console.error(text);
+  }
 }
 
 async function addListToWL(storeDateFunction, playlistId, list, count = 0) {
@@ -144,22 +149,34 @@ async function addListToWL(storeDateFunction, playlistId, list, count = 0) {
     return addListToWL(storeDateFunction, playlistId, list, count + 1);
   } catch (err) {
     const reason = err.error?.errors?.[0]?.reason || '';
+    const status = err.status;
     switch (reason) {
       case 'videoAlreadyInPlaylist':
-        errorMessage(targetVideo.vId, count, err.error.message);
+        logMessage('warn', targetVideo.vId, count, err.error.message);
         return addListToWL(storeDateFunction, playlistId, list, count + 1);
       case 'backendError':
-        errorMessage(targetVideo.vId, count, 'Backend Error');
+      case 'internalError':
+        logMessage('warn', targetVideo.vId, count, 'Backend error, retry in 1 min');
+        await new Promise(r => setTimeout(r, 60 * 1000));
         return addListToWL(storeDateFunction, playlistId, list, count);
       case 'rateLimitExceeded':
-        errorMessage(targetVideo.vId, count, 'Rate Limit Exceeded, 8 min pause');
+        logMessage('warn', targetVideo.vId, count, 'Rate limit exceeded, 8 min pause');
         await new Promise(r => setTimeout(r, 8 * 60 * 1000 + 500));
         return addListToWL(storeDateFunction, playlistId, list, count);
       case 'quotaExceeded':
-        errorMessage(targetVideo.vId, count, 'Quota exceeded');
+        logMessage('error', targetVideo.vId, count, 'Quota exceeded');
         return count;
+      case 'SERVICE_UNAVAILABLE':
+        logMessage('warn', targetVideo.vId, count, 'Service unavailable, retry in 1 min');
+        await new Promise(r => setTimeout(r, 60 * 1000));
+        return addListToWL(storeDateFunction, playlistId, list, count);
       default:
-        errorMessage(targetVideo.vId, count, err.error?.message || err.message);
+        if (status >= 500) {
+          logMessage('warn', targetVideo.vId, count, 'Server error, retry in 1 min');
+          await new Promise(r => setTimeout(r, 60 * 1000));
+          return addListToWL(storeDateFunction, playlistId, list, count);
+        }
+        logMessage('error', targetVideo.vId, count, err.error?.message || err.message);
         return count;
     }
   }
