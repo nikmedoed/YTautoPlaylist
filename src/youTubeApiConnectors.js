@@ -1,5 +1,5 @@
 import { getToken } from './auth.js';
-import { logMessage } from './logger.js';
+import { logMessage } from './utils.js';
 
 // Utility for calling YouTube Data API via fetch
 async function callApi(path, params = {}, method = 'GET', body = null) {

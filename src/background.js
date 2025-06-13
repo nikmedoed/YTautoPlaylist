@@ -8,7 +8,7 @@ import {
   getVideoInfo,
   isShort,
 } from './youTubeApiConnectors.js';
-import { logMessage } from './logger.js';
+import { logMessage, storeDate, parseDuration, formatDate } from './utils.js';
 import { TITLEFILTER, BROADCASTFILTER } from './constants.js';
 
 const originalLog = console.log.bind(console);
@@ -21,15 +21,9 @@ console.log = (...args) => {
 
 chrome.storage.sync.get(["lastVideoDate"], function (result) {
   if (!result.lastVideoDate) {
-    storeDate(new Date(new Date() - 604800000));
+    storeDate(new Date(Date.now() - 604800000));
   }
 });
-
-function storeDate(date) {
-  return chrome.storage.sync.set({ lastVideoDate: date.toString() }, function () {
-    console.log("lastVideoDate is set to " + date);
-  });
-}
 
 chrome.storage.onChanged.addListener(function (changes, namespace) {
   if ("authStatus" in changes) {
@@ -158,17 +152,6 @@ async function main(startDate = new Date(Date.now() - 604800000)) {
 
   return createListAndAddVideos(unique);
 }
-function formatDate(date) {
-  const options = {
-    year: '2-digit',
-    month: 'numeric',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: 'numeric',
-    second: 'numeric'
-  }
-  return date.toLocaleString("ru", options)
-}
 
 function createListAndAddVideos(list) {
   if (!list || list.length === 0) {
@@ -203,19 +186,6 @@ function createListAndAddVideos(list) {
     })
 }
 
-function parseDuration(duration) {
-  var reptms = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/;
-  var hours = 0, minutes = 0, seconds = 0, totalseconds;
-
-  if (reptms.test(duration)) {
-    var matches = reptms.exec(duration);
-    if (matches[1]) hours = Number(matches[1]);
-    if (matches[2]) minutes = Number(matches[2]);
-    if (matches[3]) seconds = Number(matches[3]);
-    totalseconds = hours * 3600 + minutes * 60 + seconds;
-  }
-  return totalseconds
-}
 
 
 async function filterID(list) {
