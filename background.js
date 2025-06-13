@@ -1,4 +1,5 @@
-importScripts('keys.js', 'auth.js', 'youTubeApiConnectors.js', 'https://apis.google.com/js/api.js');
+importScripts('keys.js', 'auth.js', 'youTubeApiConnectors.js', 'gapi.js');
+onGAPILoad();
 
 chrome.storage.sync.get(["lastVideoDate"], function (result) {
   if (!result.lastVideoDate) {
