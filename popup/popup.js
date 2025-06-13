@@ -16,11 +16,11 @@ chrome.storage.local.get(['authStatus'], function(result) {
 
 function updateSigninStatus(isSignedIn) {
     if (isSignedIn) {
-        chrome.action.onClicked.removeListener(handleAuthClick);
-        chrome.action.onClicked.addListener(handleAdd);
+        authorizeButton.style.display = 'none';
+        addButton.style.display = 'block';
     } else {
-        chrome.action.onClicked.removeListener(handleAdd);
-        chrome.action.onClicked.addListener(handleAuthClick);
+        authorizeButton.style.display = 'block';
+        addButton.style.display = 'none';
     }
 }
 
@@ -45,5 +45,3 @@ function handleAdd(event) {
 // }
 
 
-// insert to browser action in manifest 
-// "default_popup": "popup/popup.html"
