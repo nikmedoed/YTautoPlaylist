@@ -14,6 +14,7 @@ import {
   formatDate,
   logMessages,
   setupLogCapture,
+  parseVideoId,
 } from "./utils.js";
 import { filterID } from "./filter.js";
 import { DEV_MODE } from "../config.js";
@@ -194,8 +195,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     case "setStartDate":
       storeDate(new Date(request.date)).then(() => sendResponse({ ok: true }));
       return true;
-    case "videoDate":
-      getVideoInfo([request.videoId])
+    case "videoDate": {
+      const id = parseVideoId(request.videoId);
+      if (!id) {
+        sendResponse({ error: "Invalid video ID" });
+        return true;
+      }
+      getVideoInfo([id])
         .then((info) => {
           const date = new Date(info[0].pubDate);
           storeDate(date).then(() => {
@@ -207,6 +213,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           sendResponse({ error: err.message });
         });
       return true;
+    }
     case "getLogs":
       sendResponse({ logs: logMessages });
       return true;

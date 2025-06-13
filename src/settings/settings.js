@@ -1,3 +1,5 @@
+import { parseVideoId } from '../utils.js';
+
 document.addEventListener('DOMContentLoaded', () => {
   const startInput = document.getElementById('startDate');
   const saveBtn = document.getElementById('saveStartDate');
@@ -20,10 +22,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   useBtn?.addEventListener('click', () => {
-    let val = videoInput.value.trim();
-    const match = val.match(/[\w-]{11}/);
-    if (!match) return;
-    const id = match[0];
+    const id = parseVideoId(videoInput.value);
+    if (!id) return;
     chrome.runtime.sendMessage({ type: 'videoDate', videoId: id }, response => {
       if (response && response.date) {
         startInput.value = response.date.slice(0, 16);

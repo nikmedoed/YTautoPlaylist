@@ -41,6 +41,32 @@ export function parseDuration(duration) {
   return totalseconds;
 }
 
+export function parseVideoId(input) {
+  if (!input) return '';
+  const str = String(input).trim();
+  if (/^[\w-]{11}$/.test(str)) return str;
+  try {
+    const url = new URL(str);
+    if (url.hostname.includes('youtu.be')) {
+      const parts = url.pathname.split('/').filter(Boolean);
+      const id = parts[0];
+      if (/^[\w-]{11}$/.test(id)) return id;
+    }
+    if (url.searchParams.has('v')) {
+      const id = url.searchParams.get('v');
+      if (id && /^[\w-]{11}$/.test(id)) return id;
+    }
+    const segments = url.pathname.split('/');
+    for (const part of segments) {
+      if (/^[\w-]{11}$/.test(part)) return part;
+    }
+  } catch (e) {
+    /* not a URL */
+  }
+  const match = str.match(/[\w-]{11}/);
+  return match ? match[0] : '';
+}
+
 export const logMessages = [];
 export function setupLogCapture() {
   const originalLog = console.log.bind(console);
