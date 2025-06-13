@@ -83,10 +83,16 @@ function getNewVideos(
           })
           .filter((item) => item.pubDate > startDate);
         const pageInfo = response.result.pageInfo;
-        if (pageInfo && pageInfo.totalResults == newVid.length && response.result.nextPageToken) {
-          return getNewVideos(playlist, startDate, response.result.nextPageToken).then(
-            (e) => newVid.concat(e)
-          );
+        if (
+          pageInfo &&
+          pageInfo.totalResults == newVid.length &&
+          response.result.nextPageToken
+        ) {
+          return getNewVideos(
+            playlist,
+            startDate,
+            response.result.nextPageToken
+          ).then((e) => newVid.concat(e));
         } else {
           return newVid;
         }
@@ -172,7 +178,7 @@ function addVideoToWL(vId, playlistId) {
 }
 
 async function isShort(video) {
-  const videoId = video.id
+  const videoId = video.id;
   const url = `https://www.youtube.com/shorts/${videoId}`;
   try {
     const response = await fetch(url, {
@@ -186,6 +192,7 @@ async function isShort(video) {
     return false;
   }
 }
+
 function getVideoInfo(idList, nextP) {
   return gapi.client.youtube.videos
     .list({
@@ -198,7 +205,7 @@ function getVideoInfo(idList, nextP) {
       function (response) {
         // console.log(response)
         info = response.result.items
-          // .filter((v) => !isShort(v))
+          .filter((v) => !isShort(v))
           .map((el) => {
             return {
               vId: el.id,
