@@ -109,45 +109,44 @@ function logIssue(vId, count, message, isError = false) {
     if (storeDateFunction && list.length > 0) {
       storeDateFunction(list[list.length - 1].pubDate);
     }
-        logIssue(targetVideo.vId, count, 'Already in playlist');
-        logIssue(targetVideo.vId, count, 'Service unavailable, retrying in 1 min');
-        logIssue(targetVideo.vId, count, 'Rate limit exceeded, waiting 8 min');
-        logIssue(targetVideo.vId, count, 'Quota exceeded', true);
-        if (storeDateFunction && count > 0) {
-          storeDateFunction(list[count - 1].pubDate);
-        }
-          logIssue(targetVideo.vId, count, 'Service unavailable, retrying in 1 min');
-          logIssue(targetVideo.vId, count, 'Temporary quota exhausted, waiting 8 min');
-        logIssue(targetVideo.vId, count, err.error?.message || err.message, true);
-        if (storeDateFunction && count > 0) {
-          storeDateFunction(list[count - 1].pubDate);
-        }
-          console.warn(
-          "Uploads playlist not found",playlist,
-          "falling back to search"
-        );
-        const channelId = playlist.startsWith("UU")
-          ? "UC" + playlist.slice(2)
-          : playlist;
-        return getRecentVideosBySearch(
-          channelId,
-          startDate,
-          undefined,
-          playlist
-        );
+  if (count === list.length) {
+      await storeDateFunction(list[list.length - 1].pubDate);
+
+    console.log(`OK: ${targetVideo.vId}, count ${count + 1}/${list.length}`);
+    if (storeDateFunction) {
+      // Save progress but do not wait
+      storeDateFunction(targetVideo.pubDate);
+    }
+    if (reason === 'videoAlreadyInPlaylist') {
+      logIssue(targetVideo.vId, count, 'Already in playlist');
+      if (storeDateFunction) storeDateFunction(targetVideo.pubDate);
+      return addListToWL(storeDateFunction, playlistId, list, count + 1);
+    }
+
+    if (reason === 'backendError' || reason === 'serviceUnavailable' || err.status === 503) {
+      logIssue(targetVideo.vId, count, 'Service unavailable, retrying in 1 min');
+      await new Promise(r => setTimeout(r, 60 * 1000));
+      return addListToWL(storeDateFunction, playlistId, list, count);
+    }
+
+    if (reason === 'rateLimitExceeded' || reason === 'userRateLimitExceeded' || err.status === 429) {
+      logIssue(targetVideo.vId, count, 'Temporary quota exhausted, waiting 8 min');
+      await new Promise(r => setTimeout(r, 8 * 60 * 1000 + 500));
+      return addListToWL(storeDateFunction, playlistId, list, count);
+
+    if (reason === 'quotaExceeded') {
+      logIssue(targetVideo.vId, count, 'Quota exceeded', true);
+      if (storeDateFunction && count > 0) {
+        await storeDateFunction(list[count - 1].pubDate);
       }
-      throw err;
+      return count;
     }
-    pages++;
-    const items = data.items.map((el) => ({
-      vId: el.contentDetails.videoId,
-      pubDate: new Date(el.contentDetails.videoPublishedAt),
-      videoInfo: el,
-      playlist,
-    }));
-    for (const it of items) {
-      if (it.pubDate > startDate) videos.push(it);
+
+    logIssue(targetVideo.vId, count, err.error?.message || err.message, true);
+    if (storeDateFunction && count > 0) {
+      await storeDateFunction(list[count - 1].pubDate);
     }
+    return count;
     const last = data.items[data.items.length - 1];
     const lastDate = last
       ? new Date(last.contentDetails.videoPublishedAt)
