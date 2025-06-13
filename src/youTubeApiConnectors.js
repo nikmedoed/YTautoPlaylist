@@ -1,4 +1,5 @@
 import { getToken } from './auth.js';
+import { logMessage } from './logger.js';
 
 // Utility for calling YouTube Data API via fetch
 async function callApi(path, params = {}, method = 'GET', body = null) {
@@ -130,14 +131,6 @@ async function getNewVideos(playlist, startDate = new Date(Date.now() - 60480000
   return { videos, pages };
 }
 
-function logMessage(level, vId, count, message) {
-  const text = `Video id: ${vId} :: Count: ${count}\n${message}`;
-  if (level === 'warn') {
-    console.warn(text);
-  } else {
-    console.error(text);
-  }
-}
 
 async function addListToWL(storeDateFunction, playlistId, list, count = 0) {
   if (count == list.length) {
@@ -242,7 +235,6 @@ export {
   getUploadsLists,
   getRecentVideosBySearch,
   getNewVideos,
-  logMessage,
   addListToWL,
   createPlayList,
   addVideoToWL,

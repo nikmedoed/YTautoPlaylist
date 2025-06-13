@@ -1,5 +1,5 @@
 import assert from 'assert';
-import { getNewVideos, __setCallApi } from '../youTubeApiConnectors.js';
+import { getNewVideos, __setCallApi } from '../src/youTubeApiConnectors.js';
 
 const calls = [];
 __setCallApi(async (path) => {
