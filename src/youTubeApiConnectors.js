@@ -1,8 +1,8 @@
-import { getToken } from "./auth.js";
+import { getToken, signInUser, clearToken } from "./auth.js";
 import { logMessage } from "./utils.js";
 
 // Utility for calling YouTube Data API via fetch
-async function callApi(path, params = {}, method = "GET", body = null) {
+async function callApi(path, params = {}, method = "GET", body = null, retry) {
   const token = await getToken();
   const url = new URL("https://www.googleapis.com/youtube/v3/" + path);
   Object.entries(params).forEach(([k, v]) => {
@@ -18,6 +18,20 @@ async function callApi(path, params = {}, method = "GET", body = null) {
   }
   const resp = await fetch(url.toString(), init);
   if (!resp.ok) {
+    if ((resp.status === 401 || resp.status === 403) && !retry) {
+      clearToken();
+      try {
+        await signInUser();
+      } catch (e) {
+        const text = await resp.text();
+        const err = new Error("API " + path + " failed: " + resp.status);
+        err.status = resp.status;
+        err.body = text;
+        err.error = e;
+        throw err;
+      }
+      return callApi(path, params, method, body, true);
+    }
     const text = await resp.text();
     const err = new Error("API " + path + " failed: " + resp.status);
     err.status = resp.status;

@@ -19,12 +19,6 @@ initAuthListeners(process);
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   switch (request.type) {
-    case "signIn":
-      signInUser().catch((err) => console.error("Sign-in failed", err));
-      break;
-    case "process":
-      process();
-      break;
     case "setStartDate":
       storeDate(new Date(request.date)).then(() => sendResponse({ ok: true }));
       return true;
