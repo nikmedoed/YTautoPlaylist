@@ -33,7 +33,10 @@ function updateSigninStatus(isSignedIn) {
 }
 
 function signIn() {
-  console.log("howtosignIn?");
+  authenticate()
+    .then(() => loadClient())
+    .then(() => setToken())
+    .catch(err => console.error('Sign-in failed', err));
 }
 
 function sleep(ms) {
@@ -263,20 +266,17 @@ function filterID(list) {
 //     }
 // ],
 
-// chrome.extension.onMessage.addListener(
-//     function(request, sender, sendResponse) {
-//         switch (request['type']){
-//             case "signIn":
-//                 signIn()
-//             break
-//             case "process":
-//                 process()
-//             break
-//         }
-//         // sendResponse({success: true})
-//         // return true
-//     }
-// );
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  switch (request.type) {
+    case 'signIn':
+      signIn();
+      break;
+    case 'process':
+      process();
+      break;
+  }
+  return true;
+});
 
 // chrome.notifications.create(null,
 //     {
