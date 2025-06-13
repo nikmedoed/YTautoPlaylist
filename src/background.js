@@ -1,4 +1,4 @@
-import { signInUser } from './auth.js';
+import { signIn, setupAuthStatusListener } from './auth.js';
 import {
   getSubscriptionsId,
   getUploadsLists,
@@ -9,7 +9,7 @@ import {
   isShort,
 } from './youTubeApiConnectors.js';
 import { logMessage, storeDate, parseDuration, formatDate } from './utils.js';
-import { TITLEFILTER, BROADCASTFILTER } from './constants.js';
+import { filterID } from './filters.js';
 
 const originalLog = console.log.bind(console);
 const logMessages = [];
@@ -19,20 +19,18 @@ console.log = (...args) => {
   originalLog(...args);
 };
 
+// Development helpers. Set DEV to true to always start from the last 24h.
+// Optionally set START_FROM_VIDEO_ID to resume from a particular video.
+const DEV = false;
+const START_FROM_VIDEO_ID = null;
+
 chrome.storage.sync.get(["lastVideoDate"], function (result) {
   if (!result.lastVideoDate) {
     storeDate(new Date(Date.now() - 604800000));
   }
 });
 
-chrome.storage.onChanged.addListener(function (changes, namespace) {
-  if ("authStatus" in changes) {
-    updateSigninStatus(changes["authStatus"].newValue);
-  }
-});
-chrome.storage.local.get(["authStatus"], function (result) {
-  updateSigninStatus(result.authStatus);
-});
+setupAuthStatusListener(updateSigninStatus);
 
 function updateSigninStatus(isSignedIn) {
   if (isSignedIn) {
@@ -44,13 +42,23 @@ function updateSigninStatus(isSignedIn) {
   }
 }
 
-function signIn() {
-  signInUser().catch(err => console.error('Sign-in failed', err));
-}
-
-
 function process() {
-  main(new Date(Date.now() - 24 * 60 * 60 * 1000));
+  if (DEV) {
+    main(new Date(Date.now() - 24 * 60 * 60 * 1000));
+    return;
+  }
+  chrome.storage.sync.get(["lastVideoDate"], async result => {
+    let mainDate;
+    if (START_FROM_VIDEO_ID) {
+      const info = await getVideoInfo([START_FROM_VIDEO_ID]);
+      mainDate = new Date(info[0].pubDate);
+      await storeDate(mainDate);
+    } else {
+      mainDate = result.lastVideoDate ? new Date(result.lastVideoDate) : new Date(Date.now() - 24 * 60 * 60 * 1000);
+    }
+    console.log("startDate", mainDate);
+    main(mainDate);
+  });
 }
 
 async function main(startDate = new Date(Date.now() - 604800000)) {
@@ -165,74 +173,6 @@ function createListAndAddVideos(list) {
 
 
 
-async function filterID(list) {
-  console.log('Fetching info for', list.length, 'videos');
-  const filters = [
-    video => parseDuration(video.duration) > 61,
-    video => {
-      let titfilt = TITLEFILTER[video.channelId];
-      if (titfilt && titfilt.length > 0) {
-        let title = video.title.toLowerCase();
-        return !titfilt.some(tit => title.includes(tit));
-      }
-      return true;
-    },
-    video => !(
-      video.liveStreamingDetails &&
-      video.liveStreamingDetails.actualStartTime != video.liveStreamingDetails.scheduledStartTime &&
-      BROADCASTFILTER.includes(video.channelId)
-    )
-  ];
-  const chunks = [];
-  while (list.length) {
-    chunks.push(await getVideoInfo(list.splice(-50)));
-  }
-  let info = [].concat(...chunks);
-  console.log('Got details for', info.length, 'videos');
-  const toCheck = [];
-  const filtered = [];
-  for (const video of info) {
-    if (filters.every(fltr => fltr(video))) {
-      toCheck.push(video);
-    } else {
-      filtered.push(video.vId);
-    }
-  }
-  console.log('After basic filters:', toCheck.length, 'videos');
-  const videos = [];
-  const shorts = [];
-  const quickShort = v =>
-    parseDuration(v.duration) < 60 ||
-    (v.tags && v.tags.some(t => /shorts/i.test(t))) ||
-    v.title.toLowerCase().includes('#short');
-  let checked = 0;
-  const concurrency = 5;
-  let index = 0;
-  async function worker() {
-    while (index < toCheck.length) {
-      const video = toCheck[index++];
-      if (quickShort(video)) {
-        shorts.push(video.vId);
-        checked++;
-        continue;
-      }
-      try {
-        const short = await isShort(video);
-        if (short) shorts.push(video.vId); else videos.push(video);
-      } catch (err) {
-        console.error('Failed short check', err);
-        videos.push(video);
-      }
-      checked++;
-      if (checked % 5 === 0 || checked === toCheck.length) {
-        console.log('Short checks', checked, '/', toCheck.length);
-      }
-    }
-  }
-  await Promise.all(Array(concurrency).fill(0).map(worker));
-  console.log('After short filter:', videos.length, 'videos');
-  return { videos, shorts, filtered };
-}
 
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {

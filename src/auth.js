@@ -39,3 +39,22 @@ export function getToken() {
     });
   });
 }
+
+export function signIn() {
+  return signInUser().catch(err => {
+    console.error('Sign-in failed', err);
+    throw err;
+  });
+}
+
+export function setupAuthStatusListener(callback) {
+  if (typeof chrome === 'undefined') return;
+  chrome.storage.onChanged.addListener(function (changes) {
+    if ('authStatus' in changes) {
+      callback(changes['authStatus'].newValue);
+    }
+  });
+  chrome.storage.local.get(['authStatus'], function (result) {
+    callback(result.authStatus);
+  });
+}

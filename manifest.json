@@ -8,10 +8,10 @@
   "icons": {
     "128": "icon/icon.png"
   },
-  "options_page": "settings/settings.html",
+  "options_page": "src/settings.html",
   "action": {
     "default_icon": "icon/icon.png",
-    "default_popup": "popup/popup.html"
+    "default_popup": "src/popup.html"
   },
   "background": {
     "service_worker": "src/background.js",
