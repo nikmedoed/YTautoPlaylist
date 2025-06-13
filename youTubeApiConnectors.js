@@ -177,20 +177,28 @@ function addVideoToWL(vId, playlistId) {
   });
 }
 
-async function isShort(video) {
+function isShort(video) {
   const videoId = video.id;
   const url = `https://www.youtube.com/shorts/${videoId}`;
-  try {
-    const response = await fetch(url, {
-      method: "HEAD",
-      redirect: "manual",
-    });
-    // 200 — шортс, 3xx — редирект на watch → не шортс
-    return response.status === 200;
-  } catch (err) {
-    console.error("Failed to detect Short for", videoId, err);
-    return false;
-  }
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("HEAD", url);
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState === xhr.DONE) {
+        resolve(xhr.status === 200);
+      }
+    };
+    xhr.onerror = function () {
+      console.error("Failed to detect Short for", videoId);
+      resolve(false);
+    };
+    try {
+      xhr.send();
+    } catch (err) {
+      console.error("Failed to send request for", videoId, err);
+      resolve(false);
+    }
+  });
 }
 
 function getVideoInfo(idList, nextP) {
@@ -202,27 +210,23 @@ function getVideoInfo(idList, nextP) {
       pageToken: nextP,
     })
     .then(
-      function (response) {
-        // console.log(response)
-        info = response.result.items
-          .filter((v) => !isShort(v))
-          .map((el) => {
+      async function (response) {
+        const rawItems = response.result.items;
+        const processed = await Promise.all(
+          rawItems.map(async (el) => {
+            const short = await isShort(el);
+            if (short) return null;
             return {
               vId: el.id,
               pubDate: el.snippet.publishedAt,
               id: el.id,
               ...el.snippet,
               ...el.contentDetails,
-              // date: el.snippet.publishedAt,
-              // channel: el.snippet.channelId,
-              // title: el.snippet.title,
-              // channelTitle: el.snippet.channelTitle,
-              // tags: el.snippet.tags,
-              // broadcast: el.snippet.liveBroadcastContent,
-              // duration: el.contentDetails.duration, //PT1H43M45S,
               liveStreamingDetails: el.liveStreamingDetails,
             };
-          });
+          })
+        );
+        info = processed.filter(Boolean);
         if (response.result.nextPageToken) {
           return getVideoInfo(idList, response.result.nextPageToken).then((e) =>
             info.concat(e)
