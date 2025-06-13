@@ -122,7 +122,8 @@ function logIssue(vId, count, message, isError = false) {
         if (storeDateFunction && count > 0) {
           storeDateFunction(list[count - 1].pubDate);
         }
-          playlist,
+          console.warn(
+          "Uploads playlist not found",playlist,
           "falling back to search"
         );
         const channelId = playlist.startsWith("UU")
