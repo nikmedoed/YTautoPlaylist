@@ -51,6 +51,28 @@ async function getUploadsLists(userids) {
   return data.items.map(el => el.contentDetails.relatedPlaylists.uploads);
 }
 
+async function getRecentVideosBySearch(channelId, startDate, nextPage) {
+  const data = await callApi('search', {
+    part: 'snippet',
+    channelId,
+    type: 'video',
+    order: 'date',
+    maxResults: 50,
+    pageToken: nextPage,
+    publishedAfter: startDate.toISOString()
+  });
+  const vids = data.items.map(el => ({
+    vId: el.id.videoId,
+    pubDate: new Date(el.snippet.publishedAt),
+    videoInfo: el
+  }));
+  if (data.nextPageToken) {
+    const rest = await getRecentVideosBySearch(channelId, startDate, data.nextPageToken);
+    return vids.concat(rest);
+  }
+  return vids;
+}
+
 async function getNewVideos(playlist, startDate = new Date(Date.now() - 604800000), nextPage) {
   let data;
   try {
@@ -62,8 +84,9 @@ async function getNewVideos(playlist, startDate = new Date(Date.now() - 60480000
     });
   } catch (err) {
     if (err.message && err.message.includes('playlistId')) {
-      console.error('Uploads playlist not found', playlist);
-      return [];
+      console.warn('Uploads playlist not found', playlist, 'falling back to search');
+      const channelId = playlist.startsWith('UU') ? 'UC' + playlist.slice(2) : playlist;
+      return getRecentVideosBySearch(channelId, startDate);
     }
     throw err;
   }
