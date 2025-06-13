@@ -1,9 +1,13 @@
-importScripts('keys.js', 'auth.js', 'youTubeApiConnectors.js');
+importScripts("keys.js", "auth.js", "youTubeApiConnectors.js");
 
 const originalLog = console.log.bind(console);
 const logMessages = [];
 console.log = (...args) => {
-  logMessages.push(args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '));
+  logMessages.push(
+    args
+      .map((a) => (typeof a === "object" ? JSON.stringify(a) : String(a)))
+      .join(" ")
+  );
   if (logMessages.length > 100) logMessages.shift();
   originalLog(...args);
 };
@@ -15,7 +19,7 @@ chrome.storage.sync.get(["lastVideoDate"], function (result) {
 });
 
 function storeDate(date) {
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     chrome.storage.sync.set({ lastVideoDate: date.toString() }, () => {
       console.log("lastVideoDate is set to " + date);
       resolve();
@@ -43,7 +47,7 @@ function updateSigninStatus(isSignedIn) {
 }
 
 function signIn() {
-  signInUser().catch(err => console.error('Sign-in failed', err));
+  signInUser().catch((err) => console.error("Sign-in failed", err));
 }
 
 function sleep(ms) {
@@ -51,8 +55,7 @@ function sleep(ms) {
 }
 
 function process() {
-
-  main(new Date(Date.now() - 24 * 60 * 60 * 1000))
+  main(new Date(Date.now() - 24 * 60 * 60 * 1000));
 
   // getVideoInfo(["fzmm4cCXPs4"]).then((e) => {
   //   // console.log('Date: '+ e)
@@ -71,142 +74,172 @@ function process() {
 // var button = document.createElement("button");
 // button.innerHTML = "Save to Google Spreadsheets";
 
-
 function main(startDate = new Date(new Date() - 604800000)) {
-  return (
-    getSubscriptionsId()
-      .then((res) => {
-        console.log("Subscriptions count:", res.length);
-        console.log("Subscriptions list:", res);
-        return res;
-      })
-      .then((res) => res.map((item) => item.id))
-      .then((l) => Promise.all(
-        l.slice(0, Math.ceil(l.length / 50))
+  return getSubscriptionsId()
+    .then((res) => {
+      console.log("Subscriptions count:", res.length);
+      console.log("Subscriptions list:", res);
+      return res;
+    })
+    .then((res) => res.map((item) => item.id))
+    .then((l) =>
+      Promise.all(
+        l
+          .slice(0, Math.ceil(l.length / 50))
           .map((elem) => getUploadsLists(l.splice(-50)))
-      )
-        .then((e) => [].concat(...e))
-      )
-      .then((res) => {
-        console.log("Subscriptions upload lists count:", res.length);
-        console.log("Subscriptions getUploadsLists:", res);
-        return res;
-      })
-      .then((e) => {
-        console.log('Loading videos from', e.length, 'playlists');
-        return Promise.all(e.map(pl => getNewVideos(pl, startDate).then(r => ({ playlist: pl, videos: r.videos, pages: r.pages }))))
-          .then(res => res);
-      })
-      .then(results => {
-        const allVideos = [];
-        const playlistMap = {};
-        const stats = {};
-        results.forEach(r => {
-          if (r.videos.length === 0) return;
-          stats[r.playlist] = { new: r.videos.length, filtered: 0, shorts: 0, add: 0 };
-          r.videos.forEach(v => {
-            playlistMap[v.vId] = r.playlist;
-            allVideos.push(v);
-          });
+      ).then((e) => [].concat(...e))
+    )
+    .then((res) => {
+      console.log("Subscriptions upload lists count:", res.length);
+      console.log("Subscriptions getUploadsLists:", res);
+      return res;
+    })
+    .then((e) => {
+      console.log("Loading videos from", e.length, "playlists");
+      return Promise.all(
+        e.map((pl) =>
+          getNewVideos(pl, startDate).then((r) => ({
+            playlist: pl,
+            videos: r.videos,
+            pages: r.pages,
+          }))
+        )
+      ).then((res) => res);
+    })
+    .then((results) => {
+      const allVideos = [];
+      const playlistMap = {};
+      const stats = {};
+      results.forEach((r) => {
+        if (r.videos.length === 0) return;
+        stats[r.playlist] = {
+          new: r.videos.length,
+          filtered: 0,
+          shorts: 0,
+          add: 0,
+        };
+        r.videos.forEach((v) => {
+          playlistMap[v.vId] = r.playlist;
+          allVideos.push(v);
         });
-        console.log('Fetched', allVideos.length, 'videos');
-        return filterID(allVideos.map(a => a.vId)).then(({ videos, shorts, filtered }) => {
-          filtered.forEach(id => {
+      });
+      console.log("Fetched", allVideos.length, "videos");
+      return filterID(allVideos.map((a) => a.vId)).then(
+        ({ videos, shorts, filtered }) => {
+          filtered.forEach((id) => {
             const pl = playlistMap[id];
             if (stats[pl]) stats[pl].filtered++;
           });
-          videos.forEach(v => {
+          videos.forEach((v) => {
             const pl = playlistMap[v.vId];
             stats[pl].add++;
             v.playlist = pl;
           });
-          shorts.forEach(id => {
+          shorts.forEach((id) => {
             const pl = playlistMap[id];
             if (stats[pl]) stats[pl].shorts++;
           });
           Object.entries(stats).forEach(([pl, st]) => {
             if (st.new || st.filtered || st.shorts || st.add) {
-              console.log(`Playlist ${pl} new ${st.new}, filtered ${st.filtered}, shorts ${st.shorts}, to playlist ${st.add}`);
+              console.log(
+                `Playlist ${pl} new ${st.new}, filtered ${st.filtered}, shorts ${st.shorts}, to playlist ${st.add}`
+              );
             }
           });
-          console.log('After filtering:', videos.length, 'videos');
+          console.log("After filtering:", videos.length, "videos");
           return videos;
+        }
+      );
+    })
+    .then((el) => {
+      const seen = new Set();
+      elems = el
+        .sort((a, b) => new Date(a.pubDate) - new Date(b.pubDate))
+        .filter((v) => {
+          if (seen.has(v.vId)) return false;
+          seen.add(v.vId);
+          return true;
         });
-      })
-      .then((el) => {
-        const seen = new Set();
-        elems = el
-          .sort((a, b) => new Date(a.pubDate) - new Date(b.pubDate))
-          .filter(v => {
-            if (seen.has(v.vId)) return false;
-            seen.add(v.vId);
-            return true;
-          });
-        return elems;
-      })
-      .then(list => {
-        console.log('New Videos:', list)
-        // console.log(list.map(e => `${formatDate(e.pubDate)}`).join("\n"))
-        console.log(list.map(e => [
-          parseDuration(e.duration),
-          formatDate(e.pubDate),
-          e.channelTitle,
-          e.title,
-          e.vId].join('\t')).join("\n"))
-        return list
-      })
-      .then(createListAndAddVideos)
-  );
+      return elems;
+    })
+    .then((list) => {
+      console.log("New Videos:", list);
+      // console.log(list.map(e => `${formatDate(e.pubDate)}`).join("\n"))
+      console.log(
+        list
+          .map((e) =>
+            [
+              parseDuration(e.duration),
+              formatDate(e.pubDate),
+              e.channelTitle,
+              e.title,
+              e.vId,
+            ].join("\t")
+          )
+          .join("\n")
+      );
+      return list;
+    })
+    .then(createListAndAddVideos);
 }
 
 function formatDate(date) {
   const options = {
-    year: '2-digit',
-    month: 'numeric',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: 'numeric',
-    second: 'numeric'
-  }
-  return date.toLocaleString("ru", options)
+    year: "2-digit",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+  };
+  return date.toLocaleString("ru", options);
 }
 
 function createListAndAddVideos(list) {
   if (!list || list.length === 0) {
-    console.warn('No videos to add');
+    console.warn("No videos to add");
     return Promise.resolve(0);
   }
-  title = `WL ${formatDate(list[0].pubDate)} - ${formatDate(list[list.length - 1].pubDate)}`
+  title = `WL ${formatDate(list[0].pubDate)} - ${formatDate(
+    list[list.length - 1].pubDate
+  )}`;
   return createPlayList(title)
-    .then(plst => {
-      let playlistId = plst.id
-      console.log(`Created playlist https://www.youtube.com/playlist?list=${playlistId}`)
-      return addListToWL(storeDate, playlistId, list)
-        .then(count => {
-          storeDate((list[count - 1] || list[list.length - 1]).pubDate)
-          console.log(`https://www.youtube.com/playlist?list=${playlistId}`)
-          return count
-        })
+    .then((plst) => {
+      let playlistId = plst.id;
+      console.log(
+        `Created playlist https://www.youtube.com/playlist?list=${playlistId}`
+      );
+      return addListToWL(storeDate, playlistId, list).then((count) => {
+        storeDate((list[count - 1] || list[list.length - 1]).pubDate);
+        console.log(`https://www.youtube.com/playlist?list=${playlistId}`);
+        return count;
+      });
     })
-    .catch(err => {
-      const reason = err.error?.errors?.[0]?.reason || ''
+    .catch((err) => {
+      const reason = err.error?.errors?.[0]?.reason || "";
       switch (reason) {
-        case 'rateLimitExceeded':
-          console.error('Rate limit exceeded while creating playlist')
-          break
-        case 'quotaExceeded':
-          console.error('Quota exceeded while creating playlist')
-          break
+        case "rateLimitExceeded":
+          console.error("Rate limit exceeded while creating playlist");
+          break;
+        case "quotaExceeded":
+          console.error("Quota exceeded while creating playlist");
+          break;
         default:
-          console.error('Failed to create playlist', err.error?.message || err.message)
+          console.error(
+            "Failed to create playlist",
+            err.error?.message || err.message
+          );
       }
-      return 0
-    })
+      return 0;
+    });
 }
 
 function parseDuration(duration) {
   var reptms = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/;
-  var hours = 0, minutes = 0, seconds = 0, totalseconds;
+  var hours = 0,
+    minutes = 0,
+    seconds = 0,
+    totalseconds;
 
   if (reptms.test(duration)) {
     var matches = reptms.exec(duration);
@@ -215,79 +248,74 @@ function parseDuration(duration) {
     if (matches[3]) seconds = Number(matches[3]);
     totalseconds = hours * 3600 + minutes * 60 + seconds;
   }
-  return totalseconds
+  return totalseconds;
 }
 
-
-// виды фильтров Канал+длительность
-// наличие в названии
-// канал + тег
-// тег
-// длительность
-// трансляция ли + канал/название
 async function filterID(list) {
-  console.log('Fetching info for', list.length, 'videos');
+  console.log("Fetching info for", list.length, "videos");
   const TITLEFILTER = {
-    'UC7Elc-kLydl-NAV4g204pDQ': ['новости |', 'военное положение |'],
-    'UCt7sv-NKh44rHAEb-qCCxvA': ['ostronews', 'iphone'],
-    'UC8zQiuT0m1TELequJ5sp5zw': ['подкаст', 'подкаст', 'спецэфир'],
-    'UC3cJiUuZlpF-pkzqvSskTpg': ['разгоны #', 'чувс', 'книжный клуб'],
-    'UCixlrqz8w-oa4UzdKyHLMaA': ['yet another podcast'],
-    'UCn9bv143ECsDMw-kJCNN7QA': ['подземелья чикен']
+    "UC7Elc-kLydl-NAV4g204pDQ": ["новости |", "военное положение |"],
+    "UCt7sv-NKh44rHAEb-qCCxvA": ["ostronews", "iphone"],
+    UC8zQiuT0m1TELequJ5sp5zw: ["подкаст", "подкаст", "спецэфир"],
+    "UC3cJiUuZlpF-pkzqvSskTpg": ["разгоны #", "чувс", "книжный клуб"],
+    "UCixlrqz8w-oa4UzdKyHLMaA": ["yet another podcast"],
+    "UCn9bv143ECsDMw-kJCNN7QA": ["подземелья чикен"],
   };
   const BROADCASTFILLTER = [
-    'UC7Elc-kLydl-NAV4g204pDQ',
-    'UCt7sv-NKh44rHAEb-qCCxvA',
-    'UCUGfDbfRIx51kJGGHIFo8Rw',
-    'UCBG57608Hukev3d0d-gvLhQ',
-    'UCjQdM9q_Vd2gBN9Xy_zRDJQ',
-    'UCKRC-fNrU-XvZTrwXN4Xxcg',
-    'UC5EgIZja1sE3IF9U_CKEVew',
-    'UCBq6jERElPLXL5cEy-sA9Tw',
-    'UC6uFoHcr_EEK6DgCS-LeTNA',
-    'UCY649zJeJVhhJa-rvWThZ2g',
-    'UCUmlB9SwrBVevETZV0wrVRw',
-    'UCQ_LYRUJzBfh-mvU14xCNMw',
-    'UCTUyoZMfksbNIHfWJjwr5aQ'
+    "UC7Elc-kLydl-NAV4g204pDQ",
+    "UCt7sv-NKh44rHAEb-qCCxvA",
+    "UCUGfDbfRIx51kJGGHIFo8Rw",
+    "UCBG57608Hukev3d0d-gvLhQ",
+    "UCjQdM9q_Vd2gBN9Xy_zRDJQ",
+    "UCKRC-fNrU-XvZTrwXN4Xxcg",
+    "UC5EgIZja1sE3IF9U_CKEVew",
+    "UCBq6jERElPLXL5cEy-sA9Tw",
+    "UC6uFoHcr_EEK6DgCS-LeTNA",
+    "UCY649zJeJVhhJa-rvWThZ2g",
+    "UCUmlB9SwrBVevETZV0wrVRw",
+    "UCQ_LYRUJzBfh-mvU14xCNMw",
+    "UCTUyoZMfksbNIHfWJjwr5aQ",
   ];
   const filters = [
-    video => parseDuration(video.duration) > 61,
-    video => {
+    (video) => parseDuration(video.duration) > 61,
+    (video) => {
       let titfilt = TITLEFILTER[video.channelId];
       if (titfilt && titfilt.length > 0) {
         let title = video.title.toLowerCase();
-        return !titfilt.some(tit => title.includes(tit));
+        return !titfilt.some((tit) => title.includes(tit));
       }
       return true;
     },
-    video => !(
-      video.liveStreamingDetails &&
-      video.liveStreamingDetails.actualStartTime != video.liveStreamingDetails.scheduledStartTime &&
-      BROADCASTFILLTER.includes(video.channelId)
-    )
+    (video) =>
+      !(
+        video.liveStreamingDetails &&
+        video.liveStreamingDetails.actualStartTime !=
+          video.liveStreamingDetails.scheduledStartTime &&
+        BROADCASTFILLTER.includes(video.channelId)
+      ),
   ];
   const chunks = [];
   while (list.length) {
     chunks.push(await getVideoInfo(list.splice(-50)));
   }
   let info = [].concat(...chunks);
-  console.log('Got details for', info.length, 'videos');
+  console.log("Got details for", info.length, "videos");
   const toCheck = [];
   const filtered = [];
   for (const video of info) {
-    if (filters.every(fltr => fltr(video))) {
+    if (filters.every((fltr) => fltr(video))) {
       toCheck.push(video);
     } else {
       filtered.push(video.vId);
     }
   }
-  console.log('After basic filters:', toCheck.length, 'videos');
+  console.log("After basic filters:", toCheck.length, "videos");
   const videos = [];
   const shorts = [];
-  const quickShort = v =>
+  const quickShort = (v) =>
     parseDuration(v.duration) < 60 ||
-    (v.tags && v.tags.some(t => /shorts/i.test(t))) ||
-    v.title.toLowerCase().includes('#short');
+    (v.tags && v.tags.some((t) => /shorts/i.test(t))) ||
+    v.title.toLowerCase().includes("#short");
   let checked = 0;
   const concurrency = 5;
   let index = 0;
@@ -301,19 +329,20 @@ async function filterID(list) {
       }
       try {
         const short = await isShort(video);
-        if (short) shorts.push(video.vId); else videos.push(video);
+        if (short) shorts.push(video.vId);
+        else videos.push(video);
       } catch (err) {
-        console.error('Failed short check', err);
+        console.error("Failed short check", err);
         videos.push(video);
       }
       checked++;
       if (checked % 5 === 0 || checked === toCheck.length) {
-        console.log('Short checks', checked, '/', toCheck.length);
+        console.log("Short checks", checked, "/", toCheck.length);
       }
     }
   }
   await Promise.all(Array(concurrency).fill(0).map(worker));
-  console.log('After short filter:', videos.length, 'videos');
+  console.log("After short filter:", videos.length, "videos");
   return { videos, shorts, filtered };
 }
 
@@ -340,13 +369,13 @@ async function filterID(list) {
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   switch (request.type) {
-    case 'signIn':
+    case "signIn":
       signIn();
       break;
-    case 'process':
+    case "process":
       process();
       break;
-    case 'getLogs':
+    case "getLogs":
       sendResponse({ logs: logMessages });
       return true;
   }
@@ -465,4 +494,3 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 //         }
 //         return
 //     })
-
