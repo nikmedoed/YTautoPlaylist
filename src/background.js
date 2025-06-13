@@ -1,4 +1,4 @@
-import { signInUser, initAuthListeners } from "./auth.js";
+import { initAuthListeners } from "./auth.js";
 import { getVideoInfo } from "./youTubeApiConnectors.js";
 import {
   storeDate,
@@ -7,6 +7,22 @@ import {
   parseVideoId,
 } from "./utils.js";
 import { process } from "./playlist.js";
+
+let isProcessing = false;
+function startProcess() {
+  if (isProcessing) {
+    console.warn("Process already running");
+    return;
+  }
+  isProcessing = true;
+  console.log("Processing started");
+  Promise.resolve(process())
+    .catch((err) => console.error("Processing failed", err))
+    .finally(() => {
+      isProcessing = false;
+      console.log("Processing finished");
+    });
+}
 setupLogCapture();
 
 chrome.storage.sync.get(["lastVideoDate"], function (result) {
@@ -15,7 +31,7 @@ chrome.storage.sync.get(["lastVideoDate"], function (result) {
   }
 });
 
-initAuthListeners(process);
+initAuthListeners(startProcess);
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   switch (request.type) {

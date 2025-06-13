@@ -71,8 +71,14 @@ export function initAuthListeners(processCallback) {
     }
   }
 
-  function signIn() {
-    signInUser().catch((err) => console.error("Sign-in failed", err));
+  async function signIn() {
+    console.log("Requesting YouTube authorization");
+    try {
+      await signInUser();
+      processCallback();
+    } catch (err) {
+      console.error("Sign-in failed", err);
+    }
   }
 
   chrome.storage.onChanged.addListener((changes) => {
