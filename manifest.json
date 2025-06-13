@@ -17,7 +17,7 @@
                 "service_worker": "background.js"
         },
 	"oauth2": {
-		"client_id": "***",
+		"client_id": "63911817448-jqopokpb65qot40t4h4mlde2nlbphmkc.apps.googleusercontent.com",
 		"scopes": [
 			"https://www.googleapis.com/auth/youtube"
 		]
