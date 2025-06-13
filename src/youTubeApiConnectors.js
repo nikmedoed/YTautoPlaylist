@@ -1,25 +1,25 @@
-import { getToken } from './auth.js';
-import { logMessage } from './utils.js';
+import { getToken } from "./auth.js";
+import { logMessage } from "./utils.js";
 
 // Utility for calling YouTube Data API via fetch
-async function callApi(path, params = {}, method = 'GET', body = null) {
+async function callApi(path, params = {}, method = "GET", body = null) {
   const token = await getToken();
-  const url = new URL('https://www.googleapis.com/youtube/v3/' + path);
+  const url = new URL("https://www.googleapis.com/youtube/v3/" + path);
   Object.entries(params).forEach(([k, v]) => {
     if (v !== undefined && v !== null) url.searchParams.set(k, v);
   });
   const init = {
     method,
-    headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }
+    headers: { Authorization: "Bearer " + token, Accept: "application/json" },
   };
   if (body) {
-    init.headers['Content-Type'] = 'application/json';
+    init.headers["Content-Type"] = "application/json";
     init.body = JSON.stringify(body);
   }
   const resp = await fetch(url.toString(), init);
   if (!resp.ok) {
     const text = await resp.text();
-    const err = new Error('API ' + path + ' failed: ' + resp.status);
+    const err = new Error("API " + path + " failed: " + resp.status);
     err.status = resp.status;
     err.body = text;
     try {
@@ -34,16 +34,16 @@ async function callApi(path, params = {}, method = 'GET', body = null) {
 
 // return promise with auth user subscriptions list of dicts {title, id, videos}
 async function getSubscriptionsId(pageToken) {
-  const data = await callApi('subscriptions', {
-    part: 'snippet,contentDetails',
+  const data = await callApi("subscriptions", {
+    part: "snippet,contentDetails",
     maxResults: 50,
     mine: true,
-    pageToken
+    pageToken,
   });
-  const subs = data.items.map(el => ({
+  const subs = data.items.map((el) => ({
     title: el.snippet.title,
     id: el.snippet.resourceId.channelId,
-    videos: el.contentDetails.totalItemCount
+    videos: el.contentDetails.totalItemCount,
   }));
   if (data.nextPageToken) {
     const next = await getSubscriptionsId(data.nextPageToken);
@@ -54,87 +54,114 @@ async function getSubscriptionsId(pageToken) {
 
 // return promise with uploads list id by userid
 async function getUploadsLists(userids) {
-  const data = await callApi('channels', {
-    part: 'contentDetails',
-    id: userids.join(','),
-    maxResults: 50
+  const data = await callApi("channels", {
+    part: "contentDetails",
+    id: userids.join(","),
+    maxResults: 50,
   });
-  return data.items.map(el => el.contentDetails.relatedPlaylists.uploads);
+  return data.items.map((el) => el.contentDetails.relatedPlaylists.uploads);
 }
 
-async function getRecentVideosBySearch(channelId, startDate, nextPage, origin = channelId, pages = 1) {
-  const data = await callApi('search', {
-    part: 'snippet',
+async function getRecentVideosBySearch(
+  channelId,
+  startDate,
+  nextPage,
+  origin = channelId,
+  pages = 1
+) {
+  const data = await callApi("search", {
+    part: "snippet",
     channelId,
-    type: 'video',
-    order: 'date',
+    type: "video",
+    order: "date",
     maxResults: 50,
     pageToken: nextPage,
-    publishedAfter: startDate.toISOString()
+    publishedAfter: startDate.toISOString(),
   });
-  const vids = data.items.map(el => ({
+  const vids = data.items.map((el) => ({
     vId: el.id.videoId,
     pubDate: new Date(el.snippet.publishedAt),
     videoInfo: el,
-    playlist: origin
+    playlist: origin,
   }));
   if (data.nextPageToken) {
-    const rest = await getRecentVideosBySearch(channelId, startDate, data.nextPageToken, origin, pages + 1);
+    const rest = await getRecentVideosBySearch(
+      channelId,
+      startDate,
+      data.nextPageToken,
+      origin,
+      pages + 1
+    );
     return { videos: vids.concat(rest.videos), pages: rest.pages };
   }
   return { videos: vids, pages };
 }
 
-async function getNewVideos(playlist, startDate = new Date(Date.now() - 604800000)) {
+async function getNewVideos(
+  playlist,
+  startDate = new Date(Date.now() - 604800000)
+) {
   const videos = [];
   let nextPage;
   let pages = 0;
   while (true) {
     let data;
     try {
-      data = await callApi('playlistItems', {
-        part: 'contentDetails',
+      data = await callApi("playlistItems", {
+        part: "contentDetails",
         maxResults: 50,
         playlistId: playlist,
-        pageToken: nextPage
+        pageToken: nextPage,
       });
     } catch (err) {
       const reason = err.error?.error?.errors?.[0]?.reason;
-      if (err.status === 404 && reason === 'playlistNotFound') {
-        console.warn('Uploads playlist not found', playlist, 'falling back to search');
-        const channelId = playlist.startsWith('UU') ? 'UC' + playlist.slice(2) : playlist;
-        return getRecentVideosBySearch(channelId, startDate, undefined, playlist);
+      if (err.status === 404 && reason === "playlistNotFound") {
+        console.warn(
+          "Uploads playlist not found",
+          playlist,
+          "falling back to search"
+        );
+        const channelId = playlist.startsWith("UU")
+          ? "UC" + playlist.slice(2)
+          : playlist;
+        return getRecentVideosBySearch(
+          channelId,
+          startDate,
+          undefined,
+          playlist
+        );
       }
       throw err;
     }
     pages++;
-    const items = data.items.map(el => ({
+    const items = data.items.map((el) => ({
       vId: el.contentDetails.videoId,
       pubDate: new Date(el.contentDetails.videoPublishedAt),
       videoInfo: el,
-      playlist
+      playlist,
     }));
     for (const it of items) {
       if (it.pubDate > startDate) videos.push(it);
     }
     const last = data.items[data.items.length - 1];
-    const lastDate = last ? new Date(last.contentDetails.videoPublishedAt) : null;
+    const lastDate = last
+      ? new Date(last.contentDetails.videoPublishedAt)
+      : null;
     if (!data.nextPageToken || (lastDate && lastDate <= startDate)) break;
     nextPage = data.nextPageToken;
   }
   if (videos.length > 0 || pages > 1) {
     const msg = [`Playlist ${playlist}`];
     if (pages > 1) msg.push(`${pages} pages`);
-    msg.push('new videos', videos.length);
-    console.log(msg.join(' '));
+    msg.push("new videos", videos.length);
+    console.log(msg.join(" "));
   }
   return { videos, pages };
 }
 
-
 async function addListToWL(storeDateFunction, playlistId, list, count = 0) {
   if (count == list.length) {
-    console.log('OK, added: ' + count);
+    console.log("OK, added: " + count);
     return count;
   }
   const targetVideo = list[count];
@@ -143,81 +170,109 @@ async function addListToWL(storeDateFunction, playlistId, list, count = 0) {
     console.log(`OK: ${targetVideo.vId}, count ${count}/${list.length}`);
     return addListToWL(storeDateFunction, playlistId, list, count + 1);
   } catch (err) {
-    const reason = err.error?.errors?.[0]?.reason || '';
+    const reason = err.error?.errors?.[0]?.reason || "";
     const status = err.status;
     switch (reason) {
-      case 'videoAlreadyInPlaylist':
-        logMessage('warn', targetVideo.vId, count, err.error.message);
+      case "videoAlreadyInPlaylist":
+        logMessage("warn", targetVideo.vId, count, err.error.message);
         return addListToWL(storeDateFunction, playlistId, list, count + 1);
-      case 'backendError':
-      case 'internalError':
-        logMessage('warn', targetVideo.vId, count, 'Backend error, retry in 1 min');
-        await new Promise(r => setTimeout(r, 60 * 1000));
+      case "backendError":
+      case "internalError":
+        logMessage(
+          "warn",
+          targetVideo.vId,
+          count,
+          "Backend error, retry in 1 min"
+        );
+        await new Promise((r) => setTimeout(r, 60 * 1000));
         return addListToWL(storeDateFunction, playlistId, list, count);
-      case 'rateLimitExceeded':
-        logMessage('warn', targetVideo.vId, count, 'Rate limit exceeded, 8 min pause');
-        await new Promise(r => setTimeout(r, 8 * 60 * 1000 + 500));
+      case "rateLimitExceeded":
+        logMessage(
+          "warn",
+          targetVideo.vId,
+          count,
+          "Rate limit exceeded, 8 min pause"
+        );
+        await new Promise((r) => setTimeout(r, 8 * 60 * 1000 + 500));
         return addListToWL(storeDateFunction, playlistId, list, count);
-      case 'quotaExceeded':
-        logMessage('error', targetVideo.vId, count, 'Quota exceeded');
+      case "quotaExceeded":
+        logMessage("error", targetVideo.vId, count, "Quota exceeded");
         return count;
-      case 'SERVICE_UNAVAILABLE':
-        logMessage('warn', targetVideo.vId, count, 'Service unavailable, retry in 1 min');
-        await new Promise(r => setTimeout(r, 60 * 1000));
+      case "SERVICE_UNAVAILABLE":
+        logMessage(
+          "warn",
+          targetVideo.vId,
+          count,
+          "Service unavailable, retry in 1 min"
+        );
+        await new Promise((r) => setTimeout(r, 60 * 1000));
         return addListToWL(storeDateFunction, playlistId, list, count);
       default:
         if (status >= 500) {
-          logMessage('warn', targetVideo.vId, count, 'Server error, retry in 1 min');
-          await new Promise(r => setTimeout(r, 60 * 1000));
+          logMessage(
+            "warn",
+            targetVideo.vId,
+            count,
+            "Server error, retry in 1 min"
+          );
+          await new Promise((r) => setTimeout(r, 60 * 1000));
           return addListToWL(storeDateFunction, playlistId, list, count);
         }
-        logMessage('error', targetVideo.vId, count, err.error?.message || err.message);
+        logMessage(
+          "error",
+          targetVideo.vId,
+          count,
+          err.error?.message || err.message
+        );
         return count;
     }
   }
 }
 
 async function createPlayList(title) {
-  return callApi('playlists', { part: 'snippet,status' }, 'POST', {
+  return callApi("playlists", { part: "snippet,status" }, "POST", {
     snippet: { title },
-    status: { privacyStatus: 'unlisted' }
+    status: { privacyStatus: "unlisted" },
   });
 }
 
 async function addVideoToWL(vId, playlistId) {
-  return callApi('playlistItems', { part: 'snippet' }, 'POST', {
+  return callApi("playlistItems", { part: "snippet" }, "POST", {
     snippet: {
       playlistId,
-      resourceId: { kind: 'youtube#video', videoId: vId }
-    }
+      resourceId: { kind: "youtube#video", videoId: vId },
+    },
   });
 }
 
 async function isShort(video) {
   const videoId = video.id || video.vId;
   try {
-    const res = await fetch(`https://www.youtube.com/shorts/${videoId}`, { method: 'HEAD', redirect: 'manual' });
+    const res = await fetch(`https://www.youtube.com/shorts/${videoId}`, {
+      method: "HEAD",
+      redirect: "manual",
+    });
     return res.status === 200;
   } catch (err) {
-    console.error('Failed to detect Short for', videoId, err);
+    console.error("Failed to detect Short for", videoId, err);
     return false;
   }
 }
 
 async function getVideoInfo(idList, nextPage) {
-  const data = await callApi('videos', {
-    part: 'snippet,contentDetails,liveStreamingDetails',
+  const data = await callApi("videos", {
+    part: "snippet,contentDetails,liveStreamingDetails",
     maxResults: 50,
-    id: idList.join(','),
-    pageToken: nextPage
+    id: idList.join(","),
+    pageToken: nextPage,
   });
-  const info = data.items.map(el => ({
+  const info = data.items.map((el) => ({
     vId: el.id,
     pubDate: el.snippet.publishedAt,
     id: el.id,
     ...el.snippet,
     ...el.contentDetails,
-    liveStreamingDetails: el.liveStreamingDetails
+    liveStreamingDetails: el.liveStreamingDetails,
   }));
   if (data.nextPageToken) {
     const rest = await getVideoInfo(idList, data.nextPageToken);
@@ -239,6 +294,5 @@ export {
   createPlayList,
   addVideoToWL,
   isShort,
-  getVideoInfo
+  getVideoInfo,
 };
-

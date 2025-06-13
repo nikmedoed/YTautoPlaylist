@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css"
+    />
+    <title>YT AutoWL settings</title>
+  </head>
+  <body>
+    <section class="section">
+      <div class="container">
+        <h2 class="title is-3 has-text-centered">
+          Automatic playlist collector from YouTube subscriptions
+        </h2>
+        <p class="subtitle has-text-centered">
+          This extension regularly adds new subscription videos to the "watch
+          later" playlist
+        </p>
+
+        <div class="notification is-light">
+          На этой странице вы можете настроить фильтры для игнорирования
+          некоторых видео. Это полезно, если вы не любите прямые трансляции
+          некоторых пользователей, очень короткие видео или очень длинные.
+        </div>
+
+        <div class="field">
+          <label class="label" for="startDate"
+            >В плейлист будут добавлены видео опубликованные после этой
+            даты</label
+          >
+          <div class="field has-addons">
+            <div class="control">
+              <input
+                id="startDate"
+                class="input"
+                style="max-width: 260px"
+                type="datetime-local"
+              />
+            </div>
+            <div class="control">
+              <button id="saveStartDate" class="button is-link" type="button">
+                Сохранить
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="label" for="videoId">ID или ссылка на видео</label>
+          <div class="field has-addons">
+            <div class="control is-expanded">
+              <input
+                id="videoId"
+                class="input"
+                type="text"
+                placeholder="https://youtu.be/abc123defgh"
+              />
+            </div>
+            <div class="control">
+              <button id="useVideoId" class="button is-link" type="button">
+                Использовать дату
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="content">
+          <p>
+            Создайте условия для игнорирования видео. Эти условия будут
+            применяться к каждому видео совместно. Если условия нужно применять
+            отдельно (как или) создайте несколько фильтров.
+          </p>
+          <p>
+            Пример фильтра: будет игнорировать видео короче 70 секунд и больше
+            45 минут
+          </p>
+        </div>
+
+        <form class="box" id="filterForm">
+          <div class="field">
+            <label class="label" for="channel">Канал</label>
+            <div class="control">
+              <div class="select is-fullwidth">
+                <select id="channel">
+                  <option value="">All</option>
+                  <option>California</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="label">Тип видео</label>
+            <div class="control">
+              <label class="radio">
+                <input id="any" name="videoType" type="radio" checked />
+                Any
+              </label>
+              <label class="radio">
+                <input id="broadcast" name="videoType" type="radio" />
+                Broadcasts
+              </label>
+              <label class="radio">
+                <input id="nobroadcast" name="videoType" type="radio" />
+                No broadcasts
+              </label>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="label" for="duration">Duration</label>
+            <div class="control">
+              <input class="input" id="duration" type="text" placeholder="" />
+            </div>
+            <p class="help" id="durationMessadge">
+              example: <mark>&gt; 43:10 ; &lt; 1:45:00</mark> will ignore videos
+              with duration of 43 minutes 10 seconds to 1 hour 45 minutes
+            </p>
+          </div>
+
+          <div class="field">
+            <label class="label" for="stopWords"
+              >Words or phrases in the name</label
+            >
+            <div class="control">
+              <textarea
+                class="textarea"
+                id="stopWords"
+                rows="3"
+                placeholder="Words or phrases separated by ';'"
+              ></textarea>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="label" for="stopTags">Tags combination</label>
+            <div class="control">
+              <textarea
+                class="textarea"
+                id="stopTags"
+                rows="2"
+                placeholder="Tags separated by ';'"
+              ></textarea>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="control">
+              <button class="button is-primary is-fullwidth" type="submit">
+                Create filter
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </section>
+    <script type="module" src="settings.js"></script>
+  </body>
+</html>
