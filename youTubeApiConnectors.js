@@ -104,14 +104,14 @@ async function getNewVideos(
   while (true) {
     let data;
 function logIssue(vId, count, message, isError = false) {
-  const msg = `Video id: ${vId} :: Count: ${count}\n${message}`;
+  const prefix = isError ? 'ERROR' : 'WARN';
+  const msg = `${prefix}: ${message} (video ${count + 1}: ${vId})`;
   (isError ? console.error : console.warn)(msg);
+  if (!list || list.length === 0) {
+    console.warn('addListToWL called with empty list');
+    return 0;
+  }
     if (storeDateFunction && list.length > 0) {
-      storeDateFunction(list[list.length - 1].pubDate);
-    }
-  if (count === list.length) {
-      await storeDateFunction(list[list.length - 1].pubDate);
-
     console.log(`OK: ${targetVideo.vId}, count ${count + 1}/${list.length}`);
     if (storeDateFunction) {
       // Save progress but do not wait

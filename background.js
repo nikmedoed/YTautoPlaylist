@@ -170,6 +170,12 @@ function main(startDate = new Date(new Date() - 604800000)) {
           .map((e) =>
             [
               parseDuration(e.duration),
+  const seenIds = new Set();
+  list = list.filter(v => {
+    if (seenIds.has(v.vId)) return false;
+    seenIds.add(v.vId);
+    return true;
+  });
               formatDate(e.pubDate),
               e.channelTitle,
               e.title,
