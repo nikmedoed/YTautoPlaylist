@@ -171,7 +171,7 @@ function addVideoToWL(vId, playlistId) {
 }
 
 async function isShort(video) {
-  const videoId = video.id
+  const videoId = video.id || video.vId
   const url = `https://www.youtube.com/shorts/${videoId}`;
   try {
     const response = await fetch(url, {

@@ -1,5 +1,5 @@
 {
-	"manifest_version": 2,
+        "manifest_version": 3,
 	"name": "Subscriptions to Watch Later Autoplaylist",
 	"short_name": "YT AutoWL",
 	"description": "Automatic playlist collector from YouTube subscriptions",
@@ -9,13 +9,12 @@
 		"128": "icon/icon.png"
 	},
 	"options_page": "settings/settings.html",
-	"browser_action": {
-		"default_icon": "icon/icon.png"
-	},
-	"background": {
-		"page": "background.html",
-		"persistent": true
-	},
+        "action": {
+                "default_icon": "icon/icon.png"
+        },
+        "background": {
+                "service_worker": "background.js"
+        },
 	"oauth2": {
 		"client_id": "***",
 		"scopes": [
@@ -23,11 +22,16 @@
 		]
 	},
 	"key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsbDZC2CTq1utK1O9sXISQG03Pn12nT6JF+kKCXzATEA0DOR8U7PtjfSrXS6cs0wlKrl/skUbM8nLU3wfFmYUjB0Evbjiy2mPC+71C+yWx3+d+8nGcsFd0x17yQzfww68eMPkCKqmOG2+Zj8nllmvLlkNxQtoZo5vXpxStp+PexcZV0VLkV/1QDCk5gazCPL0cPtNyRsV9sgVj8EU9UFXCR/hbq8cpNu9qY7Y+0r4BEnQk8wsScPrioC0mlVCGQUfOsnXwwB40iJAF4NwjO3CRIWPJPjadk2vPppGGLOiJM9Df+bJdoJPmSKgvp0d2AP9Y05RwQPns0Kfqt4/NsHXvQIDAQAB",
-	"permissions": [
-		"storage",
-		"identity",
-		"unlimitedStorage",
-		"notifications"
-	],
-	"content_security_policy": "script-src 'self' https://apis.google.com/; object-src 'self'"
+        "permissions": [
+                "storage",
+                "identity",
+                "notifications"
+        ],
+        "host_permissions": [
+                "https://www.youtube.com/*",
+                "https://www.googleapis.com/*"
+        ],
+        "content_security_policy": {
+                "extension_pages": "script-src 'self' https://apis.google.com/; object-src 'self'"
+        }
 }

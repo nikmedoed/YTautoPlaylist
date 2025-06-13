@@ -1,3 +1,5 @@
+importScripts('keys.js', 'auth.js', 'youTubeApiConnectors.js', 'https://apis.google.com/js/api.js');
+
 chrome.storage.sync.get(["lastVideoDate"], function (result) {
   if (!result.lastVideoDate) {
     storeDate(new Date(new Date() - 604800000));
@@ -21,11 +23,11 @@ chrome.storage.local.get(["authStatus"], function (result) {
 
 function updateSigninStatus(isSignedIn) {
   if (isSignedIn) {
-    chrome.browserAction.onClicked.removeListener(signIn);
-    chrome.browserAction.onClicked.addListener(process);
+    chrome.action.onClicked.removeListener(signIn);
+    chrome.action.onClicked.addListener(process);
   } else {
-    chrome.browserAction.onClicked.removeListener(process);
-    chrome.browserAction.onClicked.addListener(signIn);
+    chrome.action.onClicked.removeListener(process);
+    chrome.action.onClicked.addListener(signIn);
   }
 }
 
@@ -222,6 +224,17 @@ function filterID(list) {
     .then(list => list
       .filter(video => filters.every(fltr => fltr(video)))
     )
+    .then(list => Promise.all(
+      list.map(async video => {
+        try {
+          const short = await isShort(video);
+          return short ? null : video;
+        } catch (err) {
+          console.error('Failed short check', err);
+          return video;
+        }
+      })
+    ).then(res => res.filter(Boolean)))
 
   // .then(list => list
   //   .filter(video => !filters.every(fltr => fltr(video)))

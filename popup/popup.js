@@ -16,11 +16,11 @@ chrome.storage.local.get(['authStatus'], function(result) {
 
 function updateSigninStatus(isSignedIn) {
     if (isSignedIn) {
-        chrome.browserAction.onClicked.removeListener(handleAuthClick);
-        chrome.browserAction.onClicked.addListener(handleAdd);
+        chrome.action.onClicked.removeListener(handleAuthClick);
+        chrome.action.onClicked.addListener(handleAdd);
     } else {
-        chrome.browserAction.onClicked.removeListener(handleAdd);
-        chrome.browserAction.onClicked.addListener(handleAuthClick);
+        chrome.action.onClicked.removeListener(handleAdd);
+        chrome.action.onClicked.addListener(handleAuthClick);
     }
 }
 
