@@ -69,7 +69,7 @@ function getNewVideos(
       part: "contentDetails",
       maxResults: 50,
       playlistId: playlist,
-      nextPageToken: nextP,
+      pageToken: nextP,
     })
     .then(
       function (response) {
