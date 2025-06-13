@@ -29,5 +29,5 @@ export const TAGFILTER = {
 
 export const LENFILTER = {
   "UCBG57608Hukev3d0d-gvLhQ": [{ min: 0, max: 50 * 60 }],
-  "UCXoAjrdHFa2hEL3Ug8REC1w": [{ min: 0, max: 29 * 60 }],
+  UCXoAjrdHFa2hEL3Ug8REC1w: [{ min: 0, max: 29 * 60 }],
 };

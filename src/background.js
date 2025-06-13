@@ -17,7 +17,6 @@ chrome.storage.sync.get(["lastVideoDate"], function (result) {
 
 initAuthListeners(process);
 
-
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   switch (request.type) {
     case "signIn":
