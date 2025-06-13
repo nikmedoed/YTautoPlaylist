@@ -130,8 +130,7 @@ function main(startDate = new Date(new Date() - 604800000)) {
             const pl = playlistMap[id];
             if (stats[pl]) stats[pl].filtered++;
           });
-          videos.forEach((v) => {
-            const pl = playlistMap[v.vId];
+        return el
             stats[pl].add++;
             v.playlist = pl;
           });
