@@ -45,14 +45,5 @@ function handleLogs(event) {
 }
 
 
-// function updateSigninStatus(isSignedIn) {
-//     if (isSignedIn) {
-//         authorizeButton.style.display = 'none';
-//         addButton.style.display = 'block';
-//     } else {
-//         authorizeButton.style.display = 'block';
-//         addButton.style.display = 'none';
-//     }
-// }
 
 

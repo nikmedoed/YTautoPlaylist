@@ -1,3 +1,6 @@
+import { getToken } from './auth.js';
+import { logMessage } from './utils.js';
+
 // Utility for calling YouTube Data API via fetch
 async function callApi(path, params = {}, method = 'GET', body = null) {
   const token = await getToken();
@@ -128,14 +131,6 @@ async function getNewVideos(playlist, startDate = new Date(Date.now() - 60480000
   return { videos, pages };
 }
 
-function logMessage(level, vId, count, message) {
-  const text = `Video id: ${vId} :: Count: ${count}\n${message}`;
-  if (level === 'warn') {
-    console.warn(text);
-  } else {
-    console.error(text);
-  }
-}
 
 async function addListToWL(storeDateFunction, playlistId, list, count = 0) {
   if (count == list.length) {
@@ -231,10 +226,19 @@ async function getVideoInfo(idList, nextPage) {
   return info;
 }
 
-if (typeof module !== 'undefined') {
-  module.exports = {
-    getNewVideos,
-    __setCallApi: fn => callApi = fn
-  };
+export function __setCallApi(fn) {
+  callApi = fn;
 }
+
+export {
+  getSubscriptionsId,
+  getUploadsLists,
+  getRecentVideosBySearch,
+  getNewVideos,
+  addListToWL,
+  createPlayList,
+  addVideoToWL,
+  isShort,
+  getVideoInfo
+};
 
