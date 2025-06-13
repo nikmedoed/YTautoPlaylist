@@ -177,7 +177,6 @@ function main(startDate = new Date(new Date() - 604800000)) {
             ].join("\t")
           )
           .join("\n")
-      );
       return list;
     })
     .then(createListAndAddVideos);

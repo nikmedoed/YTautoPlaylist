@@ -103,18 +103,25 @@ async function getNewVideos(
   let pages = 0;
   while (true) {
     let data;
-    try {
-      data = await callApi("playlistItems", {
-        part: "contentDetails",
-        maxResults: 50,
-        playlistId: playlist,
-        pageToken: nextPage,
-      });
-    } catch (err) {
-      const reason = err.error?.error?.errors?.[0]?.reason;
-      if (err.status === 404 && reason === "playlistNotFound") {
-        console.warn(
-          "Uploads playlist not found",
+function logIssue(vId, count, message, isError = false) {
+  const msg = `Video id: ${vId} :: Count: ${count}\n${message}`;
+  (isError ? console.error : console.warn)(msg);
+    if (storeDateFunction && list.length > 0) {
+      storeDateFunction(list[list.length - 1].pubDate);
+    }
+        logIssue(targetVideo.vId, count, 'Already in playlist');
+        logIssue(targetVideo.vId, count, 'Service unavailable, retrying in 1 min');
+        logIssue(targetVideo.vId, count, 'Rate limit exceeded, waiting 8 min');
+        logIssue(targetVideo.vId, count, 'Quota exceeded', true);
+        if (storeDateFunction && count > 0) {
+          storeDateFunction(list[count - 1].pubDate);
+        }
+          logIssue(targetVideo.vId, count, 'Service unavailable, retrying in 1 min');
+          logIssue(targetVideo.vId, count, 'Temporary quota exhausted, waiting 8 min');
+        logIssue(targetVideo.vId, count, err.error?.message || err.message, true);
+        if (storeDateFunction && count > 0) {
+          storeDateFunction(list[count - 1].pubDate);
+        }
           playlist,
           "falling back to search"
         );
