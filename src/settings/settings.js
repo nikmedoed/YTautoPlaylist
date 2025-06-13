@@ -17,7 +17,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const val = startInput.value;
     const dt = new Date(val);
     if (String(dt) !== 'Invalid Date') {
-      chrome.runtime.sendMessage({ type: 'setStartDate', date: dt.toISOString() });
+      chrome.runtime.sendMessage(
+        { type: 'setStartDate', date: dt.toISOString() },
+        (res) => {
+          if (res && res.ok) {
+            startInput.value = dt.toISOString().slice(0, 16);
+          }
+        }
+      );
     }
   });
 
