@@ -217,12 +217,6 @@ function parseDuration(duration) {
 }
 
 
-// виды фильтров Канал+длительность
-// наличие в названии
-// канал + тег
-// тег
-// длительность
-// трансляция ли + канал/название
 async function filterID(list) {
   console.log('Fetching info for', list.length, 'videos');
   const TITLEFILTER = {
