@@ -5,7 +5,7 @@ chrome.storage.sync.get(["lastVideoDate"], function (result) {
 });
 
 function storeDate(date) {
-  chrome.storage.sync.set({ lastVideoDate: date.toString() }, function () {
+  return chrome.storage.sync.set({ lastVideoDate: date.toString() }, function () {
     console.log("lastVideoDate is set to " + date);
   });
 }
@@ -38,16 +38,19 @@ function sleep(ms) {
 }
 
 function process() {
-  // getVideoInfo(["Zj1JrEQH9JA"]).then((e) => {
+
+  main(new Date(Date.now() - 24 * 60 * 60 * 1000))
+
+  // getVideoInfo(["fzmm4cCXPs4"]).then((e) => {
   //   // console.log('Date: '+ e)
   //   storeDate(new Date(e[0].pubDate));
   // });
 
-  chrome.storage.sync.get(["lastVideoDate"], function (result) {
-    mainDate = new Date(result.lastVideoDate);
-    console.log("startDate", mainDate);
-    main(mainDate);
-  });
+  // chrome.storage.sync.get(["lastVideoDate"], function (result) {
+  //   mainDate = new Date(result.lastVideoDate);
+  //   console.log("startDate", mainDate);
+  //   main(mainDate);
+  // });
 }
 
 // document.querySelector('.post__title').textContent,
@@ -160,14 +163,24 @@ function parseDuration(duration) {
   return totalseconds
 }
 
+
+// виды фильтров Канал+длительность
+// наличие в названии
+// канал + тег
+// тег
+// длительность
+// трансляция ли + канал/название
 function filterID(list) {
 
   const TITLEFILTER = {
     'UC7Elc-kLydl-NAV4g204pDQ': ['новости |', 'военное положение |'],
     'UCt7sv-NKh44rHAEb-qCCxvA': ['ostronews', 'iphone'],
-    'UC8zQiuT0m1TELequJ5sp5zw': ['подкаст', 'Подкаст', 'спецэфир'],
+    'UC8zQiuT0m1TELequJ5sp5zw': ['подкаст', 'подкаст', 'спецэфир'],
+    'UC3cJiUuZlpF-pkzqvSskTpg': ['разгоны #', 'чувс', 'книжный клуб'],
+    'UCixlrqz8w-oa4UzdKyHLMaA': ['yet another podcast'],
     'UCn9bv143ECsDMw-kJCNN7QA': ['подземелья чикен']
   }
+  
 
   const BROADCASTFILLTER = [
     'UC7Elc-kLydl-NAV4g204pDQ',
@@ -188,16 +201,18 @@ function filterID(list) {
   const filters = [
     video => parseDuration(video.duration) > 61,
     video => {
-      let titfilt = TITLEFILTER[video.channelId]
+      let titfilt = TITLEFILTER[video.channelId];
       if (titfilt && titfilt.length > 0) {
-        let title = video.title.toLowerCase()
-        return !titfilt.some(tit => title.includes(tit))
+        let title = video.title.toLowerCase();
+        return !titfilt.some(tit => title.includes(tit));
       }
-      return true
+      return true;
     },
-    video => !(video.liveStreamingDetails
+    video => !(
+      video.liveStreamingDetails
       && video.liveStreamingDetails.actualStartTime != video.liveStreamingDetails.scheduledStartTime
-      && BROADCASTFILLTER.includes(video.channelId))
+      && BROADCASTFILLTER.includes(video.channelId)
+    )
   ]
 
   return Promise.all(list
@@ -207,16 +222,10 @@ function filterID(list) {
     .then(list => list
       .filter(video => filters.every(fltr => fltr(video)))
     )
+
   // .then(list => list
   //   .filter(video => !filters.every(fltr => fltr(video)))
   // )
-
-  // виды фильтров Канал+длительность
-  // наличие в названии
-  // канал + тег
-  // тег
-  // длительность
-  // трансляция ли + канал/название
 }
 
 // document.querySelector('#go-to-options').addEventListener(function() {
