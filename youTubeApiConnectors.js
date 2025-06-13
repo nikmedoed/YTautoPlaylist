@@ -82,6 +82,9 @@ async function getRecentVideosBySearch(channelId, startDate, nextPage) {
 }
 
 async function getNewVideos(playlist, startDate = new Date(Date.now() - 604800000), nextPage) {
+  if (!nextPage) {
+    console.log('Requesting playlist items for', playlist);
+  }
   let data;
   try {
     data = await callApi('playlistItems', {
@@ -104,8 +107,11 @@ async function getNewVideos(playlist, startDate = new Date(Date.now() - 60480000
     .filter(item => item.pubDate > startDate);
   if (data.nextPageToken) {
     const rest = await getNewVideos(playlist, startDate, data.nextPageToken);
+    const total = newVid.length + rest.length;
+    if (!nextPage) console.log('Playlist', playlist, 'total new videos', total);
     return newVid.concat(rest);
   }
+  if (!nextPage) console.log('Playlist', playlist, 'new videos', newVid.length);
   return newVid;
 }
 
