@@ -131,8 +131,16 @@ function main(startDate = new Date(new Date() - 604800000)) {
         });
       })
       .then((el) => {
-        elems = el.sort((a, b) => new Date(a.pubDate) - new Date(b.pubDate));
-        return elems;
+        const sorted = el.sort((a, b) => new Date(a.pubDate) - new Date(b.pubDate));
+        const seen = new Set();
+        const unique = [];
+        for (const v of sorted) {
+          if (!seen.has(v.vId)) {
+            seen.add(v.vId);
+            unique.push(v);
+          }
+        }
+        return unique;
       })
       .then(list => {
         console.log('New Videos:', list)
@@ -162,6 +170,10 @@ function formatDate(date) {
 }
 
 function createListAndAddVideos(list) {
+  if (!list || list.length === 0) {
+    console.warn('No videos to add');
+    return Promise.resolve(0);
+  }
   title = `WL ${formatDate(list[0].pubDate)} - ${formatDate(list[list.length - 1].pubDate)}`
   return createPlayList(title)
     .then(plst => {
@@ -178,15 +190,15 @@ function createListAndAddVideos(list) {
       const reason = err.error?.errors?.[0]?.reason || ''
       switch (reason) {
         case 'rateLimitExceeded':
-          console.error('Rate limit exceeded while creating playlist')
-          break
+          logMessage('warn', 'create', list.length, 'Rate limit exceeded, retry in 8 min')
+          return new Promise(r => setTimeout(r, 8 * 60 * 1000 + 500)).then(() => createListAndAddVideos(list))
         case 'quotaExceeded':
-          console.error('Quota exceeded while creating playlist')
-          break
+          logMessage('error', 'create', list.length, 'Quota exceeded')
+          return 0
         default:
-          console.error('Failed to create playlist', err.error?.message || err.message)
+          logMessage('error', 'create', list.length, err.error?.message || err.message)
+          return 0
       }
-      return 0
     })
 }
 
