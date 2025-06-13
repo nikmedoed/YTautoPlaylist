@@ -140,25 +140,41 @@ async function addListToWL(storeDateFunction, playlistId, list, count = 0) {
   const targetVideo = list[count];
   try {
     await addVideoToWL(targetVideo.vId, playlistId);
+    if (storeDateFunction) {
+      await storeDateFunction(targetVideo.pubDate);
+    }
     console.log(`OK: ${targetVideo.vId}, count ${count}/${list.length}`);
     return addListToWL(storeDateFunction, playlistId, list, count + 1);
   } catch (err) {
     const reason = err.error?.errors?.[0]?.reason || '';
     switch (reason) {
       case 'videoAlreadyInPlaylist':
-        errorMessage(targetVideo.vId, count, err.error.message);
+        console.warn(`Already in playlist: ${targetVideo.vId}`);
         return addListToWL(storeDateFunction, playlistId, list, count + 1);
       case 'backendError':
-        errorMessage(targetVideo.vId, count, 'Backend Error');
+      case 'serviceUnavailable':
+        console.warn('Service unavailable, retrying in 1 min');
+        await new Promise(r => setTimeout(r, 60 * 1000));
         return addListToWL(storeDateFunction, playlistId, list, count);
       case 'rateLimitExceeded':
-        errorMessage(targetVideo.vId, count, 'Rate Limit Exceeded, 8 min pause');
+      case 'userRateLimitExceeded':
+        console.warn('Rate limit exceeded, waiting 8 min');
         await new Promise(r => setTimeout(r, 8 * 60 * 1000 + 500));
         return addListToWL(storeDateFunction, playlistId, list, count);
       case 'quotaExceeded':
-        errorMessage(targetVideo.vId, count, 'Quota exceeded');
+        console.error('Quota exceeded');
         return count;
       default:
+        if (err.status === 503) {
+          console.warn('Service unavailable, retrying in 1 min');
+          await new Promise(r => setTimeout(r, 60 * 1000));
+          return addListToWL(storeDateFunction, playlistId, list, count);
+        }
+        if (err.status === 429) {
+          console.warn('Temporary quota exhausted, waiting 8 min');
+          await new Promise(r => setTimeout(r, 8 * 60 * 1000 + 500));
+          return addListToWL(storeDateFunction, playlistId, list, count);
+        }
         errorMessage(targetVideo.vId, count, err.error?.message || err.message);
         return count;
     }

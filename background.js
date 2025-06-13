@@ -15,8 +15,11 @@ chrome.storage.sync.get(["lastVideoDate"], function (result) {
 });
 
 function storeDate(date) {
-  return chrome.storage.sync.set({ lastVideoDate: date.toString() }, function () {
-    console.log("lastVideoDate is set to " + date);
+  return new Promise(resolve => {
+    chrome.storage.sync.set({ lastVideoDate: date.toString() }, () => {
+      console.log("lastVideoDate is set to " + date);
+      resolve();
+    });
   });
 }
 
@@ -150,7 +153,14 @@ function main(startDate = new Date(new Date() - 604800000)) {
         });
       })
       .then((el) => {
-        elems = el.sort((a, b) => new Date(a.pubDate) - new Date(b.pubDate));
+        const seen = new Set();
+        elems = el
+          .sort((a, b) => new Date(a.pubDate) - new Date(b.pubDate))
+          .filter(v => {
+            if (seen.has(v.vId)) return false;
+            seen.add(v.vId);
+            return true;
+          });
         return elems;
       })
       .then(list => {
@@ -181,6 +191,10 @@ function formatDate(date) {
 }
 
 function createListAndAddVideos(list) {
+  if (!list || list.length === 0) {
+    console.warn('No videos to add');
+    return Promise.resolve(0);
+  }
   title = `WL ${formatDate(list[0].pubDate)} - ${formatDate(list[list.length - 1].pubDate)}`
   return createPlayList(title)
     .then(plst => {
