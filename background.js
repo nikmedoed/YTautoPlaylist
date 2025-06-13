@@ -176,7 +176,7 @@ function main(startDate = new Date(new Date() - 604800000)) {
     seenIds.add(v.vId);
     return true;
   });
-              formatDate(e.pubDate),
+  const title = `WL ${formatDate(list[0].pubDate)} - ${formatDate(list[list.length - 1].pubDate)}`
               e.channelTitle,
               e.title,
               e.vId,
