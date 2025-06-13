@@ -48,33 +48,10 @@ function signIn() {
   signInUser().catch(err => console.error('Sign-in failed', err));
 }
 
-// Legacy helper used for notification progress examples
-// function sleep(ms) {
-//   return new Promise(resolve => setTimeout(resolve, ms));
-// }
 
 function process() {
-
-  main(new Date(Date.now() - 24 * 60 * 60 * 1000))
-
-  // getVideoInfo(["fzmm4cCXPs4"]).then((e) => {
-  //   // console.log('Date: '+ e)
-  //   storeDate(new Date(e[0].pubDate));
-  // });
-
-  // chrome.storage.sync.get(["lastVideoDate"], function (result) {
-  //   mainDate = new Date(result.lastVideoDate);
-  //   console.log("startDate", mainDate);
-  //   main(mainDate);
-  // });
+  main(new Date(Date.now() - 24 * 60 * 60 * 1000));
 }
-
-// document.querySelector('.post__title').textContent,
-//window.location.href
-// var button = document.createElement("button");
-// button.innerHTML = "Save to Google Spreadsheets";
-
-
 
 async function main(startDate = new Date(Date.now() - 604800000)) {
   const subs = await getSubscriptionsId();
@@ -257,26 +234,6 @@ async function filterID(list) {
   return { videos, shorts, filtered };
 }
 
-// document.querySelector('#go-to-options').addEventListener(function() {
-//     if (chrome.runtime.openOptionsPage) {
-//       chrome.runtime.openOptionsPage();
-//     } else {
-//       window.open(chrome.runtime.getURL('options.html'));
-//     }
-//   });
-// in manifest
-
-// "content_scripts": [
-//     {
-//         "matches": [
-//             "https://bumbu.me/*"
-//     ],
-//         "js": [
-//             "inject.js"
-//     ],
-//     "run_at": "document_end"
-//     }
-// ],
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   switch (request.type) {
@@ -293,6 +250,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return true;
 });
 
-// Example of progress notification, kept for future reference
-// chrome.notifications.create(null, {/* ... */});
 
