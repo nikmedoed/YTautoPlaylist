@@ -26,24 +26,15 @@ chrome.storage.sync.get(["lastVideoDate"], function (result) {
 });
 
 initAuthListeners(process);
-function process(videoIds) {
+function process() {
   if (DEV_MODE) {
     main(new Date(Date.now() - 24 * 60 * 60 * 1000));
   } else {
-    if (Array.isArray(videoIds) && videoIds.length > 0) {
-      getVideoInfo(videoIds).then((info) => {
-        const mainDate = new Date(info[0].pubDate);
-        storeDate(mainDate);
-        console.log("startDate", mainDate);
-        main(mainDate);
-      });
-    } else {
-      chrome.storage.sync.get(["lastVideoDate"], function (result) {
-        const mainDate = new Date(result.lastVideoDate);
-        console.log("startDate", mainDate);
-        main(mainDate);
-      });
-    }
+    chrome.storage.sync.get(["lastVideoDate"], (result) => {
+      const mainDate = new Date(result.lastVideoDate);
+      console.log("startDate", mainDate);
+      main(mainDate);
+    });
   }
 }
 
@@ -198,8 +189,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       signInUser().catch((err) => console.error("Sign-in failed", err));
       break;
     case "process":
-      process(request.videoIds);
+      process();
       break;
+    case "setStartDate":
+      storeDate(new Date(request.date)).then(() => sendResponse({ ok: true }));
+      return true;
+    case "videoDate":
+      getVideoInfo([request.videoId])
+        .then((info) => {
+          const date = new Date(info[0].pubDate);
+          storeDate(date).then(() => {
+            sendResponse({ date: date.toISOString() });
+          });
+        })
+        .catch((err) => {
+          console.error("Failed to get video date", err);
+          sendResponse({ error: err.message });
+        });
+      return true;
     case "getLogs":
       sendResponse({ logs: logMessages });
       return true;

@@ -21,6 +21,15 @@
             <div class="control">
                 <input id="startDate" class="input" type="datetime-local">
             </div>
+            <button id="saveStartDate" class="button is-link mt-2" type="button">Сохранить дату</button>
+        </div>
+
+        <div class="field">
+            <label class="label" for="videoId">ID или ссылка на видео</label>
+            <div class="control">
+                <input id="videoId" class="input" type="text" placeholder="https://youtu.be/abc123defgh">
+            </div>
+            <button id="useVideoId" class="button is-link mt-2" type="button">Использовать дату видео</button>
         </div>
 
         <div class="content">
@@ -89,5 +98,6 @@
         </form>
     </div>
 </section>
+<script type="module" src="settings.js"></script>
 </body>
 </html>
