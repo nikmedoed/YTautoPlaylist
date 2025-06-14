@@ -248,6 +248,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     addLabel.textContent = "Добавить фильтры:";
     addRow.appendChild(addLabel);
 
+    let btnContainer = addRow;
+    if (channelId) {
+      btnContainer = document.createElement("div");
+      btnContainer.className = "top-row";
+    }
+
     const btnDur = document.createElement("button");
     btnDur.type = "button";
     btnDur.className = "button is-small is-info";
@@ -271,6 +277,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     box.appendChild(topRow);
     box.appendChild(addRow);
+    if (channelId) box.appendChild(btnContainer);
 
     const durGroup = createGroup(
       "Длительность",
