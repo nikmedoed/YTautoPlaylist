@@ -1,15 +1,11 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-theme="light">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css"
-    />
-    <link
-      rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css"
     />
     <title>YT AutoWL settings</title>
     <style>
@@ -25,6 +21,12 @@
         max-width: 100%;
       }
       @media (max-width: 1024px) {
+        .filter-card {
+          flex: 0 0 calc(50% - 1rem);
+          max-width: calc(50% - 1rem);
+        }
+      }
+      @media (max-width: 768px) {
         .filter-card {
           flex: 1 0 100%;
           max-width: 100%;
@@ -51,7 +53,8 @@
         width: 7rem;
       }
       .filter-row .input[type="text"] {
-        width: 24rem;
+        flex: 1 1 auto;
+        min-width: 0;
       }
       .filter-group {
         margin-bottom: 0.5rem;
@@ -66,6 +69,9 @@
         display: flex;
         flex-wrap: wrap;
         gap: 0.5rem;
+      }
+      .filter-card .add-row .add-label {
+        display: block;
       }
       #filtersContainer {
         display: flex;
@@ -151,11 +157,11 @@
               >Задать дату на основе видео</label
             >
             <div class="field has-addons">
-              <div class="control">
+              <div class="control is-expanded">
                 <input
                   id="videoId"
                   class="input"
-                  style="width: 520px"
+                  style="min-width: 0"
                   type="text"
                   placeholder="ID или ссылка на видео"
                 />
@@ -237,7 +243,9 @@
               <select id="addChannelSelect"></select>
             </div>
             <button id="addChannel" class="button is-link is-fullwidth">
-              <span class="icon"><i class="fas fa-plus"></i></span>
+              <span class="icon">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor"><path fill-rule="evenodd" d="M12 4a1 1 0 0 1 1 1v6h6a1 1 0 0 1 0 2h-6v6a1 1 0 1 1-2 0v-6H5a1 1 0 1 1 0-2h6V5a1 1 0 0 1 1-1z" clip-rule="evenodd"/></svg>
+              </span>
               <span>Добавить</span>
             </button>
           </div>

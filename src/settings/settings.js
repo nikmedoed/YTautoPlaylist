@@ -2,6 +2,11 @@ import { parseVideoId } from "../utils.js";
 import { getFilters, saveFilters } from "../filter.js";
 import { getChannelMap } from "../youTubeApiConnectors.js";
 
+const iconPlus =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor"><path fill-rule="evenodd" d="M12 4a1 1 0 0 1 1 1v6h6a1 1 0 0 1 0 2h-6v6a1 1 0 1 1-2 0v-6H5a1 1 0 1 1 0-2h6V5a1 1 0 0 1 1-1z" clip-rule="evenodd"/></svg>';
+const iconTrash =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor"><path d="M9 3a1 1 0 0 0-1 1v1H5a1 1 0 0 0 0 2h14a1 1 0 0 0 0-2h-3V4a1 1 0 0 0-1-1H9zm-3 7v9a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-9H6z"/></svg>';
+
 function toTimeStr(sec) {
   if (sec === undefined || sec === null || sec === Infinity) return "";
   const h = Math.floor(sec / 3600)
@@ -96,7 +101,7 @@ function createGroup(labelText, type, rows, createRowFn) {
   const addBtn = document.createElement("button");
   addBtn.type = "button";
   addBtn.className = "button is-small is-success";
-  addBtn.innerHTML = '<span class="icon"><i class="fas fa-plus"></i></span>';
+  addBtn.innerHTML = `<span class="icon">${iconPlus}</span>`;
   header.appendChild(addBtn);
 
   const list = document.createElement("div");
@@ -212,7 +217,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const remove = document.createElement("button");
       remove.className = "button is-danger is-light is-small remove-btn";
       remove.type = "button";
-      remove.innerHTML = '<span class="icon"><i class="fas fa-trash"></i></span>';
+      remove.innerHTML = `<span class="icon">${iconTrash}</span>`;
       remove.addEventListener("click", () => {
         box.remove();
         const opt = document.createElement("option");
@@ -238,31 +243,32 @@ document.addEventListener("DOMContentLoaded", async () => {
     topRow.appendChild(chkBroadcast);
 
     const addRow = document.createElement("div");
-    addRow.className = "top-row";
+    addRow.className = "top-row add-row";
 
     const addLabel = document.createElement("span");
     addLabel.textContent = "Добавить фильтры:";
+    addLabel.className = "add-label";
     addRow.appendChild(addLabel);
 
     const btnDur = document.createElement("button");
     btnDur.type = "button";
     btnDur.className = "button is-small is-info";
     btnDur.innerHTML =
-      '<span class="icon"><i class="fas fa-plus"></i></span><span>Длительность</span>';
+      `<span class="icon">${iconPlus}</span><span>Длительность</span>`;
     addRow.appendChild(btnDur);
 
     const btnTitle = document.createElement("button");
     btnTitle.type = "button";
     btnTitle.className = "button is-small is-info";
     btnTitle.innerHTML =
-      '<span class="icon"><i class="fas fa-plus"></i></span><span>Заголовок</span>';
+      `<span class="icon">${iconPlus}</span><span>Заголовок</span>`;
     addRow.appendChild(btnTitle);
 
     const btnTag = document.createElement("button");
     btnTag.type = "button";
     btnTag.className = "button is-small is-info";
     btnTag.innerHTML =
-      '<span class="icon"><i class="fas fa-plus"></i></span><span>Тег</span>';
+      `<span class="icon">${iconPlus}</span><span>Тег</span>`;
     addRow.appendChild(btnTag);
 
     box.appendChild(topRow);
