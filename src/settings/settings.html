@@ -123,8 +123,8 @@
           Расширение собирает новые видео после указанной даты. При желании дату
           можно определить по конкретному ролику.
         </p>
-        <div class="is-flex is-align-items-flex-end mb-4" id="timeControls">
-          <div class="mr-5">
+        <div class="columns is-align-items-flex-end is-variable is-2 mb-4" id="timeControls">
+          <div class="column is-full-mobile is-one-third-tablet">
             <label class="mb-1" for="startDate"
               >В плейлист будут добавлены видео опубликованные после этой
               даты</label
@@ -145,8 +145,7 @@
               </div>
             </div>
           </div>
-
-          <div>
+          <div class="column is-full-mobile is-two-thirds-tablet">
             <label class="mb-1" for="videoId"
               >Задать дату на основе видео</label
             >
@@ -154,8 +153,7 @@
               <div class="control">
                 <input
                   id="videoId"
-                  class="input"
-                  style="width: 520px"
+                  class="input is-fullwidth"
                   type="text"
                   placeholder="ID или ссылка на видео"
                 />
