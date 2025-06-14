@@ -28,6 +28,9 @@
       .filter-card {
         padding: 0.75rem;
         position: relative;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
       }
       .top-row {
         display: flex;
@@ -81,6 +84,10 @@
         align-items: center;
         justify-content: center;
         gap: 0.5rem;
+      }
+
+      #filtersContainer {
+        grid-auto-rows: 1fr;
       }
 
       #filtersButtons .buttons {
@@ -221,8 +228,8 @@
       </div>
 
       <div class="container is-fluid">
-        <div id="filtersContainer" class="columns is-multiline">
-          <div id="addChannelCard" class="column is-one-quarter-widescreen is-one-third-desktop is-half-tablet">
+        <div id="filtersContainer" class="grid is-col-min-19 is-gap-4">
+          <div id="addChannelCard" class="cell">
             <div class="box filter-card add-card">
               <div class="group-header">
                 <span class="has-text-weight-bold">Фильтровать другой канал</span>

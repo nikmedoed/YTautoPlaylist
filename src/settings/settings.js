@@ -191,10 +191,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   function createSection(title, data = {}, channelId) {
-    const column = document.createElement("div");
-    column.className = channelId
-      ? "column is-one-quarter-widescreen is-one-third-desktop is-half-tablet"
-      : "column is-full";
+    const cell = document.createElement("div");
+    cell.className = "cell";
 
     const box = document.createElement("div");
     box.className = "box filter-card";
@@ -219,7 +217,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       remove.type = "button";
       remove.innerHTML = '<span class="icon"><i class="fas fa-trash"></i></span>';
       remove.addEventListener("click", () => {
-        column.remove();
+        cell.remove();
         const opt = document.createElement("option");
         opt.value = channelId;
         opt.textContent = channels[channelId]?.title || channelId;
@@ -300,8 +298,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     btnTitle.addEventListener("click", titleGroup.add);
     btnTag.addEventListener("click", tagGroup.add);
 
-    column.appendChild(box);
-    return column;
+    cell.appendChild(box);
+    return cell;
   }
 
   const globalSec = createSection("Глобальные", filters.global, null);
