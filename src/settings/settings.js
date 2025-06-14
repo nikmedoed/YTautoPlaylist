@@ -52,8 +52,10 @@ function createDurationRow(min = 0, max = Infinity) {
   row.appendChild(to);
 
   const del = document.createElement("button");
-  del.className = "delete";
+  del.className = "button is-white is-small remove-row";
   del.type = "button";
+  del.innerHTML =
+    '<span class="icon"><svg width="1em" height="1em"><use href="icons.svg#icon-x" /></svg></span>';
   del.addEventListener("click", () => row.remove());
   row.appendChild(del);
 
@@ -72,8 +74,10 @@ function createTextRow(type, value = "") {
   row.appendChild(input);
 
   const del = document.createElement("button");
-  del.className = "delete";
+  del.className = "button is-white is-small remove-row";
   del.type = "button";
+  del.innerHTML =
+    '<span class="icon"><svg width="1em" height="1em"><use href="icons.svg#icon-x" /></svg></span>';
   del.addEventListener("click", () => row.remove());
   row.appendChild(del);
 
