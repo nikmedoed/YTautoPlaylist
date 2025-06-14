@@ -69,92 +69,34 @@
 
         <div class="content">
           <p>
-            Создайте условия для игнорирования видео. Эти условия будут
-            применяться к каждому видео совместно. Если условия нужно применять
-            отдельно (как или) создайте несколько фильтров.
-          </p>
-          <p>
-            Пример фильтра: будет игнорировать видео короче 70 секунд и больше
-            45 минут
+            Создайте условия для игнорирования видео. Эти параметры будут
+            применяться при создании плейлиста. Сначала укажите глобальные
+            настройки, затем индивидуальные для каналов.
           </p>
         </div>
 
-        <form class="box" id="filterForm">
-          <div class="field">
-            <label class="label" for="channel">Канал</label>
-            <div class="control">
+        <div id="filtersContainer"></div>
+
+        <div class="field mt-4">
+          <div class="field has-addons">
+            <div class="control is-expanded">
               <div class="select is-fullwidth">
-                <select id="channel">
-                  <option value="">All</option>
-                  <option>California</option>
-                </select>
+                <select id="addChannelSelect"></select>
               </div>
             </div>
-          </div>
-
-          <div class="field">
-            <label class="label">Тип видео</label>
             <div class="control">
-              <label class="radio">
-                <input id="any" name="videoType" type="radio" checked />
-                Any
-              </label>
-              <label class="radio">
-                <input id="broadcast" name="videoType" type="radio" />
-                Broadcasts
-              </label>
-              <label class="radio">
-                <input id="nobroadcast" name="videoType" type="radio" />
-                No broadcasts
-              </label>
+              <button id="addChannel" class="button">Добавить канал</button>
             </div>
           </div>
+        </div>
 
-          <div class="field">
-            <label class="label" for="duration">Duration</label>
-            <div class="control">
-              <input class="input" id="duration" type="text" placeholder="" />
-            </div>
-            <p class="help" id="durationMessadge">
-              example: <mark>&gt; 43:10 ; &lt; 1:45:00</mark> will ignore videos
-              with duration of 43 minutes 10 seconds to 1 hour 45 minutes
-            </p>
+        <div class="field mt-5">
+          <div class="control">
+            <button id="saveFilters" class="button is-primary is-fullwidth">
+              Сохранить фильтры
+            </button>
           </div>
-
-          <div class="field">
-            <label class="label" for="stopWords"
-              >Words or phrases in the name</label
-            >
-            <div class="control">
-              <textarea
-                class="textarea"
-                id="stopWords"
-                rows="3"
-                placeholder="Words or phrases separated by ';'"
-              ></textarea>
-            </div>
-          </div>
-
-          <div class="field">
-            <label class="label" for="stopTags">Tags combination</label>
-            <div class="control">
-              <textarea
-                class="textarea"
-                id="stopTags"
-                rows="2"
-                placeholder="Tags separated by ';'"
-              ></textarea>
-            </div>
-          </div>
-
-          <div class="field">
-            <div class="control">
-              <button class="button is-primary is-fullwidth" type="submit">
-                Create filter
-              </button>
-            </div>
-          </div>
-        </form>
+        </div>
       </div>
     </section>
     <script type="module" src="settings.js"></script>

@@ -1,6 +1,39 @@
 import { getVideoInfo, isShort } from './youTubeApiConnectors.js';
-import { FILTERS } from './constants.js';
+import { DEFAULT_FILTERS } from './constants.js';
 import { parseDuration } from './utils.js';
+
+let filtersCache;
+
+export function getFilters() {
+  if (filtersCache) return Promise.resolve(filtersCache);
+  if (typeof chrome === 'undefined') {
+    filtersCache = DEFAULT_FILTERS;
+    return Promise.resolve(filtersCache);
+  }
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['filters'], (data) => {
+      if (data && data.filters) {
+        try {
+          filtersCache = JSON.parse(data.filters);
+        } catch (e) {
+          filtersCache = DEFAULT_FILTERS;
+        }
+      } else {
+        filtersCache = DEFAULT_FILTERS;
+        chrome.storage.local.set({ filters: JSON.stringify(filtersCache) });
+      }
+      resolve(filtersCache);
+    });
+  });
+}
+
+export function saveFilters(filters) {
+  filtersCache = filters;
+  if (typeof chrome === 'undefined') return Promise.resolve();
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ filters: JSON.stringify(filters) }, resolve);
+  });
+}
 
 async function fetchInfo(list) {
   const needInfo = list.filter(
@@ -97,6 +130,8 @@ export async function applyFilters(video, rules) {
 
 export async function filterVideos(list) {
   console.log('Fetching info for', list.length, 'videos');
+
+  const FILTERS = await getFilters();
 
   list = await fetchInfo(list);
   const stats = buildStats(list);

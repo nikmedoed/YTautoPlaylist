@@ -1,4 +1,4 @@
-export const FILTERS = {
+export const DEFAULT_FILTERS = {
   global: {
     noShorts: true,
     noBroadcasts: false,
