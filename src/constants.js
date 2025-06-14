@@ -15,7 +15,7 @@ export const FILTERS = {
       title: ["ostronews", "iphone"],
       noBroadcasts: true,
     },
-    UC8zQiuT0m1TELequJ5sp5zw: {
+    "UC8zQiuT0m1TELequJ5sp5zw": {
       title: ["подкаст", "подкаст", "спецэфир"],
     },
     "UC3cJiUuZlpF-pkzqvSskTpg": {
@@ -27,7 +27,7 @@ export const FILTERS = {
     "UCn9bv143ECsDMw-kJCNN7QA": {
       title: ["подземелья чикен"],
     },
-    UCUGfDbfRIx51kJGGHIFo8Rw: {
+    "UCUGfDbfRIx51kJGGHIFo8Rw": {
       noBroadcasts: true,
       tags: ["сводка"],
     },
@@ -35,16 +35,16 @@ export const FILTERS = {
       noBroadcasts: true,
       duration: [{ min: 0, max: 50 * 60 }],
     },
-    UCjQdM9q_Vd2gBN9Xy_zRDJQ: { noBroadcasts: true },
-    UCKRC-fNrU-XvZTrwXN4Xxcg: { noBroadcasts: true },
-    UC5EgIZja1sE3IF9U_CKEVew: { noBroadcasts: true },
-    UCBq6jERElPLXL5cEy-sA9Tw: { noBroadcasts: true },
-    UC6uFoHcr_EEK6DgCS-LeTNA: { noBroadcasts: true },
-    UCY649zJeJVhhJa-rvWThZ2g: { noBroadcasts: true },
-    UCUmlB9SwrBVevETZV0wrVRw: { noBroadcasts: true },
-    UCQ_LYRUJzBfh-mvU14xCNMw: { noBroadcasts: true },
-    UCTUyoZMfksbNIHfWJjwr5aQ: { noBroadcasts: true },
-    UCXoAjrdHFa2hEL3Ug8REC1w: {
+    "UCjQdM9q_Vd2gBN9Xy_zRDJQ": { noBroadcasts: true },
+    "UCKRC-fNrU-XvZTrwXN4Xxcg": { noBroadcasts: true },
+    "UC5EgIZja1sE3IF9U_CKEVew": { noBroadcasts: true },
+    "UCBq6jERElPLXL5cEy-sA9Tw": { noBroadcasts: true },
+    "UC6uFoHcr_EEK6DgCS-LeTNA": { noBroadcasts: true },
+    "UCY649zJeJVhhJa-rvWThZ2g": { noBroadcasts: true },
+    "UCUmlB9SwrBVevETZV0wrVRw": { noBroadcasts: true },
+    "UCQ_LYRUJzBfh-mvU14xCNMw": { noBroadcasts: true },
+    "UCTUyoZMfksbNIHfWJjwr5aQ": { noBroadcasts: true },
+    "UCXoAjrdHFa2hEL3Ug8REC1w": {
       duration: [{ min: 0, max: 29 * 60 }],
     },
   },

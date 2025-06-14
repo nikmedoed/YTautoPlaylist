@@ -2,52 +2,7 @@ import { getVideoInfo, isShort } from './youTubeApiConnectors.js';
 import { FILTERS } from './constants.js';
 import { parseDuration } from './utils.js';
 
-export async function filterVideos(list) {
-  console.log('Fetching info for', list.length, 'videos');
-
-  const { global, channels } = FILTERS;
-
-  function checkTitle(video) {
-    const g = global.title || [];
-    const c = channels[video.channelId]?.title || [];
-    if (!g.length && !c.length) return true;
-    const title = (video.title || '').toLowerCase();
-    return ![...g, ...c].some((t) => title.includes(t));
-  }
-
-  function checkTags(video) {
-    const g = global.tags || [];
-    const c = channels[video.channelId]?.tags || [];
-    if (!g.length && !c.length) return true;
-    const tags = (video.tags || []).map((t) => t.toLowerCase());
-    return ![...g, ...c].some((t) => tags.includes(t));
-  }
-
-  function checkDuration(video) {
-    const g = global.duration || [];
-    const c = channels[video.channelId]?.duration || [];
-    const ranges = [...g, ...c];
-    if (!ranges.length) return true;
-    const len = parseDuration(video.duration);
-    if (typeof len !== 'number') return true;
-    return ranges.some(({ min = 0, max = Infinity }) => len >= min && len <= max);
-  }
-
-  function checkBroadcast(video) {
-    const gb = global.noBroadcasts;
-    const cb = channels[video.channelId]?.noBroadcasts;
-    if (!gb && !cb) return true;
-    return !(
-      video.liveStreamingDetails &&
-      video.liveStreamingDetails.actualStartTime !=
-        video.liveStreamingDetails.scheduledStartTime
-    );
-  }
-
-  function needShortCheck(video) {
-    return global.noShorts || channels[video.channelId]?.noShorts;
-  }
-
+async function fetchInfo(list) {
   const needInfo = list.filter(
     (v) => !v.duration || !v.title || !v.channelId || !v.tags
   );
@@ -60,10 +15,12 @@ export async function filterVideos(list) {
   for (const v of [].concat(...chunks)) {
     infoMap[v.id] = v;
   }
-  const info = list.map((v) => ({ ...v, ...(infoMap[v.id] || {}) }));
+  return list.map((v) => ({ ...v, ...(infoMap[v.id] || {}) }));
+}
 
+function buildStats(videos) {
   const stats = {};
-  for (const v of info) {
+  for (const v of videos) {
     const ch = v.channelId || 'unknown';
     if (!stats[ch]) {
       stats[ch] = {
@@ -77,66 +34,127 @@ export async function filterVideos(list) {
     }
     stats[ch].new++;
   }
-  const videos = [];
+  return stats;
+}
+
+function passesFilters(video, global, channels) {
+  const titleG = global.title || [];
+  const titleC = channels[video.channelId]?.title || [];
+  if (titleG.length || titleC.length) {
+    const t = (video.title || '').toLowerCase();
+    if ([...titleG, ...titleC].some((s) => t.includes(s))) return false;
+  }
+
+  const tagG = global.tags || [];
+  const tagC = channels[video.channelId]?.tags || [];
+  if (tagG.length || tagC.length) {
+    const tags = (video.tags || []).map((t) => t.toLowerCase());
+    if ([...tagG, ...tagC].some((s) => tags.includes(s))) return false;
+  }
+
+  const ranges = [
+    ...(global.duration || []),
+    ...(channels[video.channelId]?.duration || []),
+  ];
+  if (ranges.length) {
+    const len = parseDuration(video.duration);
+    if (typeof len === 'number') {
+      if (!ranges.some(({ min = 0, max = Infinity }) => len >= min && len <= max)) {
+        return false;
+      }
+    }
+  }
+
+  const gb = global.noBroadcasts;
+  const cb = channels[video.channelId]?.noBroadcasts;
+  if (gb || cb) {
+    if (
+      video.liveStreamingDetails &&
+      video.liveStreamingDetails.actualStartTime !=
+        video.liveStreamingDetails.scheduledStartTime
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function checkShortNeeded(video, global, channels) {
+  return global.noShorts || channels[video.channelId]?.noShorts;
+}
+
+async function filterOutShorts(list, stats, global, channels) {
+  const result = [];
+  let shorts = 0;
+  for (const video of list) {
+    try {
+      const short = await isShort(video);
+      const st = stats[video.channelId || 'unknown'];
+      if (short) {
+        shorts++;
+        st.shorts++;
+      } else {
+        result.push(video);
+        st.add++;
+      }
+    } catch (err) {
+      console.error('Failed short check', err);
+      result.push(video);
+      const st = stats[video.channelId || 'unknown'];
+      st.add++;
+    }
+  }
+  return { videos: result, shorts };
+}
+
+export async function filterVideos(list) {
+  console.log('Fetching info for', list.length, 'videos');
+
+  const { global, channels } = FILTERS;
+
+  const info = await fetchInfo(list);
+  const stats = buildStats(info);
+
   const toCheck = [];
+  const videos = [];
   let filtered = 0;
   let liveFiltered = 0;
+
   for (const video of info) {
     const st = stats[video.channelId || 'unknown'];
-    if (!checkBroadcast(video)) {
-      liveFiltered++;
-      st.broadcasts++;
+    if (!passesFilters(video, global, channels)) {
+      if (
+        video.liveStreamingDetails &&
+        video.liveStreamingDetails.actualStartTime !=
+          video.liveStreamingDetails.scheduledStartTime
+      ) {
+        liveFiltered++;
+        st.broadcasts++;
+      } else {
+        filtered++;
+        st.filtered++;
+      }
       continue;
     }
-    if (!checkTitle(video) || !checkTags(video) || !checkDuration(video)) {
-      filtered++;
-      st.filtered++;
-      continue;
-    }
-    if (needShortCheck(video)) {
+    if (checkShortNeeded(video, global, channels)) {
       toCheck.push(video);
     } else {
       videos.push(video);
       st.add++;
     }
   }
-  let shorts = 0;
-  let checked = 0;
-  const concurrency = 5;
-  let index = 0;
-  async function worker() {
-    while (index < toCheck.length) {
-      const video = toCheck[index++];
-      try {
-        const short = await isShort(video);
-        const st = stats[video.channelId || 'unknown'];
-        if (short) {
-          shorts++;
-          st.shorts++;
-        } else {
-          videos.push(video);
-          st.add++;
-        }
-      } catch (err) {
-        console.error('Failed short check', err);
-        videos.push(video);
-        const st = stats[video.channelId || 'unknown'];
-        st.add++;
-      }
-      checked++;
-      if (checked % 5 === 0 || checked === toCheck.length) {
-        console.log('Short checks', checked, '/', toCheck.length);
-      }
-    }
-  }
-  await Promise.all(Array(concurrency).fill(0).map(worker));
+
+  const shortRes = await filterOutShorts(toCheck, stats, global, channels);
+  videos.push(...shortRes.videos);
+
   for (const st of Object.values(stats)) {
     console.log(
       `${st.title} new ${st.new}, filtered ${st.filtered}, broadcasts ${st.broadcasts}, shorts ${st.shorts}, to playlist ${st.add}`
     );
   }
   console.log(
-    `${list.length} videos filter stats: filtered ${filtered}, broadcasts ${liveFiltered}, shorts ${shorts}, passed ${videos.length}`
+    `${list.length} videos filter stats: filtered ${filtered}, broadcasts ${liveFiltered}, shorts ${shortRes.shorts}, passed ${videos.length}`
   );
   return videos;
 }
