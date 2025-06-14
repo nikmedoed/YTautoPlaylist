@@ -100,6 +100,7 @@ function createGroup(labelText, type, rows, createRowFn) {
   header.appendChild(addBtn);
 
   const list = document.createElement("div");
+  list.className = "rows-wrap";
   group.appendChild(header);
   group.appendChild(list);
 
