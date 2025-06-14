@@ -96,7 +96,7 @@ function createGroup(labelText, type, rows, createRowFn) {
   const addBtn = document.createElement("button");
   addBtn.type = "button";
   addBtn.className = "button is-small is-success";
-  addBtn.innerHTML = '<span class="icon"><i class="fas fa-plus"></i></span>';
+  addBtn.innerHTML = '<span class="icon"><svg width="1em" height="1em"><use href="icons.svg#icon-plus" /></svg></span>';
   header.appendChild(addBtn);
 
   const list = document.createElement("div");
@@ -212,7 +212,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const remove = document.createElement("button");
       remove.className = "button is-danger is-light is-small remove-btn";
       remove.type = "button";
-      remove.innerHTML = '<span class="icon"><i class="fas fa-trash"></i></span>';
+      remove.innerHTML = '<span class="icon"><svg width="1em" height="1em"><use href="icons.svg#icon-trash" /></svg></span>';
       remove.addEventListener("click", () => {
         box.remove();
         const opt = document.createElement("option");
@@ -248,21 +248,21 @@ document.addEventListener("DOMContentLoaded", async () => {
     btnDur.type = "button";
     btnDur.className = "button is-small is-info";
     btnDur.innerHTML =
-      '<span class="icon"><i class="fas fa-plus"></i></span><span>Длительность</span>';
+      '<span class="icon"><svg width="1em" height="1em"><use href="icons.svg#icon-plus" /></svg></span><span>Длительность</span>';
     addRow.appendChild(btnDur);
 
     const btnTitle = document.createElement("button");
     btnTitle.type = "button";
     btnTitle.className = "button is-small is-info";
     btnTitle.innerHTML =
-      '<span class="icon"><i class="fas fa-plus"></i></span><span>Заголовок</span>';
+      '<span class="icon"><svg width="1em" height="1em"><use href="icons.svg#icon-plus" /></svg></span><span>Заголовок</span>';
     addRow.appendChild(btnTitle);
 
     const btnTag = document.createElement("button");
     btnTag.type = "button";
     btnTag.className = "button is-small is-info";
     btnTag.innerHTML =
-      '<span class="icon"><i class="fas fa-plus"></i></span><span>Тег</span>';
+      '<span class="icon"><svg width="1em" height="1em"><use href="icons.svg#icon-plus" /></svg></span><span>Тег</span>';
     addRow.appendChild(btnTag);
 
     box.appendChild(topRow);

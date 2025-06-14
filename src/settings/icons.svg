@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <symbol id="icon-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 4.5v15m7.5-7.5H4.5" />
+  </symbol>
+  <symbol id="icon-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14.74 9l-.34 9m-4.8 0l-.34-9m10.06-3.21l-.97 13.88a2.25 2.25 0 01-2.24 2.12H8.59a2.25 2.25 0 01-2.24-2.12L5.38 5.79m13.43 0a48.67 48.67 0 00-13.5 0m9.19-1.31V4.48c0-1.18-.91-2.16-2.09-2.2a48.04 48.04 0 00-2.06 0c-1.18.04-2.09 1.02-2.09 2.2v1.31m6.24 0a48.85 48.85 0 00-6.24 0" />
+  </symbol>
+</svg>
