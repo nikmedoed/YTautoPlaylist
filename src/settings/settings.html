@@ -20,6 +20,10 @@
         max-width: 25%;
         min-width: 260px;
       }
+      .filter-card.wide {
+        flex: 1 0 100%;
+        max-width: 100%;
+      }
       @media (max-width: 1024px) {
         .filter-card {
           flex: 1 0 100%;
@@ -39,12 +43,17 @@
         gap: 0.5rem;
         margin-bottom: 0.25rem;
       }
-      .filter-row label {
-        margin-bottom: 0;
-        min-width: 6rem;
-      }
       .filter-row .input[type="time"] {
         width: 7rem;
+      }
+      .filter-group {
+        margin-bottom: 0.5rem;
+      }
+      .group-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.25rem;
       }
       #filtersContainer {
         display: flex;

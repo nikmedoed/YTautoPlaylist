@@ -32,10 +32,6 @@ function createDurationRow(min = 0, max = Infinity) {
   row.className = "filter-row";
   row.dataset.type = "duration";
 
-  const lab = document.createElement("label");
-  lab.textContent = "Длительность";
-  row.appendChild(lab);
-
   const from = document.createElement("input");
   from.type = "time";
   from.step = 1;
@@ -64,10 +60,6 @@ function createTextRow(type, value = "") {
   row.className = "filter-row";
   row.dataset.type = type;
 
-  const lab = document.createElement("label");
-  lab.textContent = type === "title" ? "Заголовок" : "Тег";
-  row.appendChild(lab);
-
   const input = document.createElement("input");
   input.type = "text";
   input.className = "input";
@@ -81,6 +73,52 @@ function createTextRow(type, value = "") {
   row.appendChild(del);
 
   return row;
+}
+
+function createGroup(labelText, type, rows, createRowFn) {
+  const group = document.createElement("div");
+  group.className = "filter-group";
+  group.dataset.type = type;
+
+  const header = document.createElement("div");
+  header.className = "group-header top-row";
+
+  const lab = document.createElement("span");
+  lab.className = "has-text-weight-bold";
+  lab.textContent = labelText;
+  header.appendChild(lab);
+
+  const addBtn = document.createElement("button");
+  addBtn.type = "button";
+  addBtn.className = "button is-small is-success";
+  addBtn.innerHTML = '<span class="icon"><i class="fas fa-plus"></i></span>';
+  header.appendChild(addBtn);
+
+  const list = document.createElement("div");
+  group.appendChild(header);
+  group.appendChild(list);
+
+  function checkHeader() {
+    header.style.display = list.children.length ? "" : "none";
+  }
+
+  addBtn.addEventListener("click", () => {
+    list.appendChild(createRowFn());
+    checkHeader();
+  });
+
+  rows.forEach((r) => {
+    list.appendChild(createRowFn(r));
+  });
+  list.addEventListener("click", (e) => {
+    if (e.target.closest(".delete")) {
+      e.target.closest(".filter-row").remove();
+      checkHeader();
+    }
+  });
+
+  checkHeader();
+  return { group, list, add: () => { addBtn.click(); } };
 }
 
 
@@ -145,7 +183,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   function createSection(title, data = {}, channelId) {
     const box = document.createElement("div");
-    box.className = channelId ? "box filter-card" : "filter-card";
+    box.className = channelId ? "box filter-card" : "box filter-card wide";
     box.dataset.channel = channelId || "";
 
     if (channelId) {
@@ -220,18 +258,32 @@ document.addEventListener("DOMContentLoaded", async () => {
     box.appendChild(topRow);
     box.appendChild(addRow);
 
-    const list = document.createElement("div");
-    box.appendChild(list);
+    const durGroup = createGroup(
+      "Длительность",
+      "duration",
+      data.duration || [],
+      (r = {}) => createDurationRow(r.min, r.max)
+    );
+    const titleGroup = createGroup(
+      "Заголовок",
+      "title",
+      data.title || [],
+      (t = "") => createTextRow("title", t)
+    );
+    const tagGroup = createGroup(
+      "Тег",
+      "tag",
+      data.tags || [],
+      (t = "") => createTextRow("tag", t)
+    );
 
-    (data.duration || []).forEach((r) => {
-      list.appendChild(createDurationRow(r.min, r.max));
-    });
-    (data.title || []).forEach((t) => list.appendChild(createTextRow("title", t)));
-    (data.tags || []).forEach((t) => list.appendChild(createTextRow("tag", t)));
+    box.appendChild(durGroup.group);
+    box.appendChild(titleGroup.group);
+    box.appendChild(tagGroup.group);
 
-    btnDur.addEventListener("click", () => list.appendChild(createDurationRow()));
-    btnTitle.addEventListener("click", () => list.appendChild(createTextRow("title")));
-    btnTag.addEventListener("click", () => list.appendChild(createTextRow("tag")));
+    btnDur.addEventListener("click", durGroup.add);
+    btnTitle.addEventListener("click", titleGroup.add);
+    btnTag.addEventListener("click", tagGroup.add);
 
     return box;
   }

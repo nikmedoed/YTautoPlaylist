@@ -1,5 +1,9 @@
 import { getVideoInfo, isShort } from './youTubeApiConnectors.js';
-import { DEFAULT_FILTERS } from './constants.js';
+
+const DEFAULT_FILTERS = {
+  global: { noShorts: true },
+  channels: {},
+};
 import { parseDuration } from './utils.js';
 
 let filtersCache;
