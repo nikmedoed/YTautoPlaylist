@@ -67,7 +67,6 @@ export async function filterVideos(list) {
     }
     toCheck.push(video);
   }
-  console.log('After basic filters:', toCheck.length, 'videos');
   const videos = [];
   let shorts = 0;
   let checked = 0;
@@ -99,13 +98,13 @@ export async function filterVideos(list) {
     }
   }
   await Promise.all(Array(concurrency).fill(0).map(worker));
-  console.log(
-    `After short filter: ${videos.length} videos, shorts ${shorts}, filtered ${filtered}, broadcasts ${liveFiltered}`
-  );
   for (const st of Object.values(stats)) {
     console.log(
       `${st.title} new ${st.new}, filtered ${st.filtered}, broadcasts ${st.broadcasts}, shorts ${st.shorts}, to playlist ${st.add}`
     );
   }
+  console.log(
+    `${list.length} videos filter stats: filtered ${filtered}, broadcasts ${liveFiltered}, shorts ${shorts}, passed ${videos.length}`
+  );
   return videos;
 }

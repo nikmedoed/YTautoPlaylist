@@ -320,10 +320,10 @@ async function getVideoInfo(idList, nextPage) {
   const info = data.items.map((el) => {
     return {
       id: el.id,
-      publishedAt: new Date(el.snippet.publishedAt),
       ...el.snippet,
       ...el.contentDetails,
       liveStreamingDetails: el.liveStreamingDetails,
+      publishedAt: new Date(el.snippet.publishedAt)
     };
   });
   if (data.nextPageToken) {

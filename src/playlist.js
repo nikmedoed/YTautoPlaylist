@@ -46,10 +46,9 @@ export async function main(startDate = new Date(Date.now() - 604800000)) {
       }
     }
   }
-  const videosList = Array.from(videoMap.values());
-  console.log("Fetched", videosList.length, "videos");
-  const videos = await filterVideos(videosList);
-  console.log("After filtering:", videos.length, "videos");
+  let videos = Array.from(videoMap.values());
+  console.log("Fetched", videos.length, "videos");
+  videos = await filterVideos(videos);
   videos.sort((a, b) => a.publishedAt - b.publishedAt);
   console.log(
     videos
@@ -60,7 +59,7 @@ export async function main(startDate = new Date(Date.now() - 604800000)) {
           (v.title || "").padEnd(50).slice(0, 50),
           `https://youtu.be/${v.id}`,
           parseDuration(v.duration),
-        ].join("\t")
+        ].join(" ")
       )
       .join("\n")
   );
@@ -68,6 +67,7 @@ export async function main(startDate = new Date(Date.now() - 604800000)) {
 }
 
 export function createListAndAddVideos(list) {
+  console.log("To playlist", list);
   if (!list || list.length === 0) {
     console.warn("No videos to add");
     return Promise.resolve(0);
