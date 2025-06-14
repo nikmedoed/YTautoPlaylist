@@ -1,28 +1,55 @@
 import { getVideoInfo, isShort } from './youTubeApiConnectors.js';
-import { TITLEFILTER, BROADCASTFILTER } from './constants.js';
+import { FILTERS } from './constants.js';
+import { parseDuration } from './utils.js';
 
 export async function filterVideos(list) {
   console.log('Fetching info for', list.length, 'videos');
-  const filters = [
-    (video) => {
-      const titfilt = TITLEFILTER[video.channelId];
-      if (titfilt && titfilt.length > 0) {
-        const title = video.title.toLowerCase();
-        return !titfilt.some((tit) => title.includes(tit));
-      }
-      return true;
-    },
-    (video) =>
-      !(
-        video.liveStreamingDetails &&
-        video.liveStreamingDetails.actualStartTime !=
-          video.liveStreamingDetails.scheduledStartTime &&
-        BROADCASTFILTER.includes(video.channelId)
-      ),
-  ];
+
+  const { global, channels } = FILTERS;
+
+  function checkTitle(video) {
+    const g = global.title || [];
+    const c = channels[video.channelId]?.title || [];
+    if (!g.length && !c.length) return true;
+    const title = (video.title || '').toLowerCase();
+    return ![...g, ...c].some((t) => title.includes(t));
+  }
+
+  function checkTags(video) {
+    const g = global.tags || [];
+    const c = channels[video.channelId]?.tags || [];
+    if (!g.length && !c.length) return true;
+    const tags = (video.tags || []).map((t) => t.toLowerCase());
+    return ![...g, ...c].some((t) => tags.includes(t));
+  }
+
+  function checkDuration(video) {
+    const g = global.duration || [];
+    const c = channels[video.channelId]?.duration || [];
+    const ranges = [...g, ...c];
+    if (!ranges.length) return true;
+    const len = parseDuration(video.duration);
+    if (typeof len !== 'number') return true;
+    return ranges.some(({ min = 0, max = Infinity }) => len >= min && len <= max);
+  }
+
+  function checkBroadcast(video) {
+    const gb = global.noBroadcasts;
+    const cb = channels[video.channelId]?.noBroadcasts;
+    if (!gb && !cb) return true;
+    return !(
+      video.liveStreamingDetails &&
+      video.liveStreamingDetails.actualStartTime !=
+        video.liveStreamingDetails.scheduledStartTime
+    );
+  }
+
+  function needShortCheck(video) {
+    return global.noShorts || channels[video.channelId]?.noShorts;
+  }
 
   const needInfo = list.filter(
-    (v) => !v.duration || !v.title || !v.channelId
+    (v) => !v.duration || !v.title || !v.channelId || !v.tags
   );
   const ids = [...new Set(needInfo.map((v) => v.id))];
   const chunks = [];
@@ -50,24 +77,29 @@ export async function filterVideos(list) {
     }
     stats[ch].new++;
   }
+  const videos = [];
   const toCheck = [];
   let filtered = 0;
   let liveFiltered = 0;
   for (const video of info) {
     const st = stats[video.channelId || 'unknown'];
-    if (!filters[1](video)) {
+    if (!checkBroadcast(video)) {
       liveFiltered++;
       st.broadcasts++;
       continue;
     }
-    if (!filters[0](video)) {
+    if (!checkTitle(video) || !checkTags(video) || !checkDuration(video)) {
       filtered++;
       st.filtered++;
       continue;
     }
-    toCheck.push(video);
+    if (needShortCheck(video)) {
+      toCheck.push(video);
+    } else {
+      videos.push(video);
+      st.add++;
+    }
   }
-  const videos = [];
   let shorts = 0;
   let checked = 0;
   const concurrency = 5;
