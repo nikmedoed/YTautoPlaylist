@@ -252,11 +252,11 @@ async function createPlayList(title) {
   });
 }
 
-async function addVideoToWL(vId, playlistId) {
+async function addVideoToWL(videoId, playlistId) {
   return callApi("playlistItems", { part: "snippet" }, "POST", {
     snippet: {
       playlistId,
-      resourceId: { kind: "youtube#video", videoId: vId },
+      resourceId: { kind: "youtube#video", videoId },
     },
   });
 }

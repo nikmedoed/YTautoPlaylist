@@ -46,7 +46,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       }
       getVideoInfo([id])
         .then((info) => {
-          const date = new Date(info[0].pubDate);
+          const date = new Date(info[0].publishedAt);
           storeDate(date).then(() => {
             sendResponse({ date: date.toISOString() });
           });
