@@ -16,7 +16,15 @@
       .filter-card {
         padding: 0.75rem;
         position: relative;
-        flex: 1 1 260px;
+        flex: 0 0 25%;
+        max-width: 25%;
+        min-width: 260px;
+      }
+      @media (max-width: 1024px) {
+        .filter-card {
+          flex: 1 0 100%;
+          max-width: 100%;
+        }
       }
       .top-row {
         display: flex;
@@ -42,17 +50,25 @@
         display: flex;
         flex-wrap: wrap;
         gap: 0.75rem;
+        justify-content: flex-start;
       }
       .remove-btn {
         position: absolute;
         top: 0.25rem;
         right: 0.25rem;
       }
+      .add-card {
+        box-shadow: none;
+        border: 1px dashed #ccc;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
     </style>
   </head>
   <body>
     <section class="section">
-      <div class="container">
+      <div class="container is-fluid">
         <h2 class="title is-3 has-text-centered">
           Automatic playlist collector from YouTube subscriptions
         </h2>
@@ -119,22 +135,23 @@
           настройки, затем индивидуальные для каналов.
         </p>
 
-        <h4 class="title is-5" id="globalHeader">Глобальные</h4>
+        <h4 class="title is-5 mb-2" id="globalHeader">Глобальные</h4>
         <div id="globalFilters"></div>
 
         <h4 class="title is-5 mt-4" id="channelsHeader">Фильтры каналов</h4>
 
-        <div class="is-flex is-align-items-flex-end mb-3" id="addChannelRow">
-          <label class="mr-2" for="addChannelSelect">Фильтровать другой канал:</label>
-          <div class="mr-2">
-            <div class="select" style="width: 240px">
+        <div id="filtersContainer">
+          <div id="addChannelCard" class="filter-card add-card has-text-centered mt-3">
+            <label class="mb-1" for="addChannelSelect">Фильтровать другой канал:</label>
+            <div class="select is-fullwidth mb-2" style="max-width: 480px">
               <select id="addChannelSelect"></select>
             </div>
+            <button id="addChannel" class="button is-link">
+              <span class="icon"><i class="fas fa-plus"></i></span>
+              <span>Добавить</span>
+            </button>
           </div>
-          <button id="addChannel" class="button is-link">Фильтровать</button>
         </div>
-
-        <div id="filtersContainer"></div>
 
         <div class="field mt-5" id="filtersButtons">
           <div class="buttons is-right">

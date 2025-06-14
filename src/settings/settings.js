@@ -96,6 +96,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const importInput = document.getElementById("importFilters");
   const addChannelSelect = document.getElementById("addChannelSelect");
   const addChannelBtn = document.getElementById("addChannel");
+  const addCard = document.getElementById("addChannelCard");
 
   chrome.storage.sync.get(["lastVideoDate"], (res) => {
     if (res.lastVideoDate) {
@@ -188,28 +189,36 @@ document.addEventListener("DOMContentLoaded", async () => {
     }> Игнорировать трансляции`;
     topRow.appendChild(chkBroadcast);
 
+    const addRow = document.createElement("div");
+    addRow.className = "top-row";
+
     const addLabel = document.createElement("span");
     addLabel.textContent = "Добавить фильтры:";
-    topRow.appendChild(addLabel);
+    addRow.appendChild(addLabel);
 
     const btnDur = document.createElement("button");
     btnDur.type = "button";
     btnDur.className = "button is-small is-info";
-    btnDur.textContent = "Длительность";
-    topRow.appendChild(btnDur);
+    btnDur.innerHTML =
+      '<span class="icon"><i class="fas fa-plus"></i></span><span>Длительность</span>';
+    addRow.appendChild(btnDur);
 
     const btnTitle = document.createElement("button");
     btnTitle.type = "button";
     btnTitle.className = "button is-small is-info";
-    btnTitle.textContent = "Заголовок";
-    topRow.appendChild(btnTitle);
+    btnTitle.innerHTML =
+      '<span class="icon"><i class="fas fa-plus"></i></span><span>Заголовок</span>';
+    addRow.appendChild(btnTitle);
 
     const btnTag = document.createElement("button");
     btnTag.type = "button";
     btnTag.className = "button is-small is-info";
-    btnTag.textContent = "Тег";
-    topRow.appendChild(btnTag);
+    btnTag.innerHTML =
+      '<span class="icon"><i class="fas fa-plus"></i></span><span>Тег</span>';
+    addRow.appendChild(btnTag);
+
     box.appendChild(topRow);
+    box.appendChild(addRow);
 
     const list = document.createElement("div");
     box.appendChild(list);
@@ -232,7 +241,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   for (const id of Object.keys(filters.channels)) {
     const chName = channels[id]?.title || id;
     const sec = createSection(chName, filters.channels[id], id);
-    filtersContainer.appendChild(sec);
+    filtersContainer.insertBefore(sec, addCard);
   }
 
   Object.keys(filters.channels).forEach((id) => {
@@ -241,7 +250,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   saveFiltersBtn?.addEventListener("click", () => {
-    const sections = document.querySelectorAll(".filter-card");
+    const sections = document.querySelectorAll(".filter-card:not(.add-card)");
     const result = { global: {}, channels: {} };
     sections.forEach((sec) => {
       const ch = sec.dataset.channel || null;
@@ -279,7 +288,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const id = addChannelSelect.value;
     if (!id) return;
     const sec = createSection(channels[id]?.title || id, {}, id);
-    filtersContainer.appendChild(sec);
+    filtersContainer.insertBefore(sec, addCard);
     const opt = addChannelSelect.querySelector(`option[value="${id}"]`);
     opt?.remove();
   });
