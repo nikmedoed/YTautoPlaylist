@@ -132,8 +132,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     );
   });
 
-  const channels = await getChannelMap();
   const filters = await getFilters();
+  const channels = await getChannelMap(Object.keys(filters.channels));
 
   Object.keys(channels).forEach((id) => {
     const opt = document.createElement("option");
@@ -147,25 +147,24 @@ document.addEventListener("DOMContentLoaded", async () => {
     box.className = channelId ? "box filter-card" : "filter-card";
     box.dataset.channel = channelId || "";
 
-    const h = document.createElement("h4");
-    h.className = "title is-5 mb-2";
     if (channelId) {
+      const h = document.createElement("h4");
+      h.className = "title is-5 mb-2";
       const link = document.createElement("a");
       link.href = `https://www.youtube.com/channel/${channelId}`;
       link.target = "_blank";
       link.textContent = title;
       h.appendChild(link);
-    } else {
-      h.textContent = title;
+      box.appendChild(h);
     }
-    box.appendChild(h);
 
     const topRow = document.createElement("div");
     topRow.className = "top-row";
     if (channelId) {
       const remove = document.createElement("button");
-      remove.className = "delete";
+      remove.className = "button is-danger is-light is-small remove-btn";
       remove.type = "button";
+      remove.innerHTML = '<span class="icon"><i class="fas fa-trash"></i></span>';
       remove.addEventListener("click", () => {
         box.remove();
         const opt = document.createElement("option");
@@ -173,7 +172,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         opt.textContent = channels[channelId]?.title || channelId;
         addChannelSelect.appendChild(opt);
       });
-      topRow.appendChild(remove);
+      box.appendChild(remove);
     }
     const chkShorts = document.createElement("label");
     chkShorts.className = "checkbox";
@@ -189,22 +188,26 @@ document.addEventListener("DOMContentLoaded", async () => {
     }> Игнорировать трансляции`;
     topRow.appendChild(chkBroadcast);
 
+    const addLabel = document.createElement("span");
+    addLabel.textContent = "Добавить фильтры:";
+    topRow.appendChild(addLabel);
+
     const btnDur = document.createElement("button");
     btnDur.type = "button";
-    btnDur.className = "button is-small";
-    btnDur.textContent = "+ Длительность";
+    btnDur.className = "button is-small is-info";
+    btnDur.textContent = "Длительность";
     topRow.appendChild(btnDur);
 
     const btnTitle = document.createElement("button");
     btnTitle.type = "button";
-    btnTitle.className = "button is-small";
-    btnTitle.textContent = "+ Заголовок";
+    btnTitle.className = "button is-small is-info";
+    btnTitle.textContent = "Заголовок";
     topRow.appendChild(btnTitle);
 
     const btnTag = document.createElement("button");
     btnTag.type = "button";
-    btnTag.className = "button is-small";
-    btnTag.textContent = "+ Тег";
+    btnTag.className = "button is-small is-info";
+    btnTag.textContent = "Тег";
     topRow.appendChild(btnTag);
     box.appendChild(topRow);
 

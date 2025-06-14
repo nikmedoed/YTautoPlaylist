@@ -7,10 +7,16 @@
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css"
     />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css"
+    />
     <title>YT AutoWL settings</title>
     <style>
       .filter-card {
         padding: 0.75rem;
+        position: relative;
+        flex: 1 1 260px;
       }
       .top-row {
         display: flex;
@@ -32,6 +38,16 @@
       .filter-row .input[type="time"] {
         width: 7rem;
       }
+      #filtersContainer {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .remove-btn {
+        position: absolute;
+        top: 0.25rem;
+        right: 0.25rem;
+      }
     </style>
   </head>
   <body>
@@ -51,42 +67,47 @@
           некоторых пользователей, очень короткие видео или очень длинные.
         </div>
 
-        <h3 class="title is-4" id="timeHeader">Временные настройки</h3>
-        <div class="field is-grouped is-flex-wrap-wrap mb-4" id="timeControls">
-          <div class="field has-addons mr-2">
-            <label class="label" for="startDate"
+        <h3 class="is-size-4 mb-2" id="timeHeader">Временные настройки</h3>
+        <div class="is-flex is-align-items-flex-end mb-4" id="timeControls">
+          <div class="mr-5">
+            <label class="mb-1" for="startDate"
               >В плейлист будут добавлены видео опубликованные после этой
               даты</label
             >
-            <div class="control">
-              <input
-                id="startDate"
-                class="input"
-                style="max-width: 260px"
-                type="datetime-local"
-              />
-            </div>
-            <div class="control">
-              <button id="saveStartDate" class="button is-link" type="button">
-                Сохранить
-              </button>
+            <div class="field has-addons">
+              <div class="control">
+                <input
+                  id="startDate"
+                  class="input"
+                  style="max-width: 260px"
+                  type="datetime-local"
+                />
+              </div>
+              <div class="control">
+                <button id="saveStartDate" class="button is-link" type="button">
+                  Сохранить
+                </button>
+              </div>
             </div>
           </div>
 
-          <div class="field has-addons">
-            <label class="label" for="videoId">Задать дату на основе видео</label>
-            <div class="control is-expanded">
-              <input
-                id="videoId"
-                class="input"
-                type="text"
-                placeholder="ID или ссылка на видео"
-              />
-            </div>
-            <div class="control">
-              <button id="useVideoId" class="button is-link" type="button">
-                Использовать дату
-              </button>
+          <div>
+            <label class="mb-1" for="videoId">Задать дату на основе видео</label>
+            <div class="field has-addons">
+              <div class="control">
+                <input
+                  id="videoId"
+                  class="input"
+                  style="width: 520px"
+                  type="text"
+                  placeholder="ID или ссылка на видео"
+                />
+              </div>
+              <div class="control">
+                <button id="useVideoId" class="button is-link" type="button">
+                  Использовать дату
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -103,22 +124,20 @@
 
         <h4 class="title is-5 mt-4" id="channelsHeader">Фильтры каналов</h4>
 
-        <div class="field mb-3" id="addChannelRow">
-          <label class="label mr-2" for="addChannelSelect">Фильтровать другой канал:</label>
-          <div class="control is-expanded mr-2">
-            <div class="select is-fullwidth">
+        <div class="is-flex is-align-items-flex-end mb-3" id="addChannelRow">
+          <label class="mr-2" for="addChannelSelect">Фильтровать другой канал:</label>
+          <div class="mr-2">
+            <div class="select" style="width: 240px">
               <select id="addChannelSelect"></select>
             </div>
           </div>
-          <div class="control">
-            <button id="addChannel" class="button">Фильтровать</button>
-          </div>
+          <button id="addChannel" class="button is-link">Фильтровать</button>
         </div>
 
         <div id="filtersContainer"></div>
 
         <div class="field mt-5" id="filtersButtons">
-          <div class="buttons">
+          <div class="buttons is-right">
             <button id="saveFilters" class="button is-primary">Сохранить фильтры</button>
             <button id="exportFilters" class="button is-info">Экспорт</button>
             <label for="importFilters" class="button is-info mb-0">Импорт</label>
