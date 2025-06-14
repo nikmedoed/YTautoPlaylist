@@ -41,21 +41,18 @@
         display: flex;
         align-items: center;
         gap: 0.5rem;
-        margin-bottom: 0.25rem;
+        margin: 0 0.5rem 0.5rem 0;
         flex: 0 0 auto;
       }
       .filter-row .input[type="time"] {
         width: 7rem;
       }
       .filter-row .input[type="text"] {
-        width: 24rem;
-      }
-      .filter-group {
-        margin-bottom: 0.5rem;
-      }
-      .group-header {
-        display: flex;
-        align-items: center;
+          Диапазоны длительности задают допустимые значения, а совпадения в
+          заголовке и теги удаляют соответствующие видео.
+          Правила проверяются по цепочке: сначала общие фильтры, затем для
+          конкретных каналов. Если видео подходит хотя бы под одно условие,
+          оно будет пропущено.
         gap: 0.5rem;
         margin-bottom: 0.25rem;
       }
@@ -166,9 +163,9 @@
         <h3 class="title is-4 mb-2" id="filtersHeader">Настройки фильтров</h3>
         <p class="mb-4" id="filtersIntro">
           Создайте правила исключения. Сначала задайте общие фильтры, затем
-          добавьте индивидуальные для нужных каналов. Диапазоны длительности
-          определяют, какие ролики оставить, а слова в заголовке и теги напротив
-          исключат соответствующие видео.
+          при необходимости добавьте индивидуальные для каналов. Диапазоны
+          длительности оставляют ролики внутри указанного интервала, а слова в
+          заголовке и теги исключат полные совпадения.
         </p>
 
         <h4 class="title is-5 mb-2" id="globalHeader">Глобальные</h4>
@@ -181,25 +178,21 @@
 
       <div class="container is-fluid">
         <div id="filtersContainer">
-          <div id="addChannelCard" class="box filter-card add-card">
-            <div class="group-header">
-              <span class="has-text-weight-bold">Фильтровать другой канал</span>
+          <div id="addChannelCard" class="box filter-card add-card has-text-centered mt-3" style="margin-bottom: 0.75rem">
+            <label class="mb-1" for="addChannelSelect">Фильтровать другой канал:</label>
+            <div class="select is-fullwidth mb-2" style="max-width: 480px">
+              <select id="addChannelSelect"></select>
             </div>
-            <div class="filter-row">
-              <div class="select is-fullwidth" style="max-width: 260px">
-                <select id="addChannelSelect"></select>
-              </div>
-              <button id="addChannel" class="button is-link">
-                <span class="icon"><i class="fas fa-plus"></i></span>
-                <span>Добавить</span>
-              </button>
-            </div>
+            <button id="addChannel" class="button is-link">
+              <span class="icon"><i class="fas fa-plus"></i></span>
+              <span>Добавить</span>
+            </button>
           </div>
         </div>
       </div>
 
       <div class="container">
-        <div class="mt-3" id="filtersButtons">
+        <div class="field mt-5" id="filtersButtons">
           <div class="buttons is-centered">
             <button id="saveFilters" class="button is-primary">Сохранить фильтры</button>
             <button id="exportFilters" class="button is-info">Экспорт</button>
