@@ -78,7 +78,20 @@ async function getUploadsLists(userids) {
   return data.items.map((el) => el.contentDetails.relatedPlaylists.uploads);
 }
 
-async function getChannelMap() {
+async function getChannelInfos(ids) {
+  const data = await callApi("channels", {
+    part: "snippet,contentDetails",
+    id: ids.join(","),
+    maxResults: 50,
+  });
+  return data.items.map((el) => ({
+    id: el.id,
+    title: el.snippet.title,
+    uploads: el.contentDetails.relatedPlaylists.uploads,
+  }));
+}
+
+async function getChannelMap(extraIds = []) {
   if (!channelCache) {
     const data = await new Promise((r) =>
       chrome.storage.local.get(["channelCache"], r)
@@ -93,14 +106,17 @@ async function getChannelMap() {
     cache[id].title = title;
     if (!cache[id].uploads) missing.push(id);
   }
+  extraIds.forEach((id) => {
+    if (!cache[id] || !cache[id].uploads) missing.push(id);
+  });
   let ids = missing.slice();
   while (ids.length) {
     const chunk = ids.splice(0, 50);
-    const uploads = await getUploadsLists(chunk);
-    for (let i = 0; i < chunk.length; i++) {
-      const ch = chunk[i];
-      cache[ch] = cache[ch] || {};
-      cache[ch].uploads = uploads[i];
+    const infos = await getChannelInfos(chunk);
+    for (const info of infos) {
+      cache[info.id] = cache[info.id] || {};
+      cache[info.id].title = cache[info.id].title || info.title;
+      cache[info.id].uploads = info.uploads;
     }
   }
   channelCache = cache;

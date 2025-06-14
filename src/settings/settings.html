@@ -7,7 +7,83 @@
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css"
     />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css"
+    />
     <title>YT AutoWL settings</title>
+    <style>
+      .filter-card {
+        padding: 0.75rem;
+        position: relative;
+        flex: 0 0 calc(25% - 1rem);
+        max-width: calc(25% - 1rem);
+        min-width: 260px;
+      }
+      .filter-card.wide {
+        flex: 1 0 100%;
+        max-width: 100%;
+      }
+      @media (max-width: 1024px) {
+        .filter-card {
+          flex: 1 0 100%;
+          max-width: 100%;
+        }
+      }
+      .top-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.5rem;
+      }
+      .filter-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.25rem;
+      }
+      .filter-row .input[type="time"] {
+        width: 7rem;
+      }
+      .filter-row .input[type="text"] {
+        width: 12rem;
+      }
+      .filter-group {
+        margin-bottom: 0.5rem;
+      }
+      .group-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.25rem;
+      }
+      #filtersContainer {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        justify-content: center;
+      }
+      .remove-btn {
+        position: absolute;
+        top: 0.25rem;
+        right: 0.25rem;
+      }
+      .add-card {
+        box-shadow: none;
+        border: 1px dashed #ccc;
+        text-align: center;
+      }
+
+      #filtersButtons .buttons {
+        align-items: center;
+        justify-content: center;
+      }
+      #filtersButtons label.button {
+        display: inline-flex;
+        align-items: center;
+      }
+    </style>
   </head>
   <body>
     <section class="section">
@@ -21,140 +97,106 @@
         </p>
 
         <div class="notification is-light">
-          На этой странице вы можете настроить фильтры для игнорирования
-          некоторых видео. Это полезно, если вы не любите прямые трансляции
-          некоторых пользователей, очень короткие видео или очень длинные.
+          Здесь настраиваются правила отбора видео. Сначала определите дату,
+          после которой будут проверяться новые публикации из ваших подписок, а
+          затем задайте условия для исключения нежелательных роликов.
+          Диапазоны длительности указывают допустимые значения, а строки в
+          заголовке и теги удаляют соответствующие видео из списка.
         </div>
 
-        <div class="field">
-          <label class="label" for="startDate"
-            >В плейлист будут добавлены видео опубликованные после этой
-            даты</label
-          >
-          <div class="field has-addons">
-            <div class="control">
-              <input
-                id="startDate"
-                class="input"
-                style="max-width: 260px"
-                type="datetime-local"
-              />
-            </div>
-            <div class="control">
-              <button id="saveStartDate" class="button is-link" type="button">
-                Сохранить
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="field">
-          <label class="label" for="videoId">ID или ссылка на видео</label>
-          <div class="field has-addons">
-            <div class="control is-expanded">
-              <input
-                id="videoId"
-                class="input"
-                type="text"
-                placeholder="https://youtu.be/abc123defgh"
-              />
-            </div>
-            <div class="control">
-              <button id="useVideoId" class="button is-link" type="button">
-                Использовать дату
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="content">
-          <p>
-            Создайте условия для игнорирования видео. Эти условия будут
-            применяться к каждому видео совместно. Если условия нужно применять
-            отдельно (как или) создайте несколько фильтров.
-          </p>
-          <p>
-            Пример фильтра: будет игнорировать видео короче 70 секунд и больше
-            45 минут
-          </p>
-        </div>
-
-        <form class="box" id="filterForm">
-          <div class="field">
-            <label class="label" for="channel">Канал</label>
-            <div class="control">
-              <div class="select is-fullwidth">
-                <select id="channel">
-                  <option value="">All</option>
-                  <option>California</option>
-                </select>
+        <h3 class="title is-4 mb-2" id="timeHeader">Временные настройки</h3>
+        <p class="mb-3">
+          Расширение собирает новые видео после указанной даты. При желании дату
+          можно определить по конкретному ролику.
+        </p>
+        <div class="is-flex is-align-items-flex-end mb-4" id="timeControls">
+          <div class="mr-5">
+            <label class="mb-1" for="startDate"
+              >В плейлист будут добавлены видео опубликованные после этой
+              даты</label
+            >
+            <div class="field has-addons">
+              <div class="control">
+                <input
+                  id="startDate"
+                  class="input"
+                  style="max-width: 260px"
+                  type="datetime-local"
+                />
+              </div>
+              <div class="control">
+                <button id="saveStartDate" class="button is-link" type="button">
+                  Сохранить
+                </button>
               </div>
             </div>
           </div>
 
-          <div class="field">
-            <label class="label">Тип видео</label>
-            <div class="control">
-              <label class="radio">
-                <input id="any" name="videoType" type="radio" checked />
-                Any
-              </label>
-              <label class="radio">
-                <input id="broadcast" name="videoType" type="radio" />
-                Broadcasts
-              </label>
-              <label class="radio">
-                <input id="nobroadcast" name="videoType" type="radio" />
-                No broadcasts
-              </label>
+          <div>
+            <label class="mb-1" for="videoId">Задать дату на основе видео</label>
+            <div class="field has-addons">
+              <div class="control">
+                <input
+                  id="videoId"
+                  class="input"
+                  style="width: 520px"
+                  type="text"
+                  placeholder="ID или ссылка на видео"
+                />
+              </div>
+              <div class="control">
+                <button id="useVideoId" class="button is-link" type="button">
+                  Использовать дату
+                </button>
+              </div>
             </div>
           </div>
+        </div>
 
-          <div class="field">
-            <label class="label" for="duration">Duration</label>
-            <div class="control">
-              <input class="input" id="duration" type="text" placeholder="" />
+        <h3 class="title is-4 mb-2" id="filtersHeader">Настройки фильтров</h3>
+        <p class="mb-4" id="filtersIntro">
+          Создайте правила исключения. Сначала задайте общие фильтры, затем
+          добавьте индивидуальные для нужных каналов. Диапазоны длительности
+          определяют, какие ролики оставить, а слова в заголовке и теги напротив
+          исключат соответствующие видео.
+        </p>
+
+        <h4 class="title is-5 mb-2" id="globalHeader">Глобальные</h4>
+        <div id="globalFilters"></div>
+      </div>
+
+      <div class="container">
+        <h4 class="title is-5 mt-4 mb-2" id="channelsHeader">Фильтры каналов</h4>
+      </div>
+
+      <div class="container is-fluid">
+        <div id="filtersContainer">
+          <div id="addChannelCard" class="box filter-card add-card">
+            <div class="group-header">
+              <span class="has-text-weight-bold">Фильтровать другой канал</span>
             </div>
-            <p class="help" id="durationMessadge">
-              example: <mark>&gt; 43:10 ; &lt; 1:45:00</mark> will ignore videos
-              with duration of 43 minutes 10 seconds to 1 hour 45 minutes
-            </p>
-          </div>
-
-          <div class="field">
-            <label class="label" for="stopWords"
-              >Words or phrases in the name</label
-            >
-            <div class="control">
-              <textarea
-                class="textarea"
-                id="stopWords"
-                rows="3"
-                placeholder="Words or phrases separated by ';'"
-              ></textarea>
-            </div>
-          </div>
-
-          <div class="field">
-            <label class="label" for="stopTags">Tags combination</label>
-            <div class="control">
-              <textarea
-                class="textarea"
-                id="stopTags"
-                rows="2"
-                placeholder="Tags separated by ';'"
-              ></textarea>
-            </div>
-          </div>
-
-          <div class="field">
-            <div class="control">
-              <button class="button is-primary is-fullwidth" type="submit">
-                Create filter
+            <div class="filter-row">
+              <div class="select is-fullwidth" style="max-width: 260px">
+                <select id="addChannelSelect"></select>
+              </div>
+              <button id="addChannel" class="button is-link">
+                <span class="icon"><i class="fas fa-plus"></i></span>
+                <span>Добавить</span>
               </button>
             </div>
           </div>
-        </form>
+        </div>
+      </div>
+
+      <div class="container">
+        <div class="field mt-5" id="filtersButtons">
+          <div class="buttons is-centered">
+            <button id="saveFilters" class="button is-primary">Сохранить фильтры</button>
+            <button id="exportFilters" class="button is-info">Экспорт</button>
+            <label for="importFilters" class="button is-info mb-0">Импорт</label>
+            <input id="importFilters" type="file" accept="application/json" class="is-hidden" />
+          </div>
+        </div>
       </div>
     </section>
     <script type="module" src="settings.js"></script>
