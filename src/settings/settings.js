@@ -188,7 +188,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   function createSection(title, data = {}, channelId) {
     const box = document.createElement("div");
-    box.className = channelId ? "box filter-card" : "box filter-card wide";
+    box.className = channelId ? "box filter-card" : "filter-card wide";
     box.dataset.channel = channelId || "";
 
     if (channelId) {
