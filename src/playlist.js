@@ -39,21 +39,10 @@ export async function main(startDate = new Date(Date.now() - 604800000)) {
   );
 
   const allVideos = [];
-  const playlistMap = {};
-  const stats = {};
   for (const r of results) {
     if (r.videos.length === 0) continue;
-    stats[r.playlist] = {
-      new: r.videos.length,
-      filtered: 0,
-      add: 0,
-    };
-    for (const v of r.videos) {
-      playlistMap[v.id] = r.playlist;
-      allVideos.push(v);
-    }
+    allVideos.push(...r.videos);
   }
-  console.log("Fetched", allVideos.length, "videos");
 
   const deduped = [];
   const seenAll = new Set();
@@ -63,29 +52,10 @@ export async function main(startDate = new Date(Date.now() - 604800000)) {
       deduped.push(v);
     }
   }
+  console.log("Fetched", deduped.length, "videos");
 
   const videos = await filterVideos(deduped);
 
-  const survived = new Set(videos.map((v) => v.id));
-  for (const v of deduped) {
-    const pl = playlistMap[v.id];
-    if (!stats[pl]) continue;
-    if (survived.has(v.id)) {
-      stats[pl].add++;
-    } else {
-      stats[pl].filtered++;
-    }
-  }
-  for (const v of videos) {
-    v.playlist = playlistMap[v.id];
-  }
-  for (const [pl, st] of Object.entries(stats)) {
-    if (st.new || st.filtered || st.add) {
-      console.log(
-        `Playlist ${pl} new ${st.new}, filtered ${st.filtered}, to playlist ${st.add}`
-      );
-    }
-  }
   console.log("After filtering:", videos.length, "videos");
 
   const sorted = videos.sort((a, b) => a.publishedAt - b.publishedAt);

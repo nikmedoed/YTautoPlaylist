@@ -3,6 +3,12 @@ import { TITLEFILTER, BROADCASTFILTER } from './constants.js';
 
 export async function filterVideos(list) {
   console.log('Fetching info for', list.length, 'videos');
+  const stats = {};
+  for (const v of list) {
+    const pl = v.playlist || 'unknown';
+    if (!stats[pl]) stats[pl] = { new: 0, filtered: 0, add: 0 };
+    stats[pl].new++;
+  }
   const filters = [
     (video) => {
       const titfilt = TITLEFILTER[video.channelId];
@@ -39,10 +45,12 @@ export async function filterVideos(list) {
   for (const video of info) {
     if (!filters[1](video)) {
       liveFiltered++;
+      if (stats[video.playlist]) stats[video.playlist].filtered++;
       continue;
     }
     if (!filters[0](video)) {
       filtered++;
+      if (stats[video.playlist]) stats[video.playlist].filtered++;
       continue;
     }
     toCheck.push(video);
@@ -58,11 +66,17 @@ export async function filterVideos(list) {
       const video = toCheck[index++];
       try {
         const short = await isShort(video);
-        if (short) shorts++;
-        else videos.push(video);
+        if (short) {
+          shorts++;
+          if (stats[video.playlist]) stats[video.playlist].filtered++;
+        } else {
+          videos.push(video);
+          if (stats[video.playlist]) stats[video.playlist].add++;
+        }
       } catch (err) {
         console.error('Failed short check', err);
         videos.push(video);
+        if (stats[video.playlist]) stats[video.playlist].add++;
       }
       checked++;
       if (checked % 5 === 0 || checked === toCheck.length) {
@@ -74,5 +88,12 @@ export async function filterVideos(list) {
   console.log(
     `After short filter: ${videos.length} videos, shorts ${shorts}, filtered ${filtered}, broadcasts ${liveFiltered}`
   );
+  for (const [pl, st] of Object.entries(stats)) {
+    if (st.new || st.filtered || st.add) {
+      console.log(
+        `Playlist ${pl} new ${st.new}, filtered ${st.filtered}, to playlist ${st.add}`
+      );
+    }
+  }
   return videos;
 }
