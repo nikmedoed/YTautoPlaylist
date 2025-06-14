@@ -261,21 +261,15 @@ async function addVideoToWL(videoId, playlistId) {
   });
 }
 
-const shortCache = new Map();
-
 async function isShort(video) {
   const videoId = video.id;
-  if (shortCache.has(videoId)) return shortCache.get(videoId);
   if (video.duration && parseDuration(video.duration) < 60) {
-    shortCache.set(videoId, true);
     return true;
   }
   if (video.tags && video.tags.some((t) => /shorts?/i.test(t))) {
-    shortCache.set(videoId, true);
     return true;
   }
   if (video.title && video.title.toLowerCase().includes("#short")) {
-    shortCache.set(videoId, true);
     return true;
   }
   try {
@@ -283,12 +277,9 @@ async function isShort(video) {
       method: "HEAD",
       redirect: "manual",
     });
-    const result = res.status === 200;
-    shortCache.set(videoId, result);
-    return result;
+    return res.status === 200;
   } catch (err) {
     console.error("Failed to detect Short for", videoId, err);
-    shortCache.set(videoId, false);
     return false;
   }
 }
@@ -300,16 +291,19 @@ async function getVideoInfo(idList, nextPage) {
     id: idList.join(","),
     pageToken: nextPage,
   });
-  const info = data.items.map((el) => ({
-    id: el.id,
-    publishedAt: el.snippet.publishedAt,
-    title: el.snippet.title,
-    channelId: el.snippet.channelId,
-    channelTitle: el.snippet.channelTitle,
-    tags: el.snippet.tags,
-    duration: el.contentDetails.duration,
-    liveStreamingDetails: el.liveStreamingDetails,
-  }));
+  const info = data.items.map((el) => {
+    const { snippet, contentDetails, liveStreamingDetails } = el;
+    return {
+      id: el.id,
+      publishedAt: new Date(snippet.publishedAt),
+      title: snippet.title,
+      channelId: snippet.channelId,
+      channelTitle: snippet.channelTitle,
+      tags: snippet.tags,
+      duration: contentDetails.duration,
+      liveStreamingDetails,
+    };
+  });
   if (data.nextPageToken) {
     const rest = await getVideoInfo(idList, data.nextPageToken);
     return info.concat(rest);

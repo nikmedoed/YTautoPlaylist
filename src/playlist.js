@@ -89,9 +89,7 @@ export async function main(startDate = new Date(Date.now() - 604800000)) {
 
   const unique = [];
   const seen = new Set();
-  for (const v of videos.sort(
-    (a, b) => new Date(a.publishedAt) - new Date(b.publishedAt)
-  )) {
+  for (const v of videos.sort((a, b) => a.publishedAt - b.publishedAt)) {
     if (!seen.has(v.id)) {
       seen.add(v.id);
       unique.push(v);

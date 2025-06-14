@@ -3,6 +3,15 @@ import { parseDuration } from './utils.js';
 import { TITLEFILTER, BROADCASTFILTER } from './constants.js';
 
 export async function filterVideos(list) {
+  const uniq = [];
+  const seen = new Set();
+  for (const v of list) {
+    if (!seen.has(v.id)) {
+      seen.add(v.id);
+      uniq.push(v);
+    }
+  }
+  list = uniq;
   console.log('Fetching info for', list.length, 'videos');
   const filters = [
     (video) => parseDuration(video.duration) > 61,
