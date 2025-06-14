@@ -47,6 +47,62 @@ function getRules(global, local = {}) {
   };
 }
 
+export async function applyFilters(video, global, channels, stats) {
+  const st = stats[video.channelId || 'unknown'];
+  const rules = getRules(global, channels[video.channelId]);
+
+  if (
+    rules.noBroadcasts &&
+    video.liveStreamingDetails &&
+    video.liveStreamingDetails.actualStartTime !==
+      video.liveStreamingDetails.scheduledStartTime
+  ) {
+    st.broadcasts++;
+    return false;
+  }
+
+  if (rules.title.length) {
+    const t = (video.title || '').toLowerCase();
+    if (rules.title.some((s) => t.includes(s))) {
+      st.filtered++;
+      return false;
+    }
+  }
+
+  if (rules.tags.length) {
+    const tags = (video.tags || []).map((t) => t.toLowerCase());
+    if (rules.tags.some((s) => tags.includes(s))) {
+      st.filtered++;
+      return false;
+    }
+  }
+
+  if (rules.duration.length) {
+    const len = parseDuration(video.duration);
+    if (
+      typeof len === 'number' &&
+      !rules.duration.some(({ min = 0, max = Infinity }) => len >= min && len <= max)
+    ) {
+      st.filtered++;
+      return false;
+    }
+  }
+
+  if (rules.noShorts) {
+    try {
+      if (await isShort(video)) {
+        st.shorts++;
+        return false;
+      }
+    } catch (err) {
+      console.error('Failed short check', err);
+    }
+  }
+
+  st.add++;
+  return true;
+}
+
 export async function filterVideos(list) {
   console.log('Fetching info for', list.length, 'videos');
 
@@ -59,71 +115,13 @@ export async function filterVideos(list) {
   let processed = 0;
   const concurrency = 5;
 
-  function getRulesFor(video) {
-    return getRules(FILTERS.global, FILTERS.channels[video.channelId]);
-  }
-
-  async function handle(video) {
-    const st = stats[video.channelId || 'unknown'];
-    const rules = getRulesFor(video);
-
-    if (
-      rules.noBroadcasts &&
-      video.liveStreamingDetails &&
-      video.liveStreamingDetails.actualStartTime !==
-        video.liveStreamingDetails.scheduledStartTime
-    ) {
-      st.broadcasts++;
-      return;
-    }
-
-    if (rules.title.length) {
-      const t = (video.title || '').toLowerCase();
-      if (rules.title.some((s) => t.includes(s))) {
-        st.filtered++;
-        return;
-      }
-    }
-
-    if (rules.tags.length) {
-      const tags = (video.tags || []).map((t) => t.toLowerCase());
-      if (rules.tags.some((s) => tags.includes(s))) {
-        st.filtered++;
-        return;
-      }
-    }
-
-    if (rules.duration.length) {
-      const len = parseDuration(video.duration);
-      if (
-        typeof len === 'number' &&
-        !rules.duration.some(({ min = 0, max = Infinity }) => len >= min && len <= max)
-      ) {
-        st.filtered++;
-        return;
-      }
-    }
-
-    if (rules.noShorts) {
-      try {
-        if (await isShort(video)) {
-          st.shorts++;
-          return;
-        }
-      } catch (err) {
-        console.error('Failed short check', err);
-      }
-    }
-
-    result.push(video);
-    st.add++;
-  }
-
   let index = 0;
   async function worker() {
     while (index < videos.length) {
       const video = videos[index++];
-      await handle(video);
+      if (await applyFilters(video, FILTERS.global, FILTERS.channels, stats)) {
+        result.push(video);
+      }
       processed++;
       if (processed % 5 === 0 || processed === videos.length) {
         console.log('Filter progress', processed, '/', videos.length);
