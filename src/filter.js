@@ -24,7 +24,7 @@ export async function filterVideos(list) {
   ];
 
   const needInfo = list.filter((v) => !v.duration || !v.title);
-  const ids = needInfo.map((v) => v.id);
+  const ids = [...new Set(needInfo.map((v) => v.id))];
   const chunks = [];
   while (ids.length) {
     chunks.push(await getVideoInfo(ids.splice(-50)));

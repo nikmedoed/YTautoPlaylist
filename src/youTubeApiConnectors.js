@@ -261,19 +261,34 @@ async function addVideoToWL(videoId, playlistId) {
   });
 }
 
+const shortCache = new Map();
+
 async function isShort(video) {
   const videoId = video.id;
-  if (video.duration && parseDuration(video.duration) < 60) return true;
-  if (video.tags && video.tags.some((t) => /shorts?/i.test(t))) return true;
-  if (video.title && video.title.toLowerCase().includes("#short")) return true;
+  if (shortCache.has(videoId)) return shortCache.get(videoId);
+  if (video.duration && parseDuration(video.duration) < 60) {
+    shortCache.set(videoId, true);
+    return true;
+  }
+  if (video.tags && video.tags.some((t) => /shorts?/i.test(t))) {
+    shortCache.set(videoId, true);
+    return true;
+  }
+  if (video.title && video.title.toLowerCase().includes("#short")) {
+    shortCache.set(videoId, true);
+    return true;
+  }
   try {
     const res = await fetch(`https://www.youtube.com/shorts/${videoId}`, {
       method: "HEAD",
       redirect: "manual",
     });
-    return res.status === 200;
+    const result = res.status === 200;
+    shortCache.set(videoId, result);
+    return result;
   } catch (err) {
     console.error("Failed to detect Short for", videoId, err);
+    shortCache.set(videoId, false);
     return false;
   }
 }
