@@ -41,8 +41,11 @@
         display: flex;
         align-items: center;
         gap: 0.5rem;
-        margin-bottom: 0.25rem;
+        margin-bottom: 0.5rem;
         flex: 0 0 auto;
+      }
+      .filter-row .delete {
+        margin-right: 0.5rem;
       }
       .filter-row .input[type="time"] {
         width: 7rem;
@@ -79,7 +82,12 @@
         box-shadow: none;
         border: 1px dashed #ccc;
         text-align: center;
-        margin-bottom: 0.75rem;
+        margin-bottom: 1.5rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
       }
 
       #filtersButtons .buttons {
@@ -165,10 +173,12 @@
 
         <h3 class="title is-4 mb-2" id="filtersHeader">Настройки фильтров</h3>
         <p class="mb-4" id="filtersIntro">
-          Создайте правила исключения. Сначала задайте общие фильтры, затем
-          добавьте индивидуальные для нужных каналов. Диапазоны длительности
-          определяют, какие ролики оставить, а слова в заголовке и теги напротив
-          исключат соответствующие видео.
+          Глобальные фильтры применяются к каждому видео первыми. Для отдельных
+          каналов можно задать дополнительные правила. Списки слов и диапазоны
+          длительности дополняют глобальные значения, а флажки «Игнорировать
+          Shorts» и «Игнорировать трансляции» могут переопределить общий выбор.
+          При активных глобальных флажках соответствующие переключатели в
+          карточках каналов скрываются.
         </p>
 
         <h4 class="title is-5 mb-2" id="globalHeader">Глобальные</h4>
@@ -185,15 +195,13 @@
             <div class="group-header">
               <span class="has-text-weight-bold">Фильтровать другой канал</span>
             </div>
-            <div class="filter-row">
-              <div class="select is-fullwidth" style="max-width: 260px">
-                <select id="addChannelSelect"></select>
-              </div>
-              <button id="addChannel" class="button is-link">
-                <span class="icon"><i class="fas fa-plus"></i></span>
-                <span>Добавить</span>
-              </button>
+            <div class="select is-fullwidth">
+              <select id="addChannelSelect"></select>
             </div>
+            <button id="addChannel" class="button is-link is-fullwidth">
+              <span class="icon"><i class="fas fa-plus"></i></span>
+              <span>Добавить</span>
+            </button>
           </div>
         </div>
       </div>

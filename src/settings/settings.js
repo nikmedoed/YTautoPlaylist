@@ -142,6 +142,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const addChannelBtn = document.getElementById("addChannel");
   const addCard = document.getElementById("addChannelCard");
 
+  let globalShortsChk;
+  let globalBroadcastChk;
+
   chrome.storage.sync.get(["lastVideoDate"], (res) => {
     if (res.lastVideoDate) {
       const d = new Date(res.lastVideoDate);
@@ -216,6 +219,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         opt.value = channelId;
         opt.textContent = channels[channelId]?.title || channelId;
         addChannelSelect.appendChild(opt);
+        updateCheckboxVisibility();
       });
       box.appendChild(remove);
     }
@@ -294,13 +298,34 @@ document.addEventListener("DOMContentLoaded", async () => {
     return box;
   }
 
-  globalContainer.appendChild(createSection("Глобальные", filters.global, null));
+  const globalSec = createSection("Глобальные", filters.global, null);
+  globalContainer.appendChild(globalSec);
+  globalShortsChk = globalSec.querySelector(".nos");
+  globalBroadcastChk = globalSec.querySelector(".nob");
+
+  function updateCheckboxVisibility() {
+    const hideShorts = globalShortsChk?.checked;
+    const hideBroadcasts = globalBroadcastChk?.checked;
+    document
+      .querySelectorAll('#filtersContainer .filter-card[data-channel]')
+      .forEach((sec) => {
+        const s = sec.querySelector('.nos')?.closest('label');
+        if (s) s.style.display = hideShorts ? 'none' : '';
+        const b = sec.querySelector('.nob')?.closest('label');
+        if (b) b.style.display = hideBroadcasts ? 'none' : '';
+      });
+  }
+
+  globalShortsChk?.addEventListener('change', updateCheckboxVisibility);
+  globalBroadcastChk?.addEventListener('change', updateCheckboxVisibility);
 
   for (const id of Object.keys(filters.channels)) {
     const chName = channels[id]?.title || id;
     const sec = createSection(chName, filters.channels[id], id);
     filtersContainer.insertBefore(sec, addCard);
   }
+
+  updateCheckboxVisibility();
 
   Object.keys(filters.channels).forEach((id) => {
     const opt = addChannelSelect.querySelector(`option[value="${id}"]`);
@@ -349,6 +374,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     filtersContainer.insertBefore(sec, addCard);
     const opt = addChannelSelect.querySelector(`option[value="${id}"]`);
     opt?.remove();
+    updateCheckboxVisibility();
   });
 
   exportBtn?.addEventListener("click", async () => {
