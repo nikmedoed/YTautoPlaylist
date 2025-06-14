@@ -294,30 +294,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     return box;
   }
 
-  const globalSec = createSection("Глобальные", filters.global, null);
-  globalContainer.appendChild(globalSec);
-
-  const globalShorts = globalSec.querySelector(".nos");
-  const globalBroadcast = globalSec.querySelector(".nob");
-
-  function updateLocalVisibility() {
-    document.querySelectorAll('.filter-card[data-channel] .nos').forEach((el) => {
-      el.parentElement.style.display = globalShorts.checked ? 'none' : '';
-    });
-    document.querySelectorAll('.filter-card[data-channel] .nob').forEach((el) => {
-      el.parentElement.style.display = globalBroadcast.checked ? 'none' : '';
-    });
-  }
-  globalShorts.addEventListener('change', updateLocalVisibility);
-  globalBroadcast.addEventListener('change', updateLocalVisibility);
+  globalContainer.appendChild(createSection("Глобальные", filters.global, null));
 
   for (const id of Object.keys(filters.channels)) {
     const chName = channels[id]?.title || id;
     const sec = createSection(chName, filters.channels[id], id);
     filtersContainer.insertBefore(sec, addCard);
   }
-
-  updateLocalVisibility();
 
   Object.keys(filters.channels).forEach((id) => {
     const opt = addChannelSelect.querySelector(`option[value="${id}"]`);
@@ -366,7 +349,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     filtersContainer.insertBefore(sec, addCard);
     const opt = addChannelSelect.querySelector(`option[value="${id}"]`);
     opt?.remove();
-    updateLocalVisibility();
   });
 
   exportBtn?.addEventListener("click", async () => {
