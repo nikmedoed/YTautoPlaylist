@@ -8,6 +8,17 @@
       href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css"
     />
     <title>YT AutoWL settings</title>
+    <style>
+      .filter-card {
+        padding: 0.75rem;
+      }
+      .filter-card .field:not(:last-child) {
+        margin-bottom: 0.5rem;
+      }
+      .duration-row .input {
+        width: 7.5rem;
+      }
+    </style>
   </head>
   <body>
     <section class="section">
@@ -75,9 +86,9 @@
           </p>
         </div>
 
-        <div id="filtersContainer"></div>
+        <h3 class="title is-4" id="filtersHeader">Настройки фильтров</h3>
 
-        <div class="field mt-4">
+        <div class="field mb-3" id="addChannelRow">
           <div class="field has-addons">
             <div class="control is-expanded">
               <div class="select is-fullwidth">
@@ -85,10 +96,12 @@
               </div>
             </div>
             <div class="control">
-              <button id="addChannel" class="button">Добавить канал</button>
+              <button id="addChannel" class="button">Фильтровать другой канал</button>
             </div>
           </div>
         </div>
+
+        <div id="filtersContainer"></div>
 
         <div class="field mt-5">
           <div class="control">

@@ -2,26 +2,85 @@ import { parseVideoId } from "../utils.js";
 import { getFilters, saveFilters } from "../filter.js";
 import { getChannelMap } from "../youTubeApiConnectors.js";
 
-function secToMin(sec) {
-  if (sec === Infinity) return "";
-  return Math.round(sec / 60);
+function toTimeStr(sec) {
+  if (sec === undefined || sec === null || sec === Infinity) return "";
+  const h = Math.floor(sec / 3600)
+    .toString()
+    .padStart(2, "0");
+  const m = Math.floor((sec % 3600) / 60)
+    .toString()
+    .padStart(2, "0");
+  const s = Math.floor(sec % 60)
+    .toString()
+    .padStart(2, "0");
+  return `${h}:${m}:${s}`;
 }
 
-function rangesToStr(ranges = []) {
-  return ranges
-    .map((r) => `${secToMin(r.min || 0)}-${r.max === Infinity ? "" : secToMin(r.max)}`)
-    .join("; ");
+function parseTime(str) {
+  if (!str) return 0;
+  const parts = str.split(":").map((p) => parseInt(p, 10));
+  if (parts.some((n) => Number.isNaN(n))) return 0;
+  let sec = 0;
+  if (parts.length === 3) sec = parts[0] * 3600 + parts[1] * 60 + parts[2];
+  else if (parts.length === 2) sec = parts[0] * 60 + parts[1];
+  else if (parts.length === 1) sec = parts[0];
+  return sec;
 }
 
-function parseRanges(str) {
-  if (!str) return [];
-  return str.split(/;+/).map((part) => {
-    const [a, b] = part.split("-").map((s) => s.trim());
-    const min = a ? parseInt(a, 10) * 60 : 0;
-    const max = b ? parseInt(b, 10) * 60 : Infinity;
-    return { min, max };
-  });
+function createTimeRow(min = 0, max = Infinity) {
+  const row = document.createElement("div");
+  row.className = "field has-addons duration-row";
+  const fromCtrl = document.createElement("div");
+  fromCtrl.className = "control";
+  const from = document.createElement("input");
+  from.type = "time";
+  from.step = 1;
+  from.className = "input from";
+  if (min) from.value = toTimeStr(min);
+  fromCtrl.appendChild(from);
+  const toCtrl = document.createElement("div");
+  toCtrl.className = "control";
+  const to = document.createElement("input");
+  to.type = "time";
+  to.step = 1;
+  to.className = "input to";
+  if (max !== Infinity) to.value = toTimeStr(max);
+  toCtrl.appendChild(to);
+  const delCtrl = document.createElement("div");
+  delCtrl.className = "control";
+  const del = document.createElement("button");
+  del.className = "delete";
+  del.type = "button";
+  delCtrl.appendChild(del);
+  del.addEventListener("click", () => row.remove());
+  row.appendChild(fromCtrl);
+  row.appendChild(toCtrl);
+  row.appendChild(delCtrl);
+  return row;
 }
+
+function createTextRow(value = "") {
+  const row = document.createElement("div");
+  row.className = "field has-addons item-row";
+  const ctrl = document.createElement("div");
+  ctrl.className = "control is-expanded";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "input";
+  input.value = value;
+  ctrl.appendChild(input);
+  const delCtrl = document.createElement("div");
+  delCtrl.className = "control";
+  const del = document.createElement("button");
+  del.className = "delete";
+  del.type = "button";
+  delCtrl.appendChild(del);
+  del.addEventListener("click", () => row.remove());
+  row.appendChild(ctrl);
+  row.appendChild(delCtrl);
+  return row;
+}
+
 
 document.addEventListener("DOMContentLoaded", async () => {
   const startInput = document.getElementById("startDate");
@@ -78,13 +137,22 @@ document.addEventListener("DOMContentLoaded", async () => {
     addChannelSelect.appendChild(opt);
   });
 
-  function createSection(title, data, channelId) {
+  function createSection(title, data = {}, channelId) {
     const box = document.createElement("div");
-    box.className = "box";
+    box.className = "box filter-card";
     box.dataset.channel = channelId || "";
+
     const h = document.createElement("h4");
-    h.className = "title is-5";
-    h.textContent = title;
+    h.className = "title is-5 mb-2";
+    if (channelId) {
+      const link = document.createElement("a");
+      link.href = `https://www.youtube.com/channel/${channelId}`;
+      link.target = "_blank";
+      link.textContent = title;
+      h.appendChild(link);
+    } else {
+      h.textContent = title;
+    }
     box.appendChild(h);
 
     const nsField = document.createElement("div");
@@ -102,24 +170,63 @@ document.addEventListener("DOMContentLoaded", async () => {
     box.appendChild(nbField);
 
     const durField = document.createElement("div");
-    durField.className = "field";
-    durField.innerHTML = `<label class="label">Длительность (мин-мин)</label><input class="input dur" type="text" value="${rangesToStr(
-      data.duration
-    )}">`;
+    durField.className = "field dur-wrap";
+    const durLabel = document.createElement("label");
+    durLabel.className = "label";
+    durLabel.textContent = "Длительность";
+    durField.appendChild(durLabel);
+    const durList = document.createElement("div");
+    durList.className = "dur-list";
+    durField.appendChild(durList);
+    (data.duration || []).forEach((r) => {
+      durList.appendChild(createTimeRow(r.min, r.max));
+    });
+    const addDur = document.createElement("button");
+    addDur.type = "button";
+    addDur.className = "button is-small mt-1";
+    addDur.textContent = "Добавить диапазон";
+    addDur.addEventListener("click", () => {
+      durList.appendChild(createTimeRow());
+    });
+    durField.appendChild(addDur);
     box.appendChild(durField);
 
     const titleField = document.createElement("div");
-    titleField.className = "field";
-    titleField.innerHTML = `<label class="label">Заголовок содержит</label><textarea class="textarea titlef" rows="2">${(data.title || []).join(
-      ";"
-    )}</textarea>`;
+    titleField.className = "field title-wrap";
+    const tl = document.createElement("label");
+    tl.className = "label";
+    tl.textContent = "Заголовок содержит";
+    titleField.appendChild(tl);
+    const titleList = document.createElement("div");
+    titleField.appendChild(titleList);
+    (data.title || []).forEach((t) => titleList.appendChild(createTextRow(t)));
+    const addTitle = document.createElement("button");
+    addTitle.type = "button";
+    addTitle.className = "button is-small mt-1";
+    addTitle.textContent = "Добавить";
+    addTitle.addEventListener("click", () => {
+      titleList.appendChild(createTextRow());
+    });
+    titleField.appendChild(addTitle);
     box.appendChild(titleField);
 
     const tagField = document.createElement("div");
-    tagField.className = "field";
-    tagField.innerHTML = `<label class="label">Теги</label><textarea class="textarea tagsf" rows="2">${(data.tags || []).join(
-      ";"
-    )}</textarea>`;
+    tagField.className = "field tag-wrap";
+    const tg = document.createElement("label");
+    tg.className = "label";
+    tg.textContent = "Теги";
+    tagField.appendChild(tg);
+    const tagList = document.createElement("div");
+    tagField.appendChild(tagList);
+    (data.tags || []).forEach((t) => tagList.appendChild(createTextRow(t)));
+    const addTag = document.createElement("button");
+    addTag.type = "button";
+    addTag.className = "button is-small mt-1";
+    addTag.textContent = "Добавить";
+    addTag.addEventListener("click", () => {
+      tagList.appendChild(createTextRow());
+    });
+    tagField.appendChild(addTag);
     box.appendChild(tagField);
 
     return box;
@@ -144,17 +251,26 @@ document.addEventListener("DOMContentLoaded", async () => {
     sections.forEach((sec) => {
       const ch = sec.dataset.channel || null;
       const obj = {};
-      obj.noShorts = sec.querySelector(".nos").checked;
-      obj.noBroadcasts = sec.querySelector(".nob").checked;
-      obj.duration = parseRanges(sec.querySelector(".dur").value);
-      obj.title = sec.querySelector(".titlef").value
-        .split(";")
-        .map((s) => s.trim())
+      if (sec.querySelector(".nos").checked) obj.noShorts = true;
+      if (sec.querySelector(".nob").checked) obj.noBroadcasts = true;
+      const durs = [];
+      sec.querySelectorAll(".duration-row").forEach((row) => {
+        const min = parseTime(row.querySelector(".from").value);
+        const toVal = row.querySelector(".to").value;
+        const max = toVal ? parseTime(toVal) : Infinity;
+        if (min || max !== Infinity) durs.push({ min, max });
+      });
+      if (durs.length) obj.duration = durs;
+      const titles = Array.from(
+        sec.querySelectorAll(".title-wrap .item-row input")
+      )
+        .map((i) => i.value.trim())
         .filter(Boolean);
-      obj.tags = sec.querySelector(".tagsf").value
-        .split(";")
-        .map((s) => s.trim())
+      if (titles.length) obj.title = titles;
+      const tags = Array.from(sec.querySelectorAll(".tag-wrap .item-row input"))
+        .map((i) => i.value.trim())
         .filter(Boolean);
+      if (tags.length) obj.tags = tags;
       if (ch) result.channels[ch] = obj;
       else result.global = obj;
     });
