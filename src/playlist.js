@@ -23,7 +23,9 @@ export function process() {
 
 export async function main(startDate = new Date(Date.now() - 604800000)) {
   const channels = await getChannelMap();
-  const uploads = Object.values(channels).map((c) => c.uploads);
+  const uploads = Object.values(channels)
+    .map((c) => c.uploads)
+    .filter(Boolean);
   console.log("Subscriptions count:", Object.keys(channels).length);
   console.log("Loading videos from", uploads.length, "playlists");
   const results = await Promise.all(
