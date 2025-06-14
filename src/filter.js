@@ -3,12 +3,6 @@ import { TITLEFILTER, BROADCASTFILTER } from './constants.js';
 
 export async function filterVideos(list) {
   console.log('Fetching info for', list.length, 'videos');
-  const stats = {};
-  for (const v of list) {
-    const pl = v.playlist || 'unknown';
-    if (!stats[pl]) stats[pl] = { new: 0, filtered: 0, add: 0 };
-    stats[pl].new++;
-  }
   const filters = [
     (video) => {
       const titfilt = TITLEFILTER[video.channelId];
@@ -27,7 +21,9 @@ export async function filterVideos(list) {
       ),
   ];
 
-  const needInfo = list.filter((v) => !v.duration || !v.title);
+  const needInfo = list.filter(
+    (v) => !v.duration || !v.title || !v.channelId
+  );
   const ids = [...new Set(needInfo.map((v) => v.id))];
   const chunks = [];
   while (ids.length) {
@@ -38,19 +34,35 @@ export async function filterVideos(list) {
     infoMap[v.id] = v;
   }
   const info = list.map((v) => ({ ...v, ...(infoMap[v.id] || {}) }));
-  console.log('Got details for', info.length, 'videos');
+
+  const stats = {};
+  for (const v of info) {
+    const ch = v.channelId || 'unknown';
+    if (!stats[ch]) {
+      stats[ch] = {
+        title: (v.channelTitle || ch).padEnd(30).slice(0, 30),
+        new: 0,
+        filtered: 0,
+        shorts: 0,
+        broadcasts: 0,
+        add: 0,
+      };
+    }
+    stats[ch].new++;
+  }
   const toCheck = [];
   let filtered = 0;
   let liveFiltered = 0;
   for (const video of info) {
+    const st = stats[video.channelId || 'unknown'];
     if (!filters[1](video)) {
       liveFiltered++;
-      if (stats[video.playlist]) stats[video.playlist].filtered++;
+      st.broadcasts++;
       continue;
     }
     if (!filters[0](video)) {
       filtered++;
-      if (stats[video.playlist]) stats[video.playlist].filtered++;
+      st.filtered++;
       continue;
     }
     toCheck.push(video);
@@ -66,17 +78,19 @@ export async function filterVideos(list) {
       const video = toCheck[index++];
       try {
         const short = await isShort(video);
+        const st = stats[video.channelId || 'unknown'];
         if (short) {
           shorts++;
-          if (stats[video.playlist]) stats[video.playlist].filtered++;
+          st.shorts++;
         } else {
           videos.push(video);
-          if (stats[video.playlist]) stats[video.playlist].add++;
+          st.add++;
         }
       } catch (err) {
         console.error('Failed short check', err);
         videos.push(video);
-        if (stats[video.playlist]) stats[video.playlist].add++;
+        const st = stats[video.channelId || 'unknown'];
+        st.add++;
       }
       checked++;
       if (checked % 5 === 0 || checked === toCheck.length) {
@@ -88,12 +102,10 @@ export async function filterVideos(list) {
   console.log(
     `After short filter: ${videos.length} videos, shorts ${shorts}, filtered ${filtered}, broadcasts ${liveFiltered}`
   );
-  for (const [pl, st] of Object.entries(stats)) {
-    if (st.new || st.filtered || st.add) {
-      console.log(
-        `Playlist ${pl} new ${st.new}, filtered ${st.filtered}, to playlist ${st.add}`
-      );
-    }
+  for (const st of Object.values(stats)) {
+    console.log(
+      `${st.title} new ${st.new}, filtered ${st.filtered}, broadcasts ${st.broadcasts}, shorts ${st.shorts}, to playlist ${st.add}`
+    );
   }
   return videos;
 }

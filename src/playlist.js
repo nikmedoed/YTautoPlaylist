@@ -38,31 +38,26 @@ export async function main(startDate = new Date(Date.now() - 604800000)) {
     )
   );
 
-  const allVideos = [];
+  const videoMap = new Map();
   for (const r of results) {
-    if (r.videos.length === 0) continue;
-    allVideos.push(...r.videos);
-  }
-
-  const deduped = [];
-  const seenAll = new Set();
-  for (const v of allVideos) {
-    if (!seenAll.has(v.id)) {
-      seenAll.add(v.id);
-      deduped.push(v);
+    for (const v of r.videos) {
+      if (!videoMap.has(v.id)) {
+        videoMap.set(v.id, v);
+      }
     }
   }
-  console.log("Fetched", deduped.length, "videos");
+  const videosList = Array.from(videoMap.values());
+  console.log("Fetched", videosList.length, "videos");
 
-  const videos = await filterVideos(deduped);
+  const videos = await filterVideos(videosList);
 
   console.log("After filtering:", videos.length, "videos");
 
-  const sorted = videos.sort((a, b) => a.publishedAt - b.publishedAt);
+  videos.sort((a, b) => a.publishedAt - b.publishedAt);
 
-  console.log("New Videos:", sorted);
+  console.log("New Videos:", videos);
   console.log(
-    sorted
+    videos
       .map((e) =>
         [
           parseDuration(e.duration),
@@ -75,7 +70,7 @@ export async function main(startDate = new Date(Date.now() - 604800000)) {
       .join("\n")
   );
 
-  return createListAndAddVideos(sorted);
+  return createListAndAddVideos(videos);
 }
 
 export function createListAndAddVideos(list) {
