@@ -9,3 +9,9 @@ export interface Video {
   liveStreamingDetails?: Record<string, any>;
   playlist?: string;
 }
+
+export interface ChannelInfo {
+  id: string;
+  title: string;
+  uploads: string;
+}

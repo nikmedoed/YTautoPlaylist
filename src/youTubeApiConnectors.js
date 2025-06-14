@@ -1,6 +1,30 @@
 import { getToken, signInUser, clearToken } from "./auth.js";
 import { logMessage, parseDuration } from "./utils.js";
 
+let channelCache;
+const shortCache = new Map();
+
+function hasChrome() {
+  return typeof chrome !== "undefined" && chrome.storage && chrome.storage.local;
+}
+
+async function loadChannelCache() {
+  if (channelCache) return channelCache;
+  if (hasChrome()) {
+    const data = await new Promise((r) => chrome.storage.local.get(["channelCache"], r));
+    channelCache = data.channelCache || {};
+  } else {
+    channelCache = {};
+  }
+  return channelCache;
+}
+
+function saveChannelCache() {
+  if (hasChrome()) {
+    chrome.storage.local.set({ channelCache });
+  }
+}
+
 // Utility for calling YouTube Data API via fetch
 async function callApi(path, params = {}, method = "GET", body = null, retry) {
   const token = await getToken();
@@ -74,6 +98,29 @@ async function getUploadsLists(userids) {
     maxResults: 50,
   });
   return data.items.map((el) => el.contentDetails.relatedPlaylists.uploads);
+}
+
+async function getChannelMap() {
+  const cache = await loadChannelCache();
+  const subs = await getSubscriptionsId();
+  const missing = [];
+  for (const { id, title } of subs) {
+    if (!cache[id]) cache[id] = {};
+    cache[id].title = title;
+    if (!cache[id].uploads) missing.push(id);
+  }
+  let ids = missing.slice();
+  while (ids.length) {
+    const chunk = ids.splice(0, 50);
+    const uploads = await getUploadsLists(chunk);
+    for (let i = 0; i < chunk.length; i++) {
+      const ch = chunk[i];
+      cache[ch] = cache[ch] || {};
+      cache[ch].uploads = uploads[i];
+    }
+  }
+  saveChannelCache();
+  return cache;
 }
 
 async function getRecentVideosBySearch(
@@ -263,25 +310,29 @@ async function addVideoToWL(videoId, playlistId) {
 
 async function isShort(video) {
   const videoId = video.id;
+  if (shortCache.has(videoId)) {
+    return shortCache.get(videoId);
+  }
+  let result = false;
   if (video.duration && parseDuration(video.duration) < 60) {
-    return true;
+    result = true;
+  } else if (video.tags && video.tags.some((t) => /shorts?/i.test(t))) {
+    result = true;
+  } else if (video.title && video.title.toLowerCase().includes("#short")) {
+    result = true;
+  } else {
+    try {
+      const res = await fetch(`https://www.youtube.com/shorts/${videoId}`, {
+        method: "HEAD",
+        redirect: "manual",
+      });
+      result = res.status === 200;
+    } catch (err) {
+      console.error("Failed to detect Short for", videoId, err);
+    }
   }
-  if (video.tags && video.tags.some((t) => /shorts?/i.test(t))) {
-    return true;
-  }
-  if (video.title && video.title.toLowerCase().includes("#short")) {
-    return true;
-  }
-  try {
-    const res = await fetch(`https://www.youtube.com/shorts/${videoId}`, {
-      method: "HEAD",
-      redirect: "manual",
-    });
-    return res.status === 200;
-  } catch (err) {
-    console.error("Failed to detect Short for", videoId, err);
-    return false;
-  }
+  shortCache.set(videoId, result);
+  return result;
 }
 
 async function getVideoInfo(idList, nextPage) {
@@ -292,16 +343,12 @@ async function getVideoInfo(idList, nextPage) {
     pageToken: nextPage,
   });
   const info = data.items.map((el) => {
-    const { snippet, contentDetails, liveStreamingDetails } = el;
     return {
       id: el.id,
-      publishedAt: new Date(snippet.publishedAt),
-      title: snippet.title,
-      channelId: snippet.channelId,
-      channelTitle: snippet.channelTitle,
-      tags: snippet.tags,
-      duration: contentDetails.duration,
-      liveStreamingDetails,
+      publishedAt: new Date(el.snippet.publishedAt),
+      ...el.snippet,
+      ...el.contentDetails,
+      liveStreamingDetails: el.liveStreamingDetails,
     };
   });
   if (data.nextPageToken) {
@@ -325,4 +372,5 @@ export {
   addVideoToWL,
   isShort,
   getVideoInfo,
+  getChannelMap,
 };

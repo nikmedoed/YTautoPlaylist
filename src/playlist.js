@@ -1,6 +1,5 @@
 import {
-  getSubscriptionsId,
-  getUploadsLists,
+  getChannelMap,
   getNewVideos,
   addListToWL,
   createPlayList,
@@ -23,18 +22,9 @@ export function process() {
 }
 
 export async function main(startDate = new Date(Date.now() - 604800000)) {
-  const subs = await getSubscriptionsId();
-  console.log("Subscriptions count:", subs.length);
-  console.log("Subscriptions list:", subs);
-
-  const ids = subs.map((s) => s.id);
-  const uploads = [];
-  while (ids.length) {
-    uploads.push(...(await getUploadsLists(ids.splice(-50))));
-  }
-  console.log("Subscriptions upload lists count:", uploads.length);
-  console.log("Subscriptions getUploadsLists:", uploads);
-
+  const channels = await getChannelMap();
+  const uploads = Object.values(channels).map((c) => c.uploads);
+  console.log("Subscriptions count:", Object.keys(channels).length);
   console.log("Loading videos from", uploads.length, "playlists");
   const results = await Promise.all(
     uploads.map((pl) =>
