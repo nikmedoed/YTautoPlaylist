@@ -27,57 +27,59 @@ function parseTime(str) {
   return sec;
 }
 
-function createTimeRow(min = 0, max = Infinity) {
+function createDurationRow(min = 0, max = Infinity) {
   const row = document.createElement("div");
-  row.className = "field has-addons duration-row";
-  const fromCtrl = document.createElement("div");
-  fromCtrl.className = "control";
+  row.className = "filter-row";
+  row.dataset.type = "duration";
+
+  const lab = document.createElement("label");
+  lab.textContent = "Длительность";
+  row.appendChild(lab);
+
   const from = document.createElement("input");
   from.type = "time";
   from.step = 1;
   from.className = "input from";
   if (min) from.value = toTimeStr(min);
-  fromCtrl.appendChild(from);
-  const toCtrl = document.createElement("div");
-  toCtrl.className = "control";
+  row.appendChild(from);
+
   const to = document.createElement("input");
   to.type = "time";
   to.step = 1;
   to.className = "input to";
   if (max !== Infinity) to.value = toTimeStr(max);
-  toCtrl.appendChild(to);
-  const delCtrl = document.createElement("div");
-  delCtrl.className = "control";
+  row.appendChild(to);
+
   const del = document.createElement("button");
   del.className = "delete";
   del.type = "button";
-  delCtrl.appendChild(del);
   del.addEventListener("click", () => row.remove());
-  row.appendChild(fromCtrl);
-  row.appendChild(toCtrl);
-  row.appendChild(delCtrl);
+  row.appendChild(del);
+
   return row;
 }
 
-function createTextRow(value = "") {
+function createTextRow(type, value = "") {
   const row = document.createElement("div");
-  row.className = "field has-addons item-row";
-  const ctrl = document.createElement("div");
-  ctrl.className = "control is-expanded";
+  row.className = "filter-row";
+  row.dataset.type = type;
+
+  const lab = document.createElement("label");
+  lab.textContent = type === "title" ? "Заголовок" : "Тег";
+  row.appendChild(lab);
+
   const input = document.createElement("input");
   input.type = "text";
   input.className = "input";
   input.value = value;
-  ctrl.appendChild(input);
-  const delCtrl = document.createElement("div");
-  delCtrl.className = "control";
+  row.appendChild(input);
+
   const del = document.createElement("button");
   del.className = "delete";
   del.type = "button";
-  delCtrl.appendChild(del);
   del.addEventListener("click", () => row.remove());
-  row.appendChild(ctrl);
-  row.appendChild(delCtrl);
+  row.appendChild(del);
+
   return row;
 }
 
@@ -155,79 +157,53 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
     box.appendChild(h);
 
-    const nsField = document.createElement("div");
-    nsField.className = "field";
-    nsField.innerHTML = `<label class="checkbox"><input type="checkbox" class="nos" ${
+    const topRow = document.createElement("div");
+    topRow.className = "top-row";
+    const chkShorts = document.createElement("label");
+    chkShorts.className = "checkbox";
+    chkShorts.innerHTML = `<input type="checkbox" class="nos" ${
       data.noShorts ? "checked" : ""
-    }> Игнорировать Shorts</label>`;
-    box.appendChild(nsField);
+    }> Игнорировать Shorts`;
+    topRow.appendChild(chkShorts);
 
-    const nbField = document.createElement("div");
-    nbField.className = "field";
-    nbField.innerHTML = `<label class="checkbox"><input type="checkbox" class="nob" ${
+    const chkBroadcast = document.createElement("label");
+    chkBroadcast.className = "checkbox";
+    chkBroadcast.innerHTML = `<input type="checkbox" class="nob" ${
       data.noBroadcasts ? "checked" : ""
-    }> Игнорировать трансляции</label>`;
-    box.appendChild(nbField);
+    }> Игнорировать трансляции`;
+    topRow.appendChild(chkBroadcast);
 
-    const durField = document.createElement("div");
-    durField.className = "field dur-wrap";
-    const durLabel = document.createElement("label");
-    durLabel.className = "label";
-    durLabel.textContent = "Длительность";
-    durField.appendChild(durLabel);
-    const durList = document.createElement("div");
-    durList.className = "dur-list";
-    durField.appendChild(durList);
+    const btnDur = document.createElement("button");
+    btnDur.type = "button";
+    btnDur.className = "button is-small";
+    btnDur.textContent = "+ Длительность";
+    topRow.appendChild(btnDur);
+
+    const btnTitle = document.createElement("button");
+    btnTitle.type = "button";
+    btnTitle.className = "button is-small";
+    btnTitle.textContent = "+ Заголовок";
+    topRow.appendChild(btnTitle);
+
+    const btnTag = document.createElement("button");
+    btnTag.type = "button";
+    btnTag.className = "button is-small";
+    btnTag.textContent = "+ Тег";
+    topRow.appendChild(btnTag);
+    box.appendChild(topRow);
+
+    const list = document.createElement("div");
+    box.appendChild(list);
+
     (data.duration || []).forEach((r) => {
-      durList.appendChild(createTimeRow(r.min, r.max));
+      list.appendChild(createDurationRow(r.min, r.max));
     });
-    const addDur = document.createElement("button");
-    addDur.type = "button";
-    addDur.className = "button is-small mt-1";
-    addDur.textContent = "Добавить диапазон";
-    addDur.addEventListener("click", () => {
-      durList.appendChild(createTimeRow());
-    });
-    durField.appendChild(addDur);
-    box.appendChild(durField);
+    (data.title || []).forEach((t) => list.appendChild(createTextRow("title", t)));
+    (data.tags || []).forEach((t) => list.appendChild(createTextRow("tag", t)));
 
-    const titleField = document.createElement("div");
-    titleField.className = "field title-wrap";
-    const tl = document.createElement("label");
-    tl.className = "label";
-    tl.textContent = "Заголовок содержит";
-    titleField.appendChild(tl);
-    const titleList = document.createElement("div");
-    titleField.appendChild(titleList);
-    (data.title || []).forEach((t) => titleList.appendChild(createTextRow(t)));
-    const addTitle = document.createElement("button");
-    addTitle.type = "button";
-    addTitle.className = "button is-small mt-1";
-    addTitle.textContent = "Добавить";
-    addTitle.addEventListener("click", () => {
-      titleList.appendChild(createTextRow());
-    });
-    titleField.appendChild(addTitle);
-    box.appendChild(titleField);
-
-    const tagField = document.createElement("div");
-    tagField.className = "field tag-wrap";
-    const tg = document.createElement("label");
-    tg.className = "label";
-    tg.textContent = "Теги";
-    tagField.appendChild(tg);
-    const tagList = document.createElement("div");
-    tagField.appendChild(tagList);
-    (data.tags || []).forEach((t) => tagList.appendChild(createTextRow(t)));
-    const addTag = document.createElement("button");
-    addTag.type = "button";
-    addTag.className = "button is-small mt-1";
-    addTag.textContent = "Добавить";
-    addTag.addEventListener("click", () => {
-      tagList.appendChild(createTextRow());
-    });
-    tagField.appendChild(addTag);
-    box.appendChild(tagField);
+    btnDur.addEventListener("click", () => list.appendChild(createDurationRow()));
+    btnTitle.addEventListener("click", () => list.appendChild(createTextRow("title")));
+    btnTag.addEventListener("click", () => list.appendChild(createTextRow("tag")));
 
     return box;
   }
@@ -254,22 +230,25 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (sec.querySelector(".nos").checked) obj.noShorts = true;
       if (sec.querySelector(".nob").checked) obj.noBroadcasts = true;
       const durs = [];
-      sec.querySelectorAll(".duration-row").forEach((row) => {
-        const min = parseTime(row.querySelector(".from").value);
-        const toVal = row.querySelector(".to").value;
-        const max = toVal ? parseTime(toVal) : Infinity;
-        if (min || max !== Infinity) durs.push({ min, max });
+      const titles = [];
+      const tags = [];
+      sec.querySelectorAll(".filter-row").forEach((row) => {
+        const type = row.dataset.type;
+        if (type === "duration") {
+          const min = parseTime(row.querySelector(".from").value);
+          const toVal = row.querySelector(".to").value;
+          const max = toVal ? parseTime(toVal) : Infinity;
+          if (min || max !== Infinity) durs.push({ min, max });
+        } else if (type === "title") {
+          const val = row.querySelector("input").value.trim();
+          if (val) titles.push(val);
+        } else if (type === "tag") {
+          const val = row.querySelector("input").value.trim();
+          if (val) tags.push(val);
+        }
       });
       if (durs.length) obj.duration = durs;
-      const titles = Array.from(
-        sec.querySelectorAll(".title-wrap .item-row input")
-      )
-        .map((i) => i.value.trim())
-        .filter(Boolean);
       if (titles.length) obj.title = titles;
-      const tags = Array.from(sec.querySelectorAll(".tag-wrap .item-row input"))
-        .map((i) => i.value.trim())
-        .filter(Boolean);
       if (tags.length) obj.tags = tags;
       if (ch) result.channels[ch] = obj;
       else result.global = obj;

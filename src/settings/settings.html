@@ -12,11 +12,25 @@
       .filter-card {
         padding: 0.75rem;
       }
-      .filter-card .field:not(:last-child) {
+      .top-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
         margin-bottom: 0.5rem;
       }
-      .duration-row .input {
-        width: 7.5rem;
+      .filter-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.25rem;
+      }
+      .filter-row label {
+        margin-bottom: 0;
+        min-width: 6rem;
+      }
+      .filter-row .input[type="time"] {
+        width: 7rem;
       }
     </style>
   </head>
