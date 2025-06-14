@@ -100,7 +100,7 @@ function createGroup(labelText, type, rows, createRowFn) {
   const addBtn = document.createElement("button");
   addBtn.type = "button";
   addBtn.className = "button is-small is-success";
-  addBtn.innerHTML = '<span class="icon"><svg width="1.5em" height="1.5em"><use href="icons.svg#icon-plus" /></svg></span>';
+  addBtn.innerHTML = '<span class="icon"><svg width="1.25em" height="1.25em"><use href="icons.svg#icon-plus" /></svg></span>';
   header.appendChild(addBtn);
 
   const list = document.createElement("div");
