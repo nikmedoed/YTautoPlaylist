@@ -51,15 +51,18 @@ export async function main(startDate = new Date(Date.now() - 604800000)) {
   const videos = await filterVideos(videosList);
   console.log("After filtering:", videos.length, "videos");
   videos.sort((a, b) => a.publishedAt - b.publishedAt);
-  console.log("New Videos:", videos);
-  console.table(
-    videos.map((v) => ({
-      date: formatDate(v.publishedAt),
-      channel: (v.channelTitle || "").padEnd(15).slice(0, 15),
-      title: (v.title || "").padEnd(50).slice(0, 50),
-      link: `https://youtu.be/${v.id}`,
-      duration: parseDuration(v.duration),
-    }))
+  console.log(
+    videos
+      .map((v) =>
+        [
+          parseDuration(v.duration),
+          formatDate(v.publishedAt),
+          (v.channelTitle || "").padEnd(15).slice(0, 15),
+          (v.title || "").padEnd(50).slice(0, 50),
+          `https://youtu.be/${v.id}`,
+        ].join("\t")
+      )
+      .join("\n")
   );
   return createListAndAddVideos(videos);
 }
