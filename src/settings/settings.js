@@ -90,7 +90,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   const videoInput = document.getElementById("videoId");
   const useBtn = document.getElementById("useVideoId");
   const filtersContainer = document.getElementById("filtersContainer");
+  const globalContainer = document.getElementById("globalFilters");
   const saveFiltersBtn = document.getElementById("saveFilters");
+  const exportBtn = document.getElementById("exportFilters");
+  const importInput = document.getElementById("importFilters");
   const addChannelSelect = document.getElementById("addChannelSelect");
   const addChannelBtn = document.getElementById("addChannel");
 
@@ -141,7 +144,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   function createSection(title, data = {}, channelId) {
     const box = document.createElement("div");
-    box.className = "box filter-card";
+    box.className = channelId ? "box filter-card" : "filter-card";
     box.dataset.channel = channelId || "";
 
     const h = document.createElement("h4");
@@ -159,6 +162,19 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const topRow = document.createElement("div");
     topRow.className = "top-row";
+    if (channelId) {
+      const remove = document.createElement("button");
+      remove.className = "delete";
+      remove.type = "button";
+      remove.addEventListener("click", () => {
+        box.remove();
+        const opt = document.createElement("option");
+        opt.value = channelId;
+        opt.textContent = channels[channelId]?.title || channelId;
+        addChannelSelect.appendChild(opt);
+      });
+      topRow.appendChild(remove);
+    }
     const chkShorts = document.createElement("label");
     chkShorts.className = "checkbox";
     chkShorts.innerHTML = `<input type="checkbox" class="nos" ${
@@ -208,7 +224,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     return box;
   }
 
-  filtersContainer.appendChild(createSection("Глобальные", filters.global, null));
+  globalContainer.appendChild(createSection("Глобальные", filters.global, null));
 
   for (const id of Object.keys(filters.channels)) {
     const chName = channels[id]?.title || id;
@@ -222,7 +238,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   saveFiltersBtn?.addEventListener("click", () => {
-    const sections = filtersContainer.querySelectorAll(".box");
+    const sections = document.querySelectorAll(".filter-card");
     const result = { global: {}, channels: {} };
     sections.forEach((sec) => {
       const ch = sec.dataset.channel || null;
@@ -263,5 +279,33 @@ document.addEventListener("DOMContentLoaded", async () => {
     filtersContainer.appendChild(sec);
     const opt = addChannelSelect.querySelector(`option[value="${id}"]`);
     opt?.remove();
+  });
+
+  exportBtn?.addEventListener("click", async () => {
+    const data = await getFilters();
+    const blob = new Blob([JSON.stringify(data, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "filters.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  importInput?.addEventListener("change", () => {
+    const file = importInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const obj = JSON.parse(reader.result);
+        saveFilters(obj).then(() => window.location.reload());
+      } catch (e) {
+        alert("Invalid JSON");
+      }
+    };
+    reader.readAsText(file);
   });
 });
