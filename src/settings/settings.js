@@ -29,7 +29,7 @@ function parseTime(str) {
 
 function createDurationRow(min = 0, max = Infinity) {
   const row = document.createElement("div");
-  row.className = "filter-row mb-3";
+  row.className = "filter-row";
   row.dataset.type = "duration";
 
   const from = document.createElement("input");
@@ -41,7 +41,7 @@ function createDurationRow(min = 0, max = Infinity) {
 
   const dash = document.createElement("span");
   dash.textContent = "-";
-  dash.className = "mx-2";
+  dash.style.margin = "0 0.25rem";
   row.appendChild(dash);
 
   const to = document.createElement("input");
@@ -52,7 +52,7 @@ function createDurationRow(min = 0, max = Infinity) {
   row.appendChild(to);
 
   const del = document.createElement("button");
-  del.className = "delete mr-4";
+  del.className = "delete";
   del.type = "button";
   del.addEventListener("click", () => row.remove());
   row.appendChild(del);
@@ -62,7 +62,7 @@ function createDurationRow(min = 0, max = Infinity) {
 
 function createTextRow(type, value = "") {
   const row = document.createElement("div");
-  row.className = "filter-row mb-3";
+  row.className = "filter-row";
   row.dataset.type = type;
 
   const input = document.createElement("input");
@@ -72,7 +72,7 @@ function createTextRow(type, value = "") {
   row.appendChild(input);
 
   const del = document.createElement("button");
-  del.className = "delete mr-4";
+  del.className = "delete";
   del.type = "button";
   del.addEventListener("click", () => row.remove());
   row.appendChild(del);

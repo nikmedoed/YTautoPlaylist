@@ -41,7 +41,11 @@
         display: flex;
         align-items: center;
         gap: 0.5rem;
+        margin-bottom: 0.5rem;
         flex: 0 0 auto;
+      }
+      .filter-row .delete {
+        margin-right: 0.5rem;
       }
       .filter-row .input[type="time"] {
         width: 7rem;
@@ -78,6 +82,7 @@
         box-shadow: none;
         border: 1px dashed #ccc;
         text-align: center;
+        margin-bottom: 1.5rem;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -168,13 +173,12 @@
 
         <h3 class="title is-4 mb-2" id="filtersHeader">Настройки фильтров</h3>
         <p class="mb-4" id="filtersIntro">
-          Фильтры бывают общими и каналовыми. Сначала видео проверяется по
-          глобальному набору, затем к результату добавляются правила его канала.
-          Списки слов и диапазоны длительности суммируются, образуя единый
-          список. Флажки «Игнорировать Shorts» и «Игнорировать трансляции» в
-          карточке канала перекрывают общий выбор, если он не активен глобально.
-          Когда эти параметры выставлены в глобальном наборе, чекбоксы каналов
-          скрываются.
+          Глобальные фильтры применяются к каждому видео первыми. Для отдельных
+          каналов можно задать дополнительные правила. Списки слов и диапазоны
+          длительности дополняют глобальные значения, а флажки «Игнорировать
+          Shorts» и «Игнорировать трансляции» могут переопределить общий выбор.
+          При активных глобальных флажках соответствующие переключатели в
+          карточках каналов скрываются.
         </p>
 
         <h4 class="title is-5 mb-2" id="globalHeader">Глобальные</h4>
@@ -187,7 +191,7 @@
 
       <div class="container is-fluid">
         <div id="filtersContainer">
-          <div id="addChannelCard" class="box filter-card add-card mb-3">
+          <div id="addChannelCard" class="box filter-card add-card">
             <div class="group-header">
               <span class="has-text-weight-bold">Фильтровать другой канал</span>
             </div>
