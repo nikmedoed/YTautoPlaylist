@@ -6,7 +6,7 @@ import {
   createPlayList,
 } from "./youTubeApiConnectors.js";
 import { logMessage, storeDate, parseDuration, formatDate } from "./utils.js";
-import { filterID } from "./filter.js";
+import { filterVideos } from "./filter.js";
 import { DEV_MODE } from "../config.js";
 
 export function process() {
@@ -58,21 +58,19 @@ export async function main(startDate = new Date(Date.now() - 604800000)) {
       add: 0,
     };
     for (const v of r.videos) {
-      playlistMap[v.vId] = r.playlist;
+      playlistMap[v.id] = r.playlist;
       allVideos.push(v);
     }
   }
   console.log("Fetched", allVideos.length, "videos");
 
-  const { videos, shorts, filtered } = await filterID(
-    allVideos.map((a) => a.vId)
-  );
+  const { videos, shorts, filtered } = await filterVideos(allVideos);
   for (const id of filtered) {
     const pl = playlistMap[id];
     if (stats[pl]) stats[pl].filtered++;
   }
   for (const v of videos) {
-    const pl = playlistMap[v.vId];
+    const pl = playlistMap[v.id];
     stats[pl].add++;
     v.playlist = pl;
   }
@@ -92,10 +90,10 @@ export async function main(startDate = new Date(Date.now() - 604800000)) {
   const unique = [];
   const seen = new Set();
   for (const v of videos.sort(
-    (a, b) => new Date(a.pubDate) - new Date(b.pubDate)
+    (a, b) => new Date(a.publishedAt) - new Date(b.publishedAt)
   )) {
-    if (!seen.has(v.vId)) {
-      seen.add(v.vId);
+    if (!seen.has(v.id)) {
+      seen.add(v.id);
       unique.push(v);
     }
   }
@@ -106,10 +104,10 @@ export async function main(startDate = new Date(Date.now() - 604800000)) {
       .map((e) =>
         [
           parseDuration(e.duration),
-          formatDate(e.pubDate),
+          formatDate(e.publishedAt),
           e.channelTitle,
           e.title,
-          e.vId,
+          e.id,
         ].join("\t")
       )
       .join("\n")
@@ -123,8 +121,8 @@ export function createListAndAddVideos(list) {
     console.warn("No videos to add");
     return Promise.resolve(0);
   }
-  const title = `WL ${formatDate(list[0].pubDate)} - ${formatDate(
-    list[list.length - 1].pubDate
+  const title = `WL ${formatDate(list[0].publishedAt)} - ${formatDate(
+    list[list.length - 1].publishedAt
   )}`;
   return createPlayList(title)
     .then((plst) => {
@@ -133,7 +131,7 @@ export function createListAndAddVideos(list) {
         `Created playlist https://www.youtube.com/playlist?list=${playlistId}`
       );
       return addListToWL(storeDate, playlistId, list).then((count) => {
-        storeDate((list[count - 1] || list[list.length - 1]).pubDate);
+        storeDate((list[count - 1] || list[list.length - 1]).publishedAt);
         console.log(`https://www.youtube.com/playlist?list=${playlistId}`);
         return count;
       });
