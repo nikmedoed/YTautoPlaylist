@@ -14,64 +14,7 @@
     <title>YT AutoWL settings</title>
     <style>
       .filter-card {
-        padding: 0.75rem;
         position: relative;
-        flex: 0 0 calc(25% - 1rem);
-        max-width: calc(25% - 1rem);
-        min-width: 260px;
-      }
-      .filter-card.wide {
-        flex: 1 0 100%;
-        max-width: 100%;
-      }
-      @media (max-width: 1024px) {
-        .filter-card {
-          flex: 1 0 100%;
-          max-width: 100%;
-        }
-      }
-      .top-row {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 0.5rem;
-        margin-bottom: 0.5rem;
-      }
-      .filter-row {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        margin-bottom: 0.5rem;
-        flex: 0 0 auto;
-      }
-      .filter-row .delete {
-        margin-right: 1rem;
-      }
-      .filter-row .input[type="time"] {
-        width: 7rem;
-      }
-      .filter-row .input[type="text"] {
-        width: 24rem;
-      }
-      .filter-group {
-        margin-bottom: 0.5rem;
-      }
-      .group-header {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        margin-bottom: 0.25rem;
-      }
-      .rows-wrap {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-      }
-      #filtersContainer {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.75rem;
-        justify-content: center;
       }
       .remove-btn {
         position: absolute;
@@ -81,21 +24,6 @@
       .add-card {
         box-shadow: none;
         border: 1px dashed #ccc;
-        text-align: center;
-        margin-bottom: 1.5rem;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 0.5rem;
-      }
-
-      #filtersButtons .buttons {
-        align-items: center;
-        justify-content: center;
-      }
-      #filtersButtons .button {
-        margin-bottom: 0;
       }
       #filtersButtons label.button {
         display: inline-flex;
@@ -114,12 +42,14 @@
           later" playlist
         </p>
 
-        <div class="notification is-light">
-          Здесь настраиваются правила отбора видео. Сначала определите дату,
-          после которой будут проверяться новые публикации из ваших подписок, а
-          затем задайте условия для исключения нежелательных роликов.
-          Диапазоны длительности указывают допустимые значения, а строки в
-          заголовке и теги удаляют соответствующие видео из списка.
+        <div class="notification is-light content">
+          <p>Здесь настраиваются правила отбора видео:</p>
+          <ul>
+            <li>определите дату, начиная с которой анализируются публикации;</li>
+            <li>задайте условия для исключения нежелательных роликов;</li>
+            <li>диапазоны длительности задают допустимые значения;</li>
+            <li>указанные в заголовке слова и теги исключают видео из списка.</li>
+          </ul>
         </div>
 
         <h3 class="title is-4 mb-2" id="timeHeader">Временные настройки</h3>
@@ -127,7 +57,7 @@
           Расширение собирает новые видео после указанной даты. При желании дату
           можно определить по конкретному ролику.
         </p>
-        <div class="is-flex is-align-items-flex-end mb-4" id="timeControls">
+        <div class="is-flex is-flex-wrap-wrap is-align-items-flex-end gap-4 mb-4" id="timeControls">
           <div class="mr-5">
             <label class="mb-1" for="startDate"
               >В плейлист будут добавлены видео опубликованные после этой
@@ -179,7 +109,7 @@
         </p>
 
         <h4 class="title is-5 mb-2" id="globalHeader">Глобальные</h4>
-        <div id="globalFilters"></div>
+        <div id="globalFilters" class="columns is-multiline"></div>
       </div>
 
       <div class="container">
@@ -187,9 +117,9 @@
       </div>
 
       <div class="container is-fluid">
-        <div id="filtersContainer">
-          <div id="addChannelCard" class="box filter-card add-card">
-            <div class="group-header">
+        <div id="filtersContainer" class="columns is-multiline is-variable is-3 is-justify-content-center">
+          <div id="addChannelCard" class="column is-full-mobile is-half-tablet is-one-quarter-desktop box filter-card add-card p-3">
+            <div class="group-header is-flex is-align-items-center gap-2 mb-1">
               <span class="has-text-weight-bold">Фильтровать другой канал</span>
             </div>
             <div class="select is-fullwidth">

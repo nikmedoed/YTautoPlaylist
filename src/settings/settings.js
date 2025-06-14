@@ -29,7 +29,7 @@ function parseTime(str) {
 
 function createDurationRow(min = 0, max = Infinity) {
   const row = document.createElement("div");
-  row.className = "filter-row";
+  row.className = "filter-row is-flex is-align-items-center gap-2 mb-2";
   row.dataset.type = "duration";
 
   const from = document.createElement("input");
@@ -40,8 +40,8 @@ function createDurationRow(min = 0, max = Infinity) {
   row.appendChild(from);
 
   const dash = document.createElement("span");
+  dash.className = "mx-1";
   dash.textContent = "-";
-  dash.style.margin = "0 0.25rem";
   row.appendChild(dash);
 
   const to = document.createElement("input");
@@ -52,7 +52,7 @@ function createDurationRow(min = 0, max = Infinity) {
   row.appendChild(to);
 
   const del = document.createElement("button");
-  del.className = "delete";
+  del.className = "delete ml-2";
   del.type = "button";
   del.addEventListener("click", () => row.remove());
   row.appendChild(del);
@@ -62,7 +62,7 @@ function createDurationRow(min = 0, max = Infinity) {
 
 function createTextRow(type, value = "") {
   const row = document.createElement("div");
-  row.className = "filter-row";
+  row.className = "filter-row is-flex is-align-items-center gap-2 mb-2";
   row.dataset.type = type;
 
   const input = document.createElement("input");
@@ -72,7 +72,7 @@ function createTextRow(type, value = "") {
   row.appendChild(input);
 
   const del = document.createElement("button");
-  del.className = "delete";
+  del.className = "delete ml-2";
   del.type = "button";
   del.addEventListener("click", () => row.remove());
   row.appendChild(del);
@@ -82,11 +82,11 @@ function createTextRow(type, value = "") {
 
 function createGroup(labelText, type, rows, createRowFn) {
   const group = document.createElement("div");
-  group.className = "filter-group";
+  group.className = "filter-group mb-2";
   group.dataset.type = type;
 
   const header = document.createElement("div");
-  header.className = "group-header top-row";
+  header.className = "group-header is-flex is-flex-wrap-wrap is-align-items-center gap-2 mb-1";
 
   const lab = document.createElement("span");
   lab.className = "has-text-weight-bold";
@@ -100,7 +100,7 @@ function createGroup(labelText, type, rows, createRowFn) {
   header.appendChild(addBtn);
 
   const list = document.createElement("div");
-  list.className = "rows-wrap";
+  list.className = "rows-wrap is-flex is-flex-wrap-wrap gap-2";
   group.appendChild(header);
   group.appendChild(list);
 
@@ -192,7 +192,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   function createSection(title, data = {}, channelId) {
     const box = document.createElement("div");
-    box.className = channelId ? "box filter-card" : "filter-card wide";
+    box.className = channelId
+      ? "column is-full-mobile is-half-tablet is-one-quarter-desktop box filter-card p-3"
+      : "column is-12 filter-card p-3";
     box.dataset.channel = channelId || "";
 
     if (channelId) {
@@ -207,7 +209,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     const topRow = document.createElement("div");
-    topRow.className = "top-row";
+    topRow.className = "top-row is-flex is-flex-wrap-wrap is-align-items-center gap-2 mb-2";
     if (channelId) {
       const remove = document.createElement("button");
       remove.className = "button is-danger is-light is-small remove-btn";
@@ -238,7 +240,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     topRow.appendChild(chkBroadcast);
 
     const addRow = document.createElement("div");
-    addRow.className = "top-row";
+    addRow.className = "top-row is-flex is-flex-wrap-wrap is-align-items-center gap-2 mb-2";
 
     const addLabel = document.createElement("span");
     addLabel.textContent = "Добавить фильтры:";
