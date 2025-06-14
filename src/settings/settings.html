@@ -13,22 +13,20 @@
     />
     <title>YT AutoWL settings</title>
     <style>
+      :root {
+        color-scheme: light;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: light;
+        }
+      }
       .filter-card {
         padding: 0.75rem;
         position: relative;
-        flex: 0 0 calc(25% - 1rem);
-        max-width: calc(25% - 1rem);
-        min-width: 260px;
       }
       .filter-card.wide {
-        flex: 1 0 100%;
-        max-width: 100%;
-      }
-      @media (max-width: 1024px) {
-        .filter-card {
-          flex: 1 0 100%;
-          max-width: 100%;
-        }
+        grid-column: 1 / -1;
       }
       .top-row {
         display: flex;
@@ -68,8 +66,8 @@
         gap: 0.5rem;
       }
       #filtersContainer {
-        display: flex;
-        flex-wrap: wrap;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
         gap: 0.75rem;
         justify-content: center;
       }
