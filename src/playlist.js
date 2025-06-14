@@ -88,18 +88,11 @@ export async function main(startDate = new Date(Date.now() - 604800000)) {
   }
   console.log("After filtering:", videos.length, "videos");
 
-  const unique = [];
-  const seen = new Set();
-  for (const v of videos.sort((a, b) => a.publishedAt - b.publishedAt)) {
-    if (!seen.has(v.id)) {
-      seen.add(v.id);
-      unique.push(v);
-    }
-  }
+  const sorted = videos.sort((a, b) => a.publishedAt - b.publishedAt);
 
-  console.log("New Videos:", unique);
+  console.log("New Videos:", sorted);
   console.log(
-    unique
+    sorted
       .map((e) =>
         [
           parseDuration(e.duration),
@@ -112,7 +105,7 @@ export async function main(startDate = new Date(Date.now() - 604800000)) {
       .join("\n")
   );
 
-  return createListAndAddVideos(unique);
+  return createListAndAddVideos(sorted);
 }
 
 export function createListAndAddVideos(list) {
