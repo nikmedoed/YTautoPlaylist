@@ -29,13 +29,15 @@ function parseTime(str) {
 
 function createDurationRow(min = 0, max = Infinity) {
   const row = document.createElement("div");
-  row.className = "filter-row is-flex is-align-items-center gap-2 mb-2";
+  row.className = "filter-row is-flex is-align-items-center mb-2";
+  row.style.gap = "0.5rem";
   row.dataset.type = "duration";
 
   const from = document.createElement("input");
   from.type = "time";
   from.step = 1;
   from.className = "input from";
+  from.style.maxWidth = "7rem";
   if (min) from.value = toTimeStr(min);
   row.appendChild(from);
 
@@ -48,6 +50,7 @@ function createDurationRow(min = 0, max = Infinity) {
   to.type = "time";
   to.step = 1;
   to.className = "input to";
+  to.style.maxWidth = "7rem";
   if (max !== Infinity) to.value = toTimeStr(max);
   row.appendChild(to);
 
@@ -62,12 +65,14 @@ function createDurationRow(min = 0, max = Infinity) {
 
 function createTextRow(type, value = "") {
   const row = document.createElement("div");
-  row.className = "filter-row is-flex is-align-items-center gap-2 mb-2";
+  row.className = "filter-row is-flex is-align-items-center mb-2";
+  row.style.gap = "0.5rem";
   row.dataset.type = type;
 
   const input = document.createElement("input");
   input.type = "text";
   input.className = "input";
+  input.style.maxWidth = "20rem";
   input.value = value;
   row.appendChild(input);
 
@@ -86,7 +91,8 @@ function createGroup(labelText, type, rows, createRowFn) {
   group.dataset.type = type;
 
   const header = document.createElement("div");
-  header.className = "group-header is-flex is-flex-wrap-wrap is-align-items-center gap-2 mb-1";
+  header.className = "group-header is-flex is-flex-wrap-wrap is-align-items-center mb-1";
+  header.style.gap = "0.5rem";
 
   const lab = document.createElement("span");
   lab.className = "has-text-weight-bold";
@@ -100,7 +106,8 @@ function createGroup(labelText, type, rows, createRowFn) {
   header.appendChild(addBtn);
 
   const list = document.createElement("div");
-  list.className = "rows-wrap is-flex is-flex-wrap-wrap gap-2";
+  list.className = "rows-wrap is-flex is-flex-wrap-wrap";
+  list.style.gap = "0.5rem";
   group.appendChild(header);
   group.appendChild(list);
 
@@ -209,7 +216,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     const topRow = document.createElement("div");
-    topRow.className = "top-row is-flex is-flex-wrap-wrap is-align-items-center gap-2 mb-2";
+    topRow.className = "top-row is-flex is-flex-wrap-wrap is-align-items-center mb-2";
+    topRow.style.gap = "0.5rem";
     if (channelId) {
       const remove = document.createElement("button");
       remove.className = "button is-danger is-light is-small remove-btn";
@@ -240,7 +248,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     topRow.appendChild(chkBroadcast);
 
     const addRow = document.createElement("div");
-    addRow.className = "top-row is-flex is-flex-wrap-wrap is-align-items-center gap-2 mb-2";
+    addRow.className = "top-row is-flex is-flex-wrap-wrap is-align-items-center mb-2";
+    addRow.style.gap = "0.5rem";
 
     const addLabel = document.createElement("span");
     addLabel.textContent = "Добавить фильтры:";

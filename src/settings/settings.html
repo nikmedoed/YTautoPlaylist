@@ -24,6 +24,19 @@
       .add-card {
         box-shadow: none;
         border: 1px dashed #ccc;
+        text-align: center;
+        margin-bottom: 1.5rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+      }
+      .filter-row .input[type="time"] {
+        width: 7rem;
+      }
+      .filter-row .input[type="text"] {
+        width: 20rem;
       }
       #filtersButtons label.button {
         display: inline-flex;
@@ -42,7 +55,7 @@
           later" playlist
         </p>
 
-        <div class="notification is-light content">
+        <div class="notification is-light content mb-4">
           <p>Здесь настраиваются правила отбора видео:</p>
           <ul>
             <li>определите дату, начиная с которой анализируются публикации;</li>
@@ -57,7 +70,7 @@
           Расширение собирает новые видео после указанной даты. При желании дату
           можно определить по конкретному ролику.
         </p>
-        <div class="is-flex is-flex-wrap-wrap is-align-items-flex-end gap-4 mb-4" id="timeControls">
+        <div class="is-flex is-flex-wrap-wrap is-align-items-flex-end mb-4" id="timeControls" style="gap: 1rem;">
           <div class="mr-5">
             <label class="mb-1" for="startDate"
               >В плейлист будут добавлены видео опубликованные после этой
@@ -119,7 +132,7 @@
       <div class="container is-fluid">
         <div id="filtersContainer" class="columns is-multiline is-variable is-3 is-justify-content-center">
           <div id="addChannelCard" class="column is-full-mobile is-half-tablet is-one-quarter-desktop box filter-card add-card p-3">
-            <div class="group-header is-flex is-align-items-center gap-2 mb-1">
+            <div class="group-header is-flex is-align-items-center mb-1" style="gap: 0.5rem;">
               <span class="has-text-weight-bold">Фильтровать другой канал</span>
             </div>
             <div class="select is-fullwidth">
