@@ -3,13 +3,6 @@ import { logMessage, parseDuration } from "./utils.js";
 
 let channelCache;
 
-async function loadChannelCache() {
-  if (channelCache) return channelCache;
-  const data = await new Promise((r) => chrome.storage.local.get(["channelCache"], r));
-  channelCache = data.channelCache || {};
-  return channelCache;
-}
-
 // Utility for calling YouTube Data API via fetch
 async function callApi(path, params = {}, method = "GET", body = null, retry) {
   const token = await getToken();
@@ -86,7 +79,13 @@ async function getUploadsLists(userids) {
 }
 
 async function getChannelMap() {
-  const cache = await loadChannelCache();
+  if (!channelCache) {
+    const data = await new Promise((r) =>
+      chrome.storage.local.get(["channelCache"], r)
+    );
+    channelCache = data.channelCache || {};
+  }
+  const cache = channelCache;
   const subs = await getSubscriptionsId();
   const missing = [];
   for (const { id, title } of subs) {
@@ -104,6 +103,7 @@ async function getChannelMap() {
       cache[ch].uploads = uploads[i];
     }
   }
+  channelCache = cache;
   chrome.storage.local.set({ channelCache: cache });
   return cache;
 }

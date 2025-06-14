@@ -4,24 +4,6 @@ Automatic playlist collector from YouTube subscriptions.
 
 Сбор новых видео на основе подписок ютуба и создания из этих видео плейлиста. Расширение умеет фильтровать список по многим параметрам таким как длительность, теги, назватия, тип видео (трансляция, шортс). Пока настройка фильтров возможна только через код, а ход работы отображается в консоли service worker.
 
-## Video object
-
-Работа расширения строится вокруг структуры `Video`, описанной в файле [`src/types.d.ts`](src/types.d.ts). Основные поля:
-
-- `id` – идентификатор ролика
-- `publishedAt` – дата публикации (`Date`)
-- `title`, `channelId`, `channelTitle` – информация о ролике и канале
-- `tags`, `duration`, `liveStreamingDetails` – дополнительные сведения
-- `playlist` – из какого плейлиста ролик был получен
-
-## Channel object
-
-Информация о канале хранится отдельно и кэшируется в `chrome.storage.local`. Объект канала содержит:
-
-- `id` – идентификатор канала
-- `title` – отображаемое название
-- `uploads` – идентификатор плейлиста загрузок
-
 # ToDo
 
 - [ ] Отрефакторить код, сделать его чище, полезные комментарии, где деактивированные функции не удалять, пока не будут реализованы. Удали дублирующийся код. Я сейчас вижу, что некоторые функции не используются вовсе. Посмотри точно ли весь их функционал где-то реализован, если да, удаляй, или переделывай.
@@ -57,3 +39,23 @@ Automatic playlist collector from YouTube subscriptions.
 
 - [ ] организовать циклическое еженедельное добавление
 - [ ] Если закончилась квота, паузиться на сутки с добавлением и вообще везде, где пауза проихошла выжидать
+
+## Technical details
+
+### Video object
+
+The extension operates with the `Video` structure defined in [`src/types.d.ts`](src/types.d.ts). Key fields:
+
+- `id` – video identifier
+- `publishedAt` – publication date (`Date`)
+- `title`, `channelId`, `channelTitle` – metadata about the video and channel
+- `tags`, `duration`, `liveStreamingDetails` – additional information
+- `playlist` – source playlist identifier
+
+### Channel object
+
+Channel information is cached in `chrome.storage.local` and contains:
+
+- `id` – channel identifier
+- `title` – display name
+- `uploads` – uploads playlist identifier

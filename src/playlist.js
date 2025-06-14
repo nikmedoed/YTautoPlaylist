@@ -46,7 +46,6 @@ export async function main(startDate = new Date(Date.now() - 604800000)) {
     stats[r.playlist] = {
       new: r.videos.length,
       filtered: 0,
-      shorts: 0,
       add: 0,
     };
     for (const v of r.videos) {
@@ -56,24 +55,34 @@ export async function main(startDate = new Date(Date.now() - 604800000)) {
   }
   console.log("Fetched", allVideos.length, "videos");
 
-  const { videos, shorts, filtered } = await filterVideos(allVideos);
-  for (const id of filtered) {
-    const pl = playlistMap[id];
-    if (stats[pl]) stats[pl].filtered++;
+  const deduped = [];
+  const seenAll = new Set();
+  for (const v of allVideos) {
+    if (!seenAll.has(v.id)) {
+      seenAll.add(v.id);
+      deduped.push(v);
+    }
+  }
+
+  const videos = await filterVideos(deduped);
+
+  const survived = new Set(videos.map((v) => v.id));
+  for (const v of deduped) {
+    const pl = playlistMap[v.id];
+    if (!stats[pl]) continue;
+    if (survived.has(v.id)) {
+      stats[pl].add++;
+    } else {
+      stats[pl].filtered++;
+    }
   }
   for (const v of videos) {
-    const pl = playlistMap[v.id];
-    stats[pl].add++;
-    v.playlist = pl;
-  }
-  for (const id of shorts) {
-    const pl = playlistMap[id];
-    if (stats[pl]) stats[pl].shorts++;
+    v.playlist = playlistMap[v.id];
   }
   for (const [pl, st] of Object.entries(stats)) {
-    if (st.new || st.filtered || st.shorts || st.add) {
+    if (st.new || st.filtered || st.add) {
       console.log(
-        `Playlist ${pl} new ${st.new}, filtered ${st.filtered}, shorts ${st.shorts}, to playlist ${st.add}`
+        `Playlist ${pl} new ${st.new}, filtered ${st.filtered}, to playlist ${st.add}`
       );
     }
   }

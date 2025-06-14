@@ -1,20 +1,9 @@
 import { getVideoInfo, isShort } from './youTubeApiConnectors.js';
-import { parseDuration } from './utils.js';
 import { TITLEFILTER, BROADCASTFILTER } from './constants.js';
 
 export async function filterVideos(list) {
-  const uniq = [];
-  const seen = new Set();
-  for (const v of list) {
-    if (!seen.has(v.id)) {
-      seen.add(v.id);
-      uniq.push(v);
-    }
-  }
-  list = uniq;
   console.log('Fetching info for', list.length, 'videos');
   const filters = [
-    (video) => parseDuration(video.duration) > 61,
     (video) => {
       const titfilt = TITLEFILTER[video.channelId];
       if (titfilt && titfilt.length > 0) {
@@ -45,17 +34,22 @@ export async function filterVideos(list) {
   const info = list.map((v) => ({ ...v, ...(infoMap[v.id] || {}) }));
   console.log('Got details for', info.length, 'videos');
   const toCheck = [];
-  const filtered = [];
+  let filtered = 0;
+  let liveFiltered = 0;
   for (const video of info) {
-    if (filters.every((fltr) => fltr(video))) {
-      toCheck.push(video);
-    } else {
-      filtered.push(video.id);
+    if (!filters[1](video)) {
+      liveFiltered++;
+      continue;
     }
+    if (!filters[0](video)) {
+      filtered++;
+      continue;
+    }
+    toCheck.push(video);
   }
   console.log('After basic filters:', toCheck.length, 'videos');
   const videos = [];
-  const shorts = [];
+  let shorts = 0;
   let checked = 0;
   const concurrency = 5;
   let index = 0;
@@ -64,7 +58,7 @@ export async function filterVideos(list) {
       const video = toCheck[index++];
       try {
         const short = await isShort(video);
-        if (short) shorts.push(video.id);
+        if (short) shorts++;
         else videos.push(video);
       } catch (err) {
         console.error('Failed short check', err);
@@ -77,6 +71,8 @@ export async function filterVideos(list) {
     }
   }
   await Promise.all(Array(concurrency).fill(0).map(worker));
-  console.log('After short filter:', videos.length, 'videos');
-  return { videos, shorts, filtered };
+  console.log(
+    `After short filter: ${videos.length} videos, shorts ${shorts}, filtered ${filtered}, broadcasts ${liveFiltered}`
+  );
+  return videos;
 }
