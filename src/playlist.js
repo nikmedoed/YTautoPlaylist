@@ -88,7 +88,10 @@ export function createListAndAddVideos(list) {
       });
     })
     .catch((err) => {
-      const reason = err.error?.errors?.[0]?.reason || "";
+      const reason =
+        err.error?.error?.errors?.[0]?.reason ||
+        err.error?.errors?.[0]?.reason ||
+        (err.status === 429 ? "rateLimitExceeded" : "");
       switch (reason) {
         case "rateLimitExceeded":
           logMessage(
@@ -108,7 +111,7 @@ export function createListAndAddVideos(list) {
             "error",
             "createPlaylist",
             list.length,
-            err.error?.message || err.message
+            err.error?.error?.message || err.error?.message || err.message
           );
           return 0;
       }
