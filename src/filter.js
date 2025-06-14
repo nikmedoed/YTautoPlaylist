@@ -37,32 +37,35 @@ function buildStats(videos) {
   return stats;
 }
 
-function getRules(channelId) {
-  const { global, channels } = FILTERS;
-  const ch = channels[channelId] || {};
+function getRules(global, local = {}) {
   return {
-    noShorts: ch.noShorts ?? global.noShorts,
-    noBroadcasts: ch.noBroadcasts ?? global.noBroadcasts,
-    title: [...(global.title || []), ...(ch.title || [])],
-    tags: [...(global.tags || []), ...(ch.tags || [])],
-    duration: [...(global.duration || []), ...(ch.duration || [])],
+    noShorts: local.noShorts ?? global.noShorts,
+    noBroadcasts: local.noBroadcasts ?? global.noBroadcasts,
+    title: [...(global.title || []), ...(local.title || [])],
+    tags: [...(global.tags || []), ...(local.tags || [])],
+    duration: [...(global.duration || []), ...(local.duration || [])],
   };
 }
 
 export async function filterVideos(list) {
   console.log('Fetching info for', list.length, 'videos');
 
-  const info = await fetchInfo(list);
-  const stats = buildStats(info);
+  list = await fetchInfo(list);
+  const stats = buildStats(list);
 
   const result = [];
-  let filtered = 0;
-  let liveFiltered = 0;
-  let shorts = 0;
+  const videos = list;
 
-  for (const video of info) {
+  let processed = 0;
+  const concurrency = 5;
+
+  function getRulesFor(video) {
+    return getRules(FILTERS.global, FILTERS.channels[video.channelId]);
+  }
+
+  async function handle(video) {
     const st = stats[video.channelId || 'unknown'];
-    const rules = getRules(video.channelId);
+    const rules = getRulesFor(video);
 
     if (
       rules.noBroadcasts &&
@@ -70,26 +73,23 @@ export async function filterVideos(list) {
       video.liveStreamingDetails.actualStartTime !==
         video.liveStreamingDetails.scheduledStartTime
     ) {
-      liveFiltered++;
       st.broadcasts++;
-      continue;
+      return;
     }
 
     if (rules.title.length) {
       const t = (video.title || '').toLowerCase();
       if (rules.title.some((s) => t.includes(s))) {
-        filtered++;
         st.filtered++;
-        continue;
+        return;
       }
     }
 
     if (rules.tags.length) {
       const tags = (video.tags || []).map((t) => t.toLowerCase());
       if (rules.tags.some((s) => tags.includes(s))) {
-        filtered++;
         st.filtered++;
-        continue;
+        return;
       }
     }
 
@@ -99,18 +99,16 @@ export async function filterVideos(list) {
         typeof len === 'number' &&
         !rules.duration.some(({ min = 0, max = Infinity }) => len >= min && len <= max)
       ) {
-        filtered++;
         st.filtered++;
-        continue;
+        return;
       }
     }
 
     if (rules.noShorts) {
       try {
         if (await isShort(video)) {
-          shorts++;
           st.shorts++;
-          continue;
+          return;
         }
       } catch (err) {
         console.error('Failed short check', err);
@@ -121,13 +119,38 @@ export async function filterVideos(list) {
     st.add++;
   }
 
+  let index = 0;
+  async function worker() {
+    while (index < videos.length) {
+      const video = videos[index++];
+      await handle(video);
+      processed++;
+      if (processed % 5 === 0 || processed === videos.length) {
+        console.log('Filter progress', processed, '/', videos.length);
+      }
+    }
+  }
+
+  await Promise.all(Array(concurrency).fill(0).map(worker));
+
+  const totals = Object.values(stats).reduce(
+    (acc, st) => {
+      acc.filtered += st.filtered;
+      acc.shorts += st.shorts;
+      acc.broadcasts += st.broadcasts;
+      acc.passed += st.add;
+      return acc;
+    },
+    { filtered: 0, shorts: 0, broadcasts: 0, passed: 0 }
+  );
+
   for (const st of Object.values(stats)) {
     console.log(
       `${st.title} new ${st.new}, filtered ${st.filtered}, broadcasts ${st.broadcasts}, shorts ${st.shorts}, to playlist ${st.add}`
     );
   }
   console.log(
-    `${list.length} videos filter stats: filtered ${filtered}, broadcasts ${liveFiltered}, shorts ${shorts}, passed ${result.length}`
+    `${list.length} videos filter stats: filtered ${totals.filtered}, broadcasts ${totals.broadcasts}, shorts ${totals.shorts}, passed ${totals.passed}`
   );
   return result;
 }
