@@ -29,9 +29,6 @@
         padding: 0.75rem;
         position: relative;
       }
-      .filter-card.wide {
-        grid-column: 1 / -1;
-      }
       .top-row {
         display: flex;
         flex-wrap: wrap;
@@ -68,24 +65,6 @@
         display: flex;
         flex-wrap: wrap;
         gap: 0.5rem;
-      }
-      #filtersContainer {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(260px, 1fr));
-        gap: 0.75rem;
-        justify-content: center;
-      }
-
-      @media (max-width: 1024px) {
-        #filtersContainer {
-          grid-template-columns: repeat(2, minmax(260px, 1fr));
-        }
-      }
-
-      @media (max-width: 600px) {
-        #filtersContainer {
-          grid-template-columns: 1fr;
-        }
       }
       .remove-btn {
         position: absolute;
@@ -242,18 +221,20 @@
       </div>
 
       <div class="container is-fluid">
-        <div id="filtersContainer">
-          <div id="addChannelCard" class="box filter-card add-card">
-            <div class="group-header">
-              <span class="has-text-weight-bold">Фильтровать другой канал</span>
+        <div id="filtersContainer" class="columns is-multiline">
+          <div id="addChannelCard" class="column is-one-quarter-widescreen is-one-third-desktop is-half-tablet">
+            <div class="box filter-card add-card">
+              <div class="group-header">
+                <span class="has-text-weight-bold">Фильтровать другой канал</span>
+              </div>
+              <div class="select is-fullwidth">
+                <select id="addChannelSelect"></select>
+              </div>
+              <button id="addChannel" class="button is-link is-fullwidth">
+                <span class="icon"><i class="fas fa-plus"></i></span>
+                <span>Добавить</span>
+              </button>
             </div>
-            <div class="select is-fullwidth">
-              <select id="addChannelSelect"></select>
-            </div>
-            <button id="addChannel" class="button is-link is-fullwidth">
-              <span class="icon"><i class="fas fa-plus"></i></span>
-              <span>Добавить</span>
-            </button>
           </div>
         </div>
       </div>
