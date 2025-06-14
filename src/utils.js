@@ -1,5 +1,5 @@
-export function logMessage(level, id, count, message) {
-  const text = `Video id: ${id} :: Count: ${count}\n${message}`;
+export function logMessage(level, context, count, message) {
+  const text = `[${context}] item ${count}: ${message}`;
   if (level === "warn") {
     console.warn(text);
   } else {

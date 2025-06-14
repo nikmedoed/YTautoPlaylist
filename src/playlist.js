@@ -55,11 +55,11 @@ export async function main(startDate = new Date(Date.now() - 604800000)) {
     videos
       .map((v) =>
         [
-          parseDuration(v.duration),
           formatDate(v.publishedAt),
           (v.channelTitle || "").padEnd(15).slice(0, 15),
           (v.title || "").padEnd(50).slice(0, 50),
           `https://youtu.be/${v.id}`,
+          parseDuration(v.duration),
         ].join("\t")
       )
       .join("\n")
@@ -93,7 +93,7 @@ export function createListAndAddVideos(list) {
         case "rateLimitExceeded":
           logMessage(
             "warn",
-            "create",
+            "createPlaylist",
             list.length,
             "Rate limit exceeded, retry in 8 min"
           );
@@ -101,12 +101,12 @@ export function createListAndAddVideos(list) {
             () => createListAndAddVideos(list)
           );
         case "quotaExceeded":
-          logMessage("error", "create", list.length, "Quota exceeded");
+          logMessage("error", "createPlaylist", list.length, "Quota exceeded");
           return 0;
         default:
           logMessage(
             "error",
-            "create",
+            "createPlaylist",
             list.length,
             err.error?.message || err.message
           );
