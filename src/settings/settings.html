@@ -52,11 +52,19 @@
         align-items: center;
         justify-content: center;
       }
+      .filter-card.box .filter-row .remove-row {
+        margin-right: 0;
+      }
       .filter-row .input[type="time"] {
         width: 7rem;
       }
       .filter-row .input[type="text"] {
         width: 24rem;
+      }
+      .filter-card.box .filter-row .input[type="text"] {
+        width: auto;
+        flex: 1 1 auto;
+        min-width: 0;
       }
       .filter-group {
         margin-bottom: 0.5rem;
@@ -71,6 +79,13 @@
         display: flex;
         flex-wrap: wrap;
         gap: 0.5rem;
+      }
+      .filter-card.box .rows-wrap {
+        flex-direction: column;
+        flex-wrap: nowrap;
+      }
+      .filter-card.box .filter-row {
+        width: 100%;
       }
       #filtersContainer {
         display: flex;
