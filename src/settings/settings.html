@@ -16,8 +16,8 @@
       .filter-card {
         padding: 0.75rem;
         position: relative;
-        flex: 0 0 25%;
-        max-width: 25%;
+        flex: 0 0 calc(25% - 1rem);
+        max-width: calc(25% - 1rem);
         min-width: 260px;
       }
       .filter-card.wide {
@@ -69,8 +69,14 @@
       .add-card {
         box-shadow: none;
         border: 1px dashed #ccc;
-        display: flex;
-        flex-direction: column;
+        text-align: center;
+      }
+
+      #filtersButtons .buttons {
+        align-items: center;
+      }
+      #filtersButtons label.button {
+        display: inline-flex;
         align-items: center;
       }
     </style>
@@ -92,7 +98,7 @@
           некоторых пользователей, очень короткие видео или очень длинные.
         </div>
 
-        <h3 class="is-size-4 mb-2" id="timeHeader">Временные настройки</h3>
+        <h3 class="title is-4 mb-2" id="timeHeader">Настройки сборщика</h3>
         <div class="is-flex is-align-items-flex-end mb-4" id="timeControls">
           <div class="mr-5">
             <label class="mb-1" for="startDate"
@@ -137,7 +143,7 @@
           </div>
         </div>
 
-        <h3 class="title is-4" id="filtersHeader">Настройки фильтров</h3>
+        <h3 class="title is-4 mb-2" id="filtersHeader">Настройки фильтров</h3>
         <p class="mb-4" id="filtersIntro">
           Создайте условия для игнорирования видео. Эти параметры будут
           применяться при создании плейлиста. Сначала укажите глобальные
@@ -149,7 +155,7 @@
       </div>
 
       <div class="container is-fluid">
-        <h4 class="title is-5 mt-4" id="channelsHeader">Фильтры каналов</h4>
+        <h4 class="title is-5 mt-4 mb-2" id="channelsHeader">Фильтры каналов</h4>
 
         <div id="filtersContainer">
           <div id="addChannelCard" class="box filter-card add-card has-text-centered mt-3">

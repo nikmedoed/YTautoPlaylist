@@ -39,6 +39,11 @@ function createDurationRow(min = 0, max = Infinity) {
   if (min) from.value = toTimeStr(min);
   row.appendChild(from);
 
+  const dash = document.createElement("span");
+  dash.textContent = "-";
+  dash.style.margin = "0 0.25rem";
+  row.appendChild(dash);
+
   const to = document.createElement("input");
   to.type = "time";
   to.step = 1;
