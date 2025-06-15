@@ -52,10 +52,8 @@ function createDurationRow(min = 0, max = Infinity) {
   row.appendChild(to);
 
   const del = document.createElement("button");
-  del.className = "button is-white is-small remove-row";
+  del.className = "delete is-small remove-row";
   del.type = "button";
-  del.innerHTML =
-    '<span class="icon"><svg width="1.5em" height="1.5em"><use href="icons.svg#icon-x" /></svg></span>';
   del.addEventListener("click", () => row.remove());
   row.appendChild(del);
 
@@ -74,10 +72,8 @@ function createTextRow(type, value = "") {
   row.appendChild(input);
 
   const del = document.createElement("button");
-  del.className = "button is-white is-small remove-row";
+  del.className = "delete is-small remove-row";
   del.type = "button";
-  del.innerHTML =
-    '<span class="icon"><svg width="1.5em" height="1.5em"><use href="icons.svg#icon-x" /></svg></span>';
   del.addEventListener("click", () => row.remove());
   row.appendChild(del);
 
@@ -196,7 +192,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   function createSection(title, data = {}, channelId) {
     const box = document.createElement("div");
-    box.className = channelId ? "box filter-card" : "filter-card wide";
+    box.className = "column box filter-card";
+    if (channelId) {
+      box.classList.add(
+        "is-one-quarter-desktop",
+        "is-half-tablet",
+        "is-full-mobile"
+      );
+    } else {
+      box.classList.add("is-full");
+    }
     box.dataset.channel = channelId || "";
 
     if (channelId) {
@@ -214,9 +219,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     topRow.className = "top-row";
     if (channelId) {
       const remove = document.createElement("button");
-      remove.className = "button is-danger is-light is-small remove-btn";
+      remove.className = "delete remove-btn";
       remove.type = "button";
-      remove.innerHTML = '<span class="icon"><svg width="1.5em" height="1.5em"><use href="icons.svg#icon-trash" /></svg></span>';
       remove.addEventListener("click", () => {
         box.remove();
         const opt = document.createElement("option");
@@ -339,6 +343,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     const opt = addChannelSelect.querySelector(`option[value="${id}"]`);
     if (opt) opt.remove();
   });
+
+  filtersContainer.classList.remove("is-hidden");
 
   saveFiltersBtn?.addEventListener("click", () => {
     const sections = document.querySelectorAll(".filter-card:not(.add-card)");
