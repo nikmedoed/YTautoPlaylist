@@ -8,7 +8,6 @@
       href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css"
     />
     <!-- Inline icon sprite -->
-    <link rel="preload" as="image" href="icons.svg" />
     <title>YT AutoWL settings</title>
     <style>
       .filter-card {
@@ -54,6 +53,9 @@
         gap: 0.5rem;
         margin-bottom: 0.5rem;
         flex: 0 0 auto;
+      }
+      .duration-dash {
+        margin: 0 0.25rem;
       }
       .filter-row .remove-row {
         margin-right: 1rem;
@@ -143,6 +145,13 @@
         gap: 0.5rem;
         max-width: 100%;
       }
+      .start-date-column {
+        flex: 0 0 326px;
+        max-width: 326px;
+      }
+      #startDate {
+        max-width: 260px;
+      }
     </style>
   </head>
   <body>
@@ -166,19 +175,14 @@
           можно определить по конкретному ролику.
         </p>
         <div class="columns is-align-items-flex-end is-variable is-2 mb-4" id="timeControls">
-          <div class="column is-narrow is-full-mobile" style="flex-basis: 326px;">
+          <div class="column is-narrow is-full-mobile start-date-column">
             <label class="mb-1" for="startDate"
               >В плейлист будут добавлены видео опубликованные после этой
               даты</label
             >
             <div class="field has-addons is-flex-wrap-wrap">
               <div class="control">
-                <input
-                  id="startDate"
-                  class="input"
-                  style="max-width: 260px"
-                  type="datetime-local"
-                />
+                <input id="startDate" class="input" type="datetime-local" />
               </div>
               <div class="control">
                 <button id="saveStartDate" class="button is-link" type="button">
@@ -304,6 +308,85 @@
         </div>
       </div>
     </section>
+    <template id="filterCardTemplate">
+      <div class="box filter-card">
+        <h4 class="title is-5 mb-2 channel-heading">
+          <a class="channel-link" target="_blank"></a>
+        </h4>
+        <button type="button" class="button is-danger is-light is-small remove-btn">
+          <span class="icon">
+            <svg width="1.5em" height="1.5em"><use href="icons.svg#icon-trash" /></svg>
+          </span>
+        </button>
+        <div class="top-row options-row">
+          <label class="checkbox">
+            <input type="checkbox" class="nos" /> Игнорировать Shorts
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" class="nob" /> Игнорировать трансляции
+          </label>
+        </div>
+        <div class="top-row add-row">
+          <span>Добавить фильтры:</span>
+          <div class="filter-buttons">
+            <button type="button" class="button is-small is-info add-duration">
+              <span class="icon">
+                <svg width="1.5em" height="1.5em"><use href="icons.svg#icon-plus" /></svg>
+              </span>
+              <span>Длительность</span>
+            </button>
+            <button type="button" class="button is-small is-info add-title">
+              <span class="icon">
+                <svg width="1.5em" height="1.5em"><use href="icons.svg#icon-plus" /></svg>
+              </span>
+              <span>Заголовок</span>
+            </button>
+            <button type="button" class="button is-small is-info add-tag">
+              <span class="icon">
+                <svg width="1.5em" height="1.5em"><use href="icons.svg#icon-plus" /></svg>
+              </span>
+              <span>Тег</span>
+            </button>
+          </div>
+        </div>
+        <div class="groups-container"></div>
+      </div>
+    </template>
+    <template id="durationRowTemplate">
+      <div class="filter-row" data-type="duration">
+        <input type="time" step="1" class="input from" />
+        <span class="duration-dash">-</span>
+        <input type="time" step="1" class="input to" />
+        <button type="button" class="button is-white is-small remove-row">
+          <span class="icon">
+            <svg width="1.5em" height="1.5em"><use href="icons.svg#icon-x" /></svg>
+          </span>
+        </button>
+      </div>
+    </template>
+    <template id="textRowTemplate">
+      <div class="filter-row">
+        <input type="text" class="input" />
+        <button type="button" class="button is-white is-small remove-row">
+          <span class="icon">
+            <svg width="1.5em" height="1.5em"><use href="icons.svg#icon-x" /></svg>
+          </span>
+        </button>
+      </div>
+    </template>
+    <template id="filterGroupTemplate">
+      <div class="filter-group">
+        <div class="group-header top-row">
+          <span class="has-text-weight-bold"></span>
+          <button type="button" class="button is-small is-success add-row">
+            <span class="icon">
+              <svg width="1.25em" height="1.25em"><use href="icons.svg#icon-plus" /></svg>
+            </span>
+          </button>
+        </div>
+        <div class="rows-wrap"></div>
+      </div>
+    </template>
     <script type="module" src="settings.js"></script>
   </body>
 </html>
