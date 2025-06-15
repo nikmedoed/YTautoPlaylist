@@ -248,36 +248,33 @@ document.addEventListener("DOMContentLoaded", async () => {
     addLabel.textContent = "Добавить фильтры:";
     addRow.appendChild(addLabel);
 
-    let btnContainer = addRow;
-    if (channelId) {
-      btnContainer = document.createElement("div");
-      btnContainer.className = "top-row";
-    }
+    const btnContainer = document.createElement("div");
+    btnContainer.className = "filter-buttons";
+    addRow.appendChild(btnContainer);
 
     const btnDur = document.createElement("button");
     btnDur.type = "button";
     btnDur.className = "button is-small is-info";
     btnDur.innerHTML =
       '<span class="icon"><svg width="1.5em" height="1.5em"><use href="icons.svg#icon-plus" /></svg></span><span>Длительность</span>';
-    addRow.appendChild(btnDur);
+    btnContainer.appendChild(btnDur);
 
     const btnTitle = document.createElement("button");
     btnTitle.type = "button";
     btnTitle.className = "button is-small is-info";
     btnTitle.innerHTML =
       '<span class="icon"><svg width="1.5em" height="1.5em"><use href="icons.svg#icon-plus" /></svg></span><span>Заголовок</span>';
-    addRow.appendChild(btnTitle);
+    btnContainer.appendChild(btnTitle);
 
     const btnTag = document.createElement("button");
     btnTag.type = "button";
     btnTag.className = "button is-small is-info";
     btnTag.innerHTML =
       '<span class="icon"><svg width="1.5em" height="1.5em"><use href="icons.svg#icon-plus" /></svg></span><span>Тег</span>';
-    addRow.appendChild(btnTag);
+    btnContainer.appendChild(btnTag);
 
     box.appendChild(topRow);
     box.appendChild(addRow);
-    if (channelId) box.appendChild(btnContainer);
 
     const durGroup = createGroup(
       "Длительность",
