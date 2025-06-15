@@ -195,8 +195,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   function createSection(title, data = {}, channelId) {
+    const column = document.createElement("div");
+    column.className = channelId
+      ? "column is-full-mobile is-half-tablet is-one-quarter-desktop"
+      : "column is-12";
+
     const box = document.createElement("div");
-    box.className = channelId ? "box filter-card" : "filter-card wide";
+    box.className = "box filter-card";
+    if (!channelId) box.classList.add("wide");
     box.dataset.channel = channelId || "";
 
     if (channelId) {
@@ -218,7 +224,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       remove.type = "button";
       remove.innerHTML = '<span class="icon"><svg width="1.5em" height="1.5em"><use href="icons.svg#icon-trash" /></svg></span>';
       remove.addEventListener("click", () => {
-        box.remove();
+        column.remove();
         const opt = document.createElement("option");
         opt.value = channelId;
         opt.textContent = channels[channelId]?.title || channelId;
@@ -303,7 +309,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     btnTitle.addEventListener("click", titleGroup.add);
     btnTag.addEventListener("click", tagGroup.add);
 
-    return box;
+    column.appendChild(box);
+    return column;
   }
 
   const globalSec = createSection("Глобальные", filters.global, null);
@@ -327,11 +334,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   globalShortsChk?.addEventListener('change', updateCheckboxVisibility);
   globalBroadcastChk?.addEventListener('change', updateCheckboxVisibility);
 
+  const frag = document.createDocumentFragment();
   for (const id of Object.keys(filters.channels)) {
     const chName = channels[id]?.title || id;
     const sec = createSection(chName, filters.channels[id], id);
-    filtersContainer.insertBefore(sec, addCard);
+    frag.appendChild(sec);
   }
+  filtersContainer.insertBefore(frag, addCard);
 
   updateCheckboxVisibility();
 

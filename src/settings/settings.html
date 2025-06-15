@@ -12,34 +12,11 @@
     <title>YT AutoWL settings</title>
     <style>
       .filter-card {
-        --gap: 0.75rem;
-        padding: 0.75rem;
         position: relative;
-        flex: 0 0 calc((100% - 3 * var(--gap)) / 4);
-        max-width: calc((100% - 3 * var(--gap)) / 4);
-        min-width: 260px;
+        padding: 0.75rem;
       }
       .filter-card.wide {
-        flex: 1 0 100%;
-        max-width: 100%;
-      }
-      @media (max-width: 1407px) {
-        .filter-card {
-          flex: 0 0 calc((100% - 2 * var(--gap)) / 3);
-          max-width: calc((100% - 2 * var(--gap)) / 3);
-        }
-      }
-      @media (max-width: 1023px) {
-        .filter-card {
-          flex: 0 0 calc((100% - var(--gap)) / 2);
-          max-width: calc((100% - var(--gap)) / 2);
-        }
-      }
-      @media (max-width: 639px) {
-        .filter-card {
-          flex: 1 0 100%;
-          max-width: 100%;
-        }
+        padding: 0.75rem;
       }
       .top-row {
         display: flex;
@@ -71,9 +48,6 @@
       .filter-row .input[type="time"] {
         width: 7rem;
       }
-      .filter-row .input[type="text"] {
-        width: 24rem;
-      }
       .filter-card.box .filter-row .input[type="text"] {
         width: auto;
         flex: 1 1 auto;
@@ -103,11 +77,9 @@
       .filter-card.box {
         margin-bottom: 0;
       }
-      #filtersContainer {
-        display: flex;
-        flex-wrap: wrap;
+      #filtersContainer.columns,
+      #globalFilters.columns {
         gap: 0.75rem;
-        justify-content: center;
       }
       .remove-btn {
         position: absolute;
@@ -258,7 +230,7 @@
         </div>
 
         <h4 class="title is-5 mb-2" id="globalHeader">Глобальные</h4>
-        <div id="globalFilters"></div>
+        <div id="globalFilters" class="columns is-multiline"></div>
         <h4 class="title is-5 mt-4 mb-2" id="channelsHeader">
           Фильтры каналов
         </h4>
@@ -266,20 +238,22 @@
  
 
       <div class="container is-fluid px-0">
-        <div id="filtersContainer">
-          <div id="addChannelCard" class="box filter-card add-card">
-            <div class="group-header">
-              <span class="has-text-weight-bold">Фильтровать другой канал</span>
+        <div id="filtersContainer" class="columns is-multiline">
+          <div id="addChannelCard" class="column is-full-mobile is-half-tablet is-one-quarter-desktop">
+            <div class="box add-card">
+              <div class="group-header">
+                <span class="has-text-weight-bold">Фильтровать другой канал</span>
+              </div>
+              <div class="select is-fullwidth">
+                <select id="addChannelSelect"></select>
+              </div>
+              <button id="addChannel" class="button is-link is-fullwidth">
+                <span class="icon">
+                  <svg width="1.5em" height="1.5em"><use href="icons.svg#icon-plus" /></svg>
+                </span>
+                <span>Добавить</span>
+              </button>
             </div>
-            <div class="select is-fullwidth">
-              <select id="addChannelSelect"></select>
-            </div>
-            <button id="addChannel" class="button is-link is-fullwidth">
-              <span class="icon">
-                <svg width="1.5em" height="1.5em"><use href="icons.svg#icon-plus" /></svg>
-              </span>
-              <span>Добавить</span>
-            </button>
           </div>
         </div>
       </div>
