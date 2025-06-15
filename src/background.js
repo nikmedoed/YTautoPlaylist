@@ -25,8 +25,14 @@ function startProcess() {
 }
 setupLogCapture();
 
-chrome.storage.sync.get(["lastVideoDate"], function (result) {
+chrome.storage.sync.get(["lastVideoDate"], (result) => {
   if (!result.lastVideoDate) {
+    // open settings page on first run
+    if (chrome.runtime.openOptionsPage) {
+      chrome.runtime.openOptionsPage();
+    } else {
+      chrome.tabs.create({ url: chrome.runtime.getURL("src/settings/settings.html") });
+    }
     storeDate(new Date(Date.now() - 604800000));
   }
 });
