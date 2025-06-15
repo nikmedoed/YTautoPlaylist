@@ -44,6 +44,7 @@ function createTextRow(type, value = "") {
 }
 
 const groupTemplate = document.getElementById("filterGroupTemplate");
+const cardTemplate = document.getElementById("filterCardTemplate");
 function createGroup(labelText, type, rows, createRowFn) {
   const group = groupTemplate.content.firstElementChild.cloneNode(true);
   group.dataset.type = type;
@@ -143,29 +144,22 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   function createSection(title, data = {}, channelId) {
-    const box = document.createElement("div");
-    box.className = channelId ? "box filter-card" : "filter-card wide";
+    const box = cardTemplate.content.firstElementChild.cloneNode(true);
     box.dataset.channel = channelId || "";
+    const heading = box.querySelector(".channel-heading");
+    const link = box.querySelector(".channel-link");
+    const removeBtn = box.querySelector(".remove-btn");
+    const groupsWrap = box.querySelector(".groups-container");
+    const chkShorts = box.querySelector(".nos");
+    const chkBroadcast = box.querySelector(".nob");
+    const btnDur = box.querySelector(".add-duration");
+    const btnTitle = box.querySelector(".add-title");
+    const btnTag = box.querySelector(".add-tag");
 
     if (channelId) {
-      const h = document.createElement("h4");
-      h.className = "title is-5 mb-2";
-      const link = document.createElement("a");
       link.href = `https://www.youtube.com/channel/${channelId}`;
-      link.target = "_blank";
       link.textContent = title;
-      h.appendChild(link);
-      box.appendChild(h);
-    }
-
-    const topRow = document.createElement("div");
-    topRow.className = "top-row";
-    if (channelId) {
-      const remove = document.createElement("button");
-      remove.className = "button is-danger is-light is-small remove-btn";
-      remove.type = "button";
-      remove.innerHTML = '<span class="icon"><svg width="1.5em" height="1.5em"><use href="icons.svg#icon-trash" /></svg></span>';
-      remove.addEventListener("click", () => {
+      removeBtn.addEventListener("click", () => {
         box.remove();
         const opt = document.createElement("option");
         opt.value = channelId;
@@ -173,56 +167,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         addChannelSelect.appendChild(opt);
         updateCheckboxVisibility();
       });
-      box.appendChild(remove);
+    } else {
+      heading.style.display = "none";
+      removeBtn.style.display = "none";
+      box.classList.remove("box");
+      box.classList.add("wide");
     }
-    const chkShorts = document.createElement("label");
-    chkShorts.className = "checkbox";
-    chkShorts.innerHTML = `<input type="checkbox" class="nos" ${
-      data.noShorts ? "checked" : ""
-    }> Игнорировать Shorts`;
-    topRow.appendChild(chkShorts);
 
-    const chkBroadcast = document.createElement("label");
-    chkBroadcast.className = "checkbox";
-    chkBroadcast.innerHTML = `<input type="checkbox" class="nob" ${
-      data.noBroadcasts ? "checked" : ""
-    }> Игнорировать трансляции`;
-    topRow.appendChild(chkBroadcast);
-
-    const addRow = document.createElement("div");
-    addRow.className = "top-row";
-
-    const addLabel = document.createElement("span");
-    addLabel.textContent = "Добавить фильтры:";
-    addRow.appendChild(addLabel);
-
-    const btnContainer = document.createElement("div");
-    btnContainer.className = "filter-buttons";
-    addRow.appendChild(btnContainer);
-
-    const btnDur = document.createElement("button");
-    btnDur.type = "button";
-    btnDur.className = "button is-small is-info";
-    btnDur.innerHTML =
-      '<span class="icon"><svg width="1.5em" height="1.5em"><use href="icons.svg#icon-plus" /></svg></span><span>Длительность</span>';
-    btnContainer.appendChild(btnDur);
-
-    const btnTitle = document.createElement("button");
-    btnTitle.type = "button";
-    btnTitle.className = "button is-small is-info";
-    btnTitle.innerHTML =
-      '<span class="icon"><svg width="1.5em" height="1.5em"><use href="icons.svg#icon-plus" /></svg></span><span>Заголовок</span>';
-    btnContainer.appendChild(btnTitle);
-
-    const btnTag = document.createElement("button");
-    btnTag.type = "button";
-    btnTag.className = "button is-small is-info";
-    btnTag.innerHTML =
-      '<span class="icon"><svg width="1.5em" height="1.5em"><use href="icons.svg#icon-plus" /></svg></span><span>Тег</span>';
-    btnContainer.appendChild(btnTag);
-
-    box.appendChild(topRow);
-    box.appendChild(addRow);
+    if (data.noShorts) chkShorts.checked = true;
+    if (data.noBroadcasts) chkBroadcast.checked = true;
 
     const durGroup = createGroup(
       "Длительность",
@@ -243,9 +196,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       (t = "") => createTextRow("tag", t)
     );
 
-    box.appendChild(durGroup.group);
-    box.appendChild(titleGroup.group);
-    box.appendChild(tagGroup.group);
+    groupsWrap.appendChild(durGroup.group);
+    groupsWrap.appendChild(titleGroup.group);
+    groupsWrap.appendChild(tagGroup.group);
 
     btnDur.addEventListener("click", durGroup.add);
     btnTitle.addEventListener("click", titleGroup.add);
