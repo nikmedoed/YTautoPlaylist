@@ -109,7 +109,9 @@ function createGroup(labelText, type, rows, createRowFn) {
   group.appendChild(list);
 
   function checkHeader() {
-    header.style.display = list.children.length ? "" : "none";
+    const hasRows = list.children.length > 0;
+    header.style.display = hasRows ? "" : "none";
+    group.style.display = hasRows ? "" : "none";
   }
 
   addBtn.addEventListener("click", () => {
