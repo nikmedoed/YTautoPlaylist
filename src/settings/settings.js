@@ -29,58 +29,65 @@ function parseTime(str) {
 
 function createDurationRow(min = 0, max = Infinity) {
   const row = document.createElement("div");
-  row.className = "filter-row";
+  row.className = "filter-row field is-grouped is-align-items-center";
   row.dataset.type = "duration";
 
+  const fromCtrl = document.createElement("p");
+  fromCtrl.className = "control";
   const from = document.createElement("input");
   from.type = "time";
   from.step = 1;
   from.className = "input from";
   if (min) from.value = toTimeStr(min);
-  row.appendChild(from);
+  fromCtrl.appendChild(from);
 
-  const dash = document.createElement("span");
-  dash.textContent = "-";
-  dash.style.margin = "0 0.25rem";
-  row.appendChild(dash);
+  const dashCtrl = document.createElement("p");
+  dashCtrl.className = "control";
+  dashCtrl.textContent = "-";
 
+  const toCtrl = document.createElement("p");
+  toCtrl.className = "control";
   const to = document.createElement("input");
   to.type = "time";
   to.step = 1;
   to.className = "input to";
   if (max !== Infinity) to.value = toTimeStr(max);
-  row.appendChild(to);
+  toCtrl.appendChild(to);
 
+  const delCtrl = document.createElement("p");
+  delCtrl.className = "control";
   const del = document.createElement("button");
-  del.className = "button is-white is-small remove-row";
+  del.className = "delete";
   del.type = "button";
-  del.innerHTML =
-    '<span class="icon"><svg width="1.5em" height="1.5em"><use href="icons.svg#icon-x" /></svg></span>';
   del.addEventListener("click", () => row.remove());
-  row.appendChild(del);
+  delCtrl.appendChild(del);
 
+  row.append(fromCtrl, dashCtrl, toCtrl, delCtrl);
   return row;
 }
 
 function createTextRow(type, value = "") {
   const row = document.createElement("div");
-  row.className = "filter-row";
+  row.className = "filter-row field is-grouped is-align-items-center";
   row.dataset.type = type;
 
+  const inputCtrl = document.createElement("p");
+  inputCtrl.className = "control is-expanded";
   const input = document.createElement("input");
   input.type = "text";
   input.className = "input";
   input.value = value;
-  row.appendChild(input);
+  inputCtrl.appendChild(input);
 
+  const delCtrl = document.createElement("p");
+  delCtrl.className = "control";
   const del = document.createElement("button");
-  del.className = "button is-white is-small remove-row";
+  del.className = "delete";
   del.type = "button";
-  del.innerHTML =
-    '<span class="icon"><svg width="1.5em" height="1.5em"><use href="icons.svg#icon-x" /></svg></span>';
   del.addEventListener("click", () => row.remove());
-  row.appendChild(del);
+  delCtrl.appendChild(del);
 
+  row.append(inputCtrl, delCtrl);
   return row;
 }
 
@@ -196,7 +203,12 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   function createSection(title, data = {}, channelId) {
     const box = document.createElement("div");
-    box.className = channelId ? "box filter-card" : "filter-card wide";
+    if (channelId) {
+      box.className =
+        "box filter-card column is-one-quarter-widescreen is-one-third-desktop is-half-tablet is-full-mobile";
+    } else {
+      box.className = "box filter-card column is-12";
+    }
     box.dataset.channel = channelId || "";
 
     if (channelId) {
@@ -327,11 +339,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   globalShortsChk?.addEventListener('change', updateCheckboxVisibility);
   globalBroadcastChk?.addEventListener('change', updateCheckboxVisibility);
 
+  const frag = document.createDocumentFragment();
   for (const id of Object.keys(filters.channels)) {
     const chName = channels[id]?.title || id;
     const sec = createSection(chName, filters.channels[id], id);
-    filtersContainer.insertBefore(sec, addCard);
+    frag.appendChild(sec);
   }
+  filtersContainer.insertBefore(frag, addCard);
 
   updateCheckboxVisibility();
 

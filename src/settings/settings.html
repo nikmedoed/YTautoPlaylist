@@ -11,35 +11,12 @@
     <link rel="preload" as="image" href="icons.svg" />
     <title>YT AutoWL settings</title>
     <style>
+      #filtersContainer.columns {
+        align-items: stretch;
+      }
       .filter-card {
-        --gap: 0.75rem;
-        padding: 0.75rem;
         position: relative;
-        flex: 0 0 calc((100% - 3 * var(--gap)) / 4);
-        max-width: calc((100% - 3 * var(--gap)) / 4);
-        min-width: 260px;
-      }
-      .filter-card.wide {
-        flex: 1 0 100%;
-        max-width: 100%;
-      }
-      @media (max-width: 1407px) {
-        .filter-card {
-          flex: 0 0 calc((100% - 2 * var(--gap)) / 3);
-          max-width: calc((100% - 2 * var(--gap)) / 3);
-        }
-      }
-      @media (max-width: 1023px) {
-        .filter-card {
-          flex: 0 0 calc((100% - var(--gap)) / 2);
-          max-width: calc((100% - var(--gap)) / 2);
-        }
-      }
-      @media (max-width: 639px) {
-        .filter-card {
-          flex: 1 0 100%;
-          max-width: 100%;
-        }
+        padding: 0.75rem;
       }
       .top-row {
         display: flex;
@@ -48,36 +25,10 @@
         gap: 0.5rem;
         margin-bottom: 0.5rem;
       }
-      .filter-row {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        margin-bottom: 0.5rem;
-        flex: 0 0 auto;
-      }
-      .filter-row .remove-row {
-        margin-right: 1rem;
-        border-radius: 50%;
-        padding: 0;
-        width: 1.5em;
-        height: 1.5em;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-      }
-      .filter-card.box .filter-row .remove-row {
-        margin-right: 0;
-      }
-      .filter-row .input[type="time"] {
-        width: 7rem;
-      }
-      .filter-row .input[type="text"] {
-        width: 24rem;
-      }
-      .filter-card.box .filter-row .input[type="text"] {
-        width: auto;
-        flex: 1 1 auto;
-        min-width: 0;
+      .remove-btn {
+        position: absolute;
+        top: 0.25rem;
+        right: 0.25rem;
       }
       .filter-group {
         margin-bottom: 0.5rem;
@@ -93,42 +44,28 @@
         flex-wrap: wrap;
         gap: 0.5rem;
       }
-      .filter-card.box .rows-wrap {
+      .filter-card .rows-wrap {
         flex-direction: column;
+      }
+      .filter-row.field.is-grouped {
         flex-wrap: nowrap;
+        margin-bottom: 0.5rem;
       }
-      .filter-card.box .filter-row {
-        width: 100%;
+      .filter-row input[type="time"] {
+        width: 7rem;
       }
-      .filter-card.box {
-        margin-bottom: 0;
+      .filter-row input[type="text"] {
+        width: 24rem;
       }
-      #filtersContainer {
+      .filter-card.box .filter-row input[type="text"] {
+        width: auto;
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .filter-buttons {
         display: flex;
         flex-wrap: wrap;
-        gap: 0.75rem;
-        justify-content: center;
-      }
-      .remove-btn {
-        position: absolute;
-        top: 0.25rem;
-        right: 0.25rem;
-      }
-      .add-card {
-        box-shadow: none;
-        border: 1px dashed #ccc;
-        text-align: center;
-        margin-bottom: 0;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
         gap: 0.5rem;
-      }
-
-      #filtersButtons .buttons {
-        align-items: center;
-        justify-content: center;
       }
       #filtersButtons .button {
         margin-bottom: 0;
@@ -137,11 +74,10 @@
         display: inline-flex;
         align-items: center;
       }
-      .filter-buttons {
-        display: inline-flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-        max-width: 100%;
+      .add-card {
+        box-shadow: none;
+        border: 1px dashed #ccc;
+        text-align: center;
       }
     </style>
   </head>
@@ -266,8 +202,8 @@
  
 
       <div class="container is-fluid px-0">
-        <div id="filtersContainer">
-          <div id="addChannelCard" class="box filter-card add-card">
+        <div id="filtersContainer" class="columns is-multiline is-variable is-2">
+          <div id="addChannelCard" class="box filter-card add-card column is-one-quarter-widescreen is-one-third-desktop is-half-tablet is-full-mobile">
             <div class="group-header">
               <span class="has-text-weight-bold">Фильтровать другой канал</span>
             </div>
