@@ -27,86 +27,33 @@ function parseTime(str) {
   return sec;
 }
 
+const durTemplate = document.getElementById("durationRowTemplate");
 function createDurationRow(min = 0, max = Infinity) {
-  const row = document.createElement("div");
-  row.className = "filter-row";
-  row.dataset.type = "duration";
-
-  const from = document.createElement("input");
-  from.type = "time";
-  from.step = 1;
-  from.className = "input from";
-  if (min) from.value = toTimeStr(min);
-  row.appendChild(from);
-
-  const dash = document.createElement("span");
-  dash.textContent = "-";
-  dash.style.margin = "0 0.25rem";
-  row.appendChild(dash);
-
-  const to = document.createElement("input");
-  to.type = "time";
-  to.step = 1;
-  to.className = "input to";
-  if (max !== Infinity) to.value = toTimeStr(max);
-  row.appendChild(to);
-
-  const del = document.createElement("button");
-  del.className = "button is-white is-small remove-row";
-  del.type = "button";
-  del.innerHTML =
-    '<span class="icon"><svg width="1.5em" height="1.5em"><use href="icons.svg#icon-x" /></svg></span>';
-  del.addEventListener("click", () => row.remove());
-  row.appendChild(del);
-
+  const row = durTemplate.content.firstElementChild.cloneNode(true);
+  if (min) row.querySelector(".from").value = toTimeStr(min);
+  if (max !== Infinity) row.querySelector(".to").value = toTimeStr(max);
   return row;
 }
 
+const textTemplate = document.getElementById("textRowTemplate");
 function createTextRow(type, value = "") {
-  const row = document.createElement("div");
-  row.className = "filter-row";
+  const row = textTemplate.content.firstElementChild.cloneNode(true);
   row.dataset.type = type;
-
-  const input = document.createElement("input");
-  input.type = "text";
-  input.className = "input";
-  input.value = value;
-  row.appendChild(input);
-
-  const del = document.createElement("button");
-  del.className = "button is-white is-small remove-row";
-  del.type = "button";
-  del.innerHTML =
-    '<span class="icon"><svg width="1.5em" height="1.5em"><use href="icons.svg#icon-x" /></svg></span>';
-  del.addEventListener("click", () => row.remove());
-  row.appendChild(del);
-
+  row.querySelector("input").value = value;
   return row;
 }
 
+const groupTemplate = document.getElementById("filterGroupTemplate");
+const cardTemplate = document.getElementById("filterCardTemplate");
 function createGroup(labelText, type, rows, createRowFn) {
-  const group = document.createElement("div");
-  group.className = "filter-group";
+  const group = groupTemplate.content.firstElementChild.cloneNode(true);
   group.dataset.type = type;
 
-  const header = document.createElement("div");
-  header.className = "group-header top-row";
-
-  const lab = document.createElement("span");
-  lab.className = "has-text-weight-bold";
+  const header = group.querySelector(".group-header");
+  const lab = header.querySelector("span");
+  const addBtn = header.querySelector(".add-row");
+  const list = group.querySelector(".rows-wrap");
   lab.textContent = labelText;
-  header.appendChild(lab);
-
-  const addBtn = document.createElement("button");
-  addBtn.type = "button";
-  addBtn.className = "button is-small is-success";
-  addBtn.innerHTML = '<span class="icon"><svg width="1.25em" height="1.25em"><use href="icons.svg#icon-plus" /></svg></span>';
-  header.appendChild(addBtn);
-
-  const list = document.createElement("div");
-  list.className = "rows-wrap";
-  group.appendChild(header);
-  group.appendChild(list);
 
   function checkHeader() {
     const hasRows = list.children.length > 0;
@@ -123,7 +70,7 @@ function createGroup(labelText, type, rows, createRowFn) {
     list.appendChild(createRowFn(r));
   });
   list.addEventListener("click", (e) => {
-    if (e.target.closest(".delete")) {
+    if (e.target.closest(".remove-row")) {
       e.target.closest(".filter-row").remove();
       checkHeader();
     }
@@ -197,29 +144,22 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   function createSection(title, data = {}, channelId) {
-    const box = document.createElement("div");
-    box.className = channelId ? "box filter-card" : "filter-card wide";
+    const box = cardTemplate.content.firstElementChild.cloneNode(true);
     box.dataset.channel = channelId || "";
+    const heading = box.querySelector(".channel-heading");
+    const link = box.querySelector(".channel-link");
+    const removeBtn = box.querySelector(".remove-btn");
+    const groupsWrap = box.querySelector(".groups-container");
+    const chkShorts = box.querySelector(".nos");
+    const chkBroadcast = box.querySelector(".nob");
+    const btnDur = box.querySelector(".add-duration");
+    const btnTitle = box.querySelector(".add-title");
+    const btnTag = box.querySelector(".add-tag");
 
     if (channelId) {
-      const h = document.createElement("h4");
-      h.className = "title is-5 mb-2";
-      const link = document.createElement("a");
       link.href = `https://www.youtube.com/channel/${channelId}`;
-      link.target = "_blank";
       link.textContent = title;
-      h.appendChild(link);
-      box.appendChild(h);
-    }
-
-    const topRow = document.createElement("div");
-    topRow.className = "top-row";
-    if (channelId) {
-      const remove = document.createElement("button");
-      remove.className = "button is-danger is-light is-small remove-btn";
-      remove.type = "button";
-      remove.innerHTML = '<span class="icon"><svg width="1.5em" height="1.5em"><use href="icons.svg#icon-trash" /></svg></span>';
-      remove.addEventListener("click", () => {
+      removeBtn.addEventListener("click", () => {
         box.remove();
         const opt = document.createElement("option");
         opt.value = channelId;
@@ -227,56 +167,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         addChannelSelect.appendChild(opt);
         updateCheckboxVisibility();
       });
-      box.appendChild(remove);
+    } else {
+      heading.style.display = "none";
+      removeBtn.style.display = "none";
+      box.classList.remove("box");
+      box.classList.add("wide");
     }
-    const chkShorts = document.createElement("label");
-    chkShorts.className = "checkbox";
-    chkShorts.innerHTML = `<input type="checkbox" class="nos" ${
-      data.noShorts ? "checked" : ""
-    }> Игнорировать Shorts`;
-    topRow.appendChild(chkShorts);
 
-    const chkBroadcast = document.createElement("label");
-    chkBroadcast.className = "checkbox";
-    chkBroadcast.innerHTML = `<input type="checkbox" class="nob" ${
-      data.noBroadcasts ? "checked" : ""
-    }> Игнорировать трансляции`;
-    topRow.appendChild(chkBroadcast);
-
-    const addRow = document.createElement("div");
-    addRow.className = "top-row";
-
-    const addLabel = document.createElement("span");
-    addLabel.textContent = "Добавить фильтры:";
-    addRow.appendChild(addLabel);
-
-    const btnContainer = document.createElement("div");
-    btnContainer.className = "filter-buttons";
-    addRow.appendChild(btnContainer);
-
-    const btnDur = document.createElement("button");
-    btnDur.type = "button";
-    btnDur.className = "button is-small is-info";
-    btnDur.innerHTML =
-      '<span class="icon"><svg width="1.5em" height="1.5em"><use href="icons.svg#icon-plus" /></svg></span><span>Длительность</span>';
-    btnContainer.appendChild(btnDur);
-
-    const btnTitle = document.createElement("button");
-    btnTitle.type = "button";
-    btnTitle.className = "button is-small is-info";
-    btnTitle.innerHTML =
-      '<span class="icon"><svg width="1.5em" height="1.5em"><use href="icons.svg#icon-plus" /></svg></span><span>Заголовок</span>';
-    btnContainer.appendChild(btnTitle);
-
-    const btnTag = document.createElement("button");
-    btnTag.type = "button";
-    btnTag.className = "button is-small is-info";
-    btnTag.innerHTML =
-      '<span class="icon"><svg width="1.5em" height="1.5em"><use href="icons.svg#icon-plus" /></svg></span><span>Тег</span>';
-    btnContainer.appendChild(btnTag);
-
-    box.appendChild(topRow);
-    box.appendChild(addRow);
+    if (data.noShorts) chkShorts.checked = true;
+    if (data.noBroadcasts) chkBroadcast.checked = true;
 
     const durGroup = createGroup(
       "Длительность",
@@ -297,9 +196,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       (t = "") => createTextRow("tag", t)
     );
 
-    box.appendChild(durGroup.group);
-    box.appendChild(titleGroup.group);
-    box.appendChild(tagGroup.group);
+    groupsWrap.appendChild(durGroup.group);
+    groupsWrap.appendChild(titleGroup.group);
+    groupsWrap.appendChild(tagGroup.group);
 
     btnDur.addEventListener("click", durGroup.add);
     btnTitle.addEventListener("click", titleGroup.add);
