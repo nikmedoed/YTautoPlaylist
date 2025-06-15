@@ -195,9 +195,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   function createSection(title, data = {}, channelId) {
+    const wrap = !!channelId;
+    const root = wrap ? document.createElement("div") : null;
+    if (wrap) root.className = "column is-3-desktop is-4-tablet is-6-mobile";
+
     const box = document.createElement("div");
-    box.className = channelId ? "box filter-card" : "filter-card wide";
+    box.className = "box filter-card";
     box.dataset.channel = channelId || "";
+    if (wrap) root.appendChild(box);
 
     if (channelId) {
       const h = document.createElement("h4");
@@ -218,7 +223,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       remove.type = "button";
       remove.innerHTML = '<span class="icon"><svg width="1.5em" height="1.5em"><use href="icons.svg#icon-trash" /></svg></span>';
       remove.addEventListener("click", () => {
-        box.remove();
+        (wrap ? root : box).remove();
         const opt = document.createElement("option");
         opt.value = channelId;
         opt.textContent = channels[channelId]?.title || channelId;
@@ -303,7 +308,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     btnTitle.addEventListener("click", titleGroup.add);
     btnTag.addEventListener("click", tagGroup.add);
 
-    return box;
+    return wrap ? root : box;
   }
 
   const globalSec = createSection("Глобальные", filters.global, null);
@@ -327,13 +332,15 @@ document.addEventListener("DOMContentLoaded", async () => {
   globalShortsChk?.addEventListener('change', updateCheckboxVisibility);
   globalBroadcastChk?.addEventListener('change', updateCheckboxVisibility);
 
+  const frag = document.createDocumentFragment();
   for (const id of Object.keys(filters.channels)) {
     const chName = channels[id]?.title || id;
     const sec = createSection(chName, filters.channels[id], id);
-    filtersContainer.insertBefore(sec, addCard);
+    frag.appendChild(sec);
   }
-
+  filtersContainer.insertBefore(frag, addCard);
   updateCheckboxVisibility();
+  filtersContainer.style.display = "";
 
   Object.keys(filters.channels).forEach((id) => {
     const opt = addChannelSelect.querySelector(`option[value="${id}"]`);
