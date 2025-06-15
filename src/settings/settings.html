@@ -12,17 +12,30 @@
     <title>YT AutoWL settings</title>
     <style>
       .filter-card {
+        --gap: 0.75rem;
         padding: 0.75rem;
         position: relative;
-        flex: 0 0 calc(25% - 1rem);
-        max-width: calc(25% - 1rem);
+        flex: 0 0 calc((100% - 3 * var(--gap)) / 4);
+        max-width: calc((100% - 3 * var(--gap)) / 4);
         min-width: 260px;
       }
       .filter-card.wide {
         flex: 1 0 100%;
         max-width: 100%;
       }
-      @media (max-width: 1024px) {
+      @media (max-width: 1407px) {
+        .filter-card {
+          flex: 0 0 calc((100% - 2 * var(--gap)) / 3);
+          max-width: calc((100% - 2 * var(--gap)) / 3);
+        }
+      }
+      @media (max-width: 1023px) {
+        .filter-card {
+          flex: 0 0 calc((100% - var(--gap)) / 2);
+          max-width: calc((100% - var(--gap)) / 2);
+        }
+      }
+      @media (max-width: 639px) {
         .filter-card {
           flex: 1 0 100%;
           max-width: 100%;
@@ -87,6 +100,9 @@
       .filter-card.box .filter-row {
         width: 100%;
       }
+      .filter-card.box {
+        margin-bottom: 0;
+      }
       #filtersContainer {
         display: flex;
         flex-wrap: wrap;
@@ -102,7 +118,7 @@
         box-shadow: none;
         border: 1px dashed #ccc;
         text-align: center;
-        margin-bottom: 1.5rem;
+        margin-bottom: 0;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -243,15 +259,13 @@
 
         <h4 class="title is-5 mb-2" id="globalHeader">Глобальные</h4>
         <div id="globalFilters"></div>
-      </div>
-
-      <div class="container">
         <h4 class="title is-5 mt-4 mb-2" id="channelsHeader">
           Фильтры каналов
         </h4>
       </div>
+ 
 
-      <div class="container is-fluid">
+      <div class="container is-fluid px-0">
         <div id="filtersContainer">
           <div id="addChannelCard" class="box filter-card add-card">
             <div class="group-header">
