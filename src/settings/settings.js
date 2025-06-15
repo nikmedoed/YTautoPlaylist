@@ -27,60 +27,19 @@ function parseTime(str) {
   return sec;
 }
 
+const durTemplate = document.getElementById("durationRowTemplate");
 function createDurationRow(min = 0, max = Infinity) {
-  const row = document.createElement("div");
-  row.className = "filter-row";
-  row.dataset.type = "duration";
-
-  const from = document.createElement("input");
-  from.type = "time";
-  from.step = 1;
-  from.className = "input from";
-  if (min) from.value = toTimeStr(min);
-  row.appendChild(from);
-
-  const dash = document.createElement("span");
-  dash.textContent = "-";
-  dash.style.margin = "0 0.25rem";
-  row.appendChild(dash);
-
-  const to = document.createElement("input");
-  to.type = "time";
-  to.step = 1;
-  to.className = "input to";
-  if (max !== Infinity) to.value = toTimeStr(max);
-  row.appendChild(to);
-
-  const del = document.createElement("button");
-  del.className = "button is-white is-small remove-row";
-  del.type = "button";
-  del.innerHTML =
-    '<span class="icon"><svg width="1.5em" height="1.5em"><use href="icons.svg#icon-x" /></svg></span>';
-  del.addEventListener("click", () => row.remove());
-  row.appendChild(del);
-
+  const row = durTemplate.content.firstElementChild.cloneNode(true);
+  if (min) row.querySelector(".from").value = toTimeStr(min);
+  if (max !== Infinity) row.querySelector(".to").value = toTimeStr(max);
   return row;
 }
 
+const textTemplate = document.getElementById("textRowTemplate");
 function createTextRow(type, value = "") {
-  const row = document.createElement("div");
-  row.className = "filter-row";
+  const row = textTemplate.content.firstElementChild.cloneNode(true);
   row.dataset.type = type;
-
-  const input = document.createElement("input");
-  input.type = "text";
-  input.className = "input";
-  input.value = value;
-  row.appendChild(input);
-
-  const del = document.createElement("button");
-  del.className = "button is-white is-small remove-row";
-  del.type = "button";
-  del.innerHTML =
-    '<span class="icon"><svg width="1.5em" height="1.5em"><use href="icons.svg#icon-x" /></svg></span>';
-  del.addEventListener("click", () => row.remove());
-  row.appendChild(del);
-
+  row.querySelector("input").value = value;
   return row;
 }
 
@@ -123,7 +82,7 @@ function createGroup(labelText, type, rows, createRowFn) {
     list.appendChild(createRowFn(r));
   });
   list.addEventListener("click", (e) => {
-    if (e.target.closest(".delete")) {
+    if (e.target.closest(".remove-row")) {
       e.target.closest(".filter-row").remove();
       checkHeader();
     }

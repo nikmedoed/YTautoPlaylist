@@ -304,6 +304,28 @@
         </div>
       </div>
     </section>
+    <template id="durationRowTemplate">
+      <div class="filter-row" data-type="duration">
+        <input type="time" step="1" class="input from" />
+        <span style="margin: 0 0.25rem">-</span>
+        <input type="time" step="1" class="input to" />
+        <button type="button" class="button is-white is-small remove-row">
+          <span class="icon">
+            <svg width="1.5em" height="1.5em"><use href="icons.svg#icon-x" /></svg>
+          </span>
+        </button>
+      </div>
+    </template>
+    <template id="textRowTemplate">
+      <div class="filter-row">
+        <input type="text" class="input" />
+        <button type="button" class="button is-white is-small remove-row">
+          <span class="icon">
+            <svg width="1.5em" height="1.5em"><use href="icons.svg#icon-x" /></svg>
+          </span>
+        </button>
+      </div>
+    </template>
     <script type="module" src="settings.js"></script>
   </body>
 </html>
