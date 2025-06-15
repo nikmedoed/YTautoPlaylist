@@ -43,29 +43,16 @@ function createTextRow(type, value = "") {
   return row;
 }
 
+const groupTemplate = document.getElementById("filterGroupTemplate");
 function createGroup(labelText, type, rows, createRowFn) {
-  const group = document.createElement("div");
-  group.className = "filter-group";
+  const group = groupTemplate.content.firstElementChild.cloneNode(true);
   group.dataset.type = type;
 
-  const header = document.createElement("div");
-  header.className = "group-header top-row";
-
-  const lab = document.createElement("span");
-  lab.className = "has-text-weight-bold";
+  const header = group.querySelector(".group-header");
+  const lab = header.querySelector("span");
+  const addBtn = header.querySelector(".add-row");
+  const list = group.querySelector(".rows-wrap");
   lab.textContent = labelText;
-  header.appendChild(lab);
-
-  const addBtn = document.createElement("button");
-  addBtn.type = "button";
-  addBtn.className = "button is-small is-success";
-  addBtn.innerHTML = '<span class="icon"><svg width="1.25em" height="1.25em"><use href="icons.svg#icon-plus" /></svg></span>';
-  header.appendChild(addBtn);
-
-  const list = document.createElement("div");
-  list.className = "rows-wrap";
-  group.appendChild(header);
-  group.appendChild(list);
 
   function checkHeader() {
     const hasRows = list.children.length > 0;

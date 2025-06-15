@@ -55,6 +55,9 @@
         margin-bottom: 0.5rem;
         flex: 0 0 auto;
       }
+      .duration-dash {
+        margin: 0 0.25rem;
+      }
       .filter-row .remove-row {
         margin-right: 1rem;
         border-radius: 50%;
@@ -307,7 +310,7 @@
     <template id="durationRowTemplate">
       <div class="filter-row" data-type="duration">
         <input type="time" step="1" class="input from" />
-        <span style="margin: 0 0.25rem">-</span>
+        <span class="duration-dash">-</span>
         <input type="time" step="1" class="input to" />
         <button type="button" class="button is-white is-small remove-row">
           <span class="icon">
@@ -324,6 +327,19 @@
             <svg width="1.5em" height="1.5em"><use href="icons.svg#icon-x" /></svg>
           </span>
         </button>
+      </div>
+    </template>
+    <template id="filterGroupTemplate">
+      <div class="filter-group">
+        <div class="group-header top-row">
+          <span class="has-text-weight-bold"></span>
+          <button type="button" class="button is-small is-success add-row">
+            <span class="icon">
+              <svg width="1.25em" height="1.25em"><use href="icons.svg#icon-plus" /></svg>
+            </span>
+          </button>
+        </div>
+        <div class="rows-wrap"></div>
       </div>
     </template>
     <script type="module" src="settings.js"></script>
