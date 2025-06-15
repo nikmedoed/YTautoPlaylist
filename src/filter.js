@@ -1,75 +1,193 @@
 import { getVideoInfo, isShort } from './youTubeApiConnectors.js';
-import { parseDuration } from './utils.js';
-import { TITLEFILTER, BROADCASTFILTER } from './constants.js';
 
-export async function filterID(list) {
-  console.log('Fetching info for', list.length, 'videos');
-  const filters = [
-    (video) => parseDuration(video.duration) > 61,
-    (video) => {
-      const titfilt = TITLEFILTER[video.channelId];
-      if (titfilt && titfilt.length > 0) {
-        const title = video.title.toLowerCase();
-        return !titfilt.some((tit) => title.includes(tit));
-      }
-      return true;
-    },
-    (video) =>
-      !(
-        video.liveStreamingDetails &&
-        video.liveStreamingDetails.actualStartTime !=
-          video.liveStreamingDetails.scheduledStartTime &&
-        BROADCASTFILTER.includes(video.channelId)
-      ),
-  ];
-  const chunks = [];
-  while (list.length) {
-    chunks.push(await getVideoInfo(list.splice(-50)));
+const DEFAULT_FILTERS = {
+  global: { noShorts: true },
+  channels: {},
+};
+import { parseDuration } from './utils.js';
+
+let filtersCache;
+
+export function getFilters() {
+  if (filtersCache) return Promise.resolve(filtersCache);
+  if (typeof chrome === 'undefined') {
+    filtersCache = DEFAULT_FILTERS;
+    return Promise.resolve(filtersCache);
   }
-  const info = [].concat(...chunks);
-  console.log('Got details for', info.length, 'videos');
-  const toCheck = [];
-  const filtered = [];
-  for (const video of info) {
-    if (filters.every((fltr) => fltr(video))) {
-      toCheck.push(video);
-    } else {
-      filtered.push(video.vId);
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['filters'], (data) => {
+      if (data && data.filters) {
+        try {
+          filtersCache = JSON.parse(data.filters);
+        } catch (e) {
+          filtersCache = DEFAULT_FILTERS;
+        }
+      } else {
+        filtersCache = DEFAULT_FILTERS;
+        chrome.storage.local.set({ filters: JSON.stringify(filtersCache) });
+      }
+      resolve(filtersCache);
+    });
+  });
+}
+
+export function saveFilters(filters) {
+  filtersCache = filters;
+  if (typeof chrome === 'undefined') return Promise.resolve();
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ filters: JSON.stringify(filters) }, resolve);
+  });
+}
+
+async function fetchInfo(list) {
+  const needInfo = list.filter(
+    (v) => !v.duration || !v.title || !v.channelId || !v.tags
+  );
+  const ids = [...new Set(needInfo.map((v) => v.id))];
+  const chunks = [];
+  while (ids.length) {
+    chunks.push(await getVideoInfo(ids.splice(-50)));
+  }
+  const infoMap = {};
+  for (const v of [].concat(...chunks)) {
+    infoMap[v.id] = v;
+  }
+  return list.map((v) => ({ ...v, ...(infoMap[v.id] || {}) }));
+}
+
+function buildStats(videos) {
+  const stats = {};
+  for (const v of videos) {
+    const ch = v.channelId || 'unknown';
+    if (!stats[ch]) {
+      stats[ch] = {
+        title: (v.channelTitle || ch).padEnd(30).slice(0, 30),
+        new: 0,
+        filtered: 0,
+        shorts: 0,
+        broadcasts: 0,
+        add: 0,
+      };
+    }
+    stats[ch].new++;
+  }
+  return stats;
+}
+
+function getRules(global, local = {}) {
+  return {
+    noShorts: local.noShorts ?? global.noShorts,
+    noBroadcasts: local.noBroadcasts ?? global.noBroadcasts,
+    title: [...(global.title || []), ...(local.title || [])],
+    tags: [...(global.tags || []), ...(local.tags || [])],
+    duration: [...(global.duration || []), ...(local.duration || [])],
+  };
+}
+
+export async function applyFilters(video, rules) {
+
+  if (
+    rules.noBroadcasts &&
+    video.liveStreamingDetails &&
+    video.liveStreamingDetails.actualStartTime !==
+      video.liveStreamingDetails.scheduledStartTime
+  ) {
+    return 'broadcast';
+  }
+
+  if (rules.title.length) {
+    const t = (video.title || '').toLowerCase();
+    if (rules.title.some((s) => t.includes(s))) {
+      return 'title';
     }
   }
-  console.log('After basic filters:', toCheck.length, 'videos');
-  const videos = [];
-  const shorts = [];
-  const quickShort = (v) =>
-    parseDuration(v.duration) < 60 ||
-    (v.tags && v.tags.some((t) => /shorts/i.test(t))) ||
-    v.title.toLowerCase().includes('#short');
-  let checked = 0;
+
+  if (rules.tags.length) {
+    const tags = (video.tags || []).map((t) => t.toLowerCase());
+    if (rules.tags.some((s) => tags.includes(s))) {
+      return 'tag';
+    }
+  }
+
+  if (rules.duration.length) {
+    const len = parseDuration(video.duration);
+    if (
+      typeof len === 'number' &&
+      !rules.duration.some(({ min = 0, max = Infinity }) => len >= min && len <= max)
+    ) {
+      return 'duration';
+    }
+  }
+
+  if (rules.noShorts) {
+    try {
+      if (await isShort(video)) {
+        return 'short';
+      }
+    } catch (err) {
+      console.error('Failed short check', err);
+    }
+  }
+
+  return undefined;
+}
+
+export async function filterVideos(list) {
+  console.log('Fetching info for', list.length, 'videos');
+
+  const FILTERS = await getFilters();
+
+  list = await fetchInfo(list);
+  const stats = buildStats(list);
+
+  const result = [];
+  const videos = list;
+
+  let processed = 0;
   const concurrency = 5;
+
   let index = 0;
   async function worker() {
-    while (index < toCheck.length) {
-      const video = toCheck[index++];
-      if (quickShort(video)) {
-        shorts.push(video.vId);
-        checked++;
-        continue;
+    while (index < videos.length) {
+      const video = videos[index++];
+      const rules = getRules(FILTERS.global, FILTERS.channels[video.channelId]);
+      const reason = await applyFilters(video, rules);
+      const st = stats[video.channelId || 'unknown'];
+      if (reason) {
+        if (reason === 'short') st.shorts++;
+        else if (reason === 'broadcast') st.broadcasts++;
+        else st.filtered++;
+      } else {
+        st.add++;
+        result.push(video);
       }
-      try {
-        const short = await isShort(video);
-        if (short) shorts.push(video.vId);
-        else videos.push(video);
-      } catch (err) {
-        console.error('Failed short check', err);
-        videos.push(video);
-      }
-      checked++;
-      if (checked % 5 === 0 || checked === toCheck.length) {
-        console.log('Short checks', checked, '/', toCheck.length);
+      processed++;
+      if (processed % 5 === 0 || processed === videos.length) {
+        console.log('Filter progress', processed, '/', videos.length);
       }
     }
   }
+
   await Promise.all(Array(concurrency).fill(0).map(worker));
-  console.log('After short filter:', videos.length, 'videos');
-  return { videos, shorts, filtered };
+
+  const totals = Object.values(stats).reduce(
+    (acc, st) => {
+      acc.filtered += st.filtered;
+      acc.shorts += st.shorts;
+      acc.broadcasts += st.broadcasts;
+      acc.passed += st.add;
+      return acc;
+    },
+    { filtered: 0, shorts: 0, broadcasts: 0, passed: 0 }
+  );
+
+  for (const st of Object.values(stats)) {
+    console.log(
+      `${st.title} new ${st.new}, filtered ${st.filtered}, broadcasts ${st.broadcasts}, shorts ${st.shorts}, to playlist ${st.add}`
+    );
+  }
+  console.log(
+    `${list.length} videos filter stats: filtered ${totals.filtered}, broadcasts ${totals.broadcasts}, shorts ${totals.shorts}, passed ${totals.passed}`
+  );
+  return result;
 }

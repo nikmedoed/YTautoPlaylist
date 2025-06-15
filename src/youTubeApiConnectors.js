@@ -1,8 +1,10 @@
-import { getToken } from "./auth.js";
-import { logMessage } from "./utils.js";
+import { getToken, signInUser, clearToken } from "./auth.js";
+import { logMessage, parseDuration } from "./utils.js";
+
+let channelCache;
 
 // Utility for calling YouTube Data API via fetch
-async function callApi(path, params = {}, method = "GET", body = null) {
+async function callApi(path, params = {}, method = "GET", body = null, retry) {
   const token = await getToken();
   const url = new URL("https://www.googleapis.com/youtube/v3/" + path);
   Object.entries(params).forEach(([k, v]) => {
@@ -18,6 +20,20 @@ async function callApi(path, params = {}, method = "GET", body = null) {
   }
   const resp = await fetch(url.toString(), init);
   if (!resp.ok) {
+    if ((resp.status === 401 || resp.status === 403) && !retry) {
+      clearToken();
+      try {
+        await signInUser();
+      } catch (e) {
+        const text = await resp.text();
+        const err = new Error("API " + path + " failed: " + resp.status);
+        err.status = resp.status;
+        err.body = text;
+        err.error = e;
+        throw err;
+      }
+      return callApi(path, params, method, body, true);
+    }
     const text = await resp.text();
     const err = new Error("API " + path + " failed: " + resp.status);
     err.status = resp.status;
@@ -62,6 +78,52 @@ async function getUploadsLists(userids) {
   return data.items.map((el) => el.contentDetails.relatedPlaylists.uploads);
 }
 
+async function getChannelInfos(ids) {
+  const data = await callApi("channels", {
+    part: "snippet,contentDetails",
+    id: ids.join(","),
+    maxResults: 50,
+  });
+  return data.items.map((el) => ({
+    id: el.id,
+    title: el.snippet.title,
+    uploads: el.contentDetails.relatedPlaylists.uploads,
+  }));
+}
+
+async function getChannelMap(extraIds = []) {
+  if (!channelCache) {
+    const data = await new Promise((r) =>
+      chrome.storage.local.get(["channelCache"], r)
+    );
+    channelCache = data.channelCache || {};
+  }
+  const cache = channelCache;
+  const subs = await getSubscriptionsId();
+  const missing = [];
+  for (const { id, title } of subs) {
+    if (!cache[id]) cache[id] = {};
+    cache[id].title = title;
+    if (!cache[id].uploads) missing.push(id);
+  }
+  extraIds.forEach((id) => {
+    if (!cache[id] || !cache[id].uploads) missing.push(id);
+  });
+  let ids = missing.slice();
+  while (ids.length) {
+    const chunk = ids.splice(0, 50);
+    const infos = await getChannelInfos(chunk);
+    for (const info of infos) {
+      cache[info.id] = cache[info.id] || {};
+      cache[info.id].title = cache[info.id].title || info.title;
+      cache[info.id].uploads = info.uploads;
+    }
+  }
+  channelCache = cache;
+  chrome.storage.local.set({ channelCache: cache });
+  return cache;
+}
+
 async function getRecentVideosBySearch(
   channelId,
   startDate,
@@ -79,9 +141,12 @@ async function getRecentVideosBySearch(
     publishedAfter: startDate.toISOString(),
   });
   const vids = data.items.map((el) => ({
-    vId: el.id.videoId,
-    pubDate: new Date(el.snippet.publishedAt),
-    videoInfo: el,
+    id: el.id.videoId,
+    publishedAt: new Date(el.snippet.publishedAt),
+    title: el.snippet.title,
+    channelId: el.snippet.channelId,
+    channelTitle: el.snippet.channelTitle,
+    tags: el.snippet.tags,
     playlist: origin,
   }));
   if (data.nextPageToken) {
@@ -135,13 +200,12 @@ async function getNewVideos(
     }
     pages++;
     const items = data.items.map((el) => ({
-      vId: el.contentDetails.videoId,
-      pubDate: new Date(el.contentDetails.videoPublishedAt),
-      videoInfo: el,
+      id: el.contentDetails.videoId,
+      publishedAt: new Date(el.contentDetails.videoPublishedAt),
       playlist,
     }));
     for (const it of items) {
-      if (it.pubDate > startDate) videos.push(it);
+      if (it.publishedAt > startDate) videos.push(it);
     }
     const last = data.items[data.items.length - 1];
     const lastDate = last
@@ -166,21 +230,21 @@ async function addListToWL(storeDateFunction, playlistId, list, count = 0) {
   }
   const targetVideo = list[count];
   try {
-    await addVideoToWL(targetVideo.vId, playlistId);
-    console.log(`OK: ${targetVideo.vId}, count ${count}/${list.length}`);
+    await addVideoToWL(targetVideo.id, playlistId);
+    console.log(`OK: ${targetVideo.id}, count ${count}/${list.length}`);
     return addListToWL(storeDateFunction, playlistId, list, count + 1);
   } catch (err) {
     const reason = err.error?.errors?.[0]?.reason || "";
     const status = err.status;
     switch (reason) {
       case "videoAlreadyInPlaylist":
-        logMessage("warn", targetVideo.vId, count, err.error.message);
+        logMessage("warn", targetVideo.id, count, err.error.message);
         return addListToWL(storeDateFunction, playlistId, list, count + 1);
       case "backendError":
       case "internalError":
         logMessage(
           "warn",
-          targetVideo.vId,
+          targetVideo.id,
           count,
           "Backend error, retry in 1 min"
         );
@@ -189,19 +253,19 @@ async function addListToWL(storeDateFunction, playlistId, list, count = 0) {
       case "rateLimitExceeded":
         logMessage(
           "warn",
-          targetVideo.vId,
+          targetVideo.id,
           count,
           "Rate limit exceeded, 8 min pause"
         );
         await new Promise((r) => setTimeout(r, 8 * 60 * 1000 + 500));
         return addListToWL(storeDateFunction, playlistId, list, count);
       case "quotaExceeded":
-        logMessage("error", targetVideo.vId, count, "Quota exceeded");
+        logMessage("error", targetVideo.id, count, "Quota exceeded");
         return count;
       case "SERVICE_UNAVAILABLE":
         logMessage(
           "warn",
-          targetVideo.vId,
+          targetVideo.id,
           count,
           "Service unavailable, retry in 1 min"
         );
@@ -211,7 +275,7 @@ async function addListToWL(storeDateFunction, playlistId, list, count = 0) {
         if (status >= 500) {
           logMessage(
             "warn",
-            targetVideo.vId,
+            targetVideo.id,
             count,
             "Server error, retry in 1 min"
           );
@@ -220,7 +284,7 @@ async function addListToWL(storeDateFunction, playlistId, list, count = 0) {
         }
         logMessage(
           "error",
-          targetVideo.vId,
+          targetVideo.id,
           count,
           err.error?.message || err.message
         );
@@ -236,17 +300,20 @@ async function createPlayList(title) {
   });
 }
 
-async function addVideoToWL(vId, playlistId) {
+async function addVideoToWL(videoId, playlistId) {
   return callApi("playlistItems", { part: "snippet" }, "POST", {
     snippet: {
       playlistId,
-      resourceId: { kind: "youtube#video", videoId: vId },
+      resourceId: { kind: "youtube#video", videoId },
     },
   });
 }
 
 async function isShort(video) {
-  const videoId = video.id || video.vId;
+  const videoId = video.id;
+  if (video.duration && parseDuration(video.duration) < 60) return true;
+  if (video.tags && video.tags.some((t) => /shorts?/i.test(t))) return true;
+  if (video.title && video.title.toLowerCase().includes("#short")) return true;
   try {
     const res = await fetch(`https://www.youtube.com/shorts/${videoId}`, {
       method: "HEAD",
@@ -266,14 +333,15 @@ async function getVideoInfo(idList, nextPage) {
     id: idList.join(","),
     pageToken: nextPage,
   });
-  const info = data.items.map((el) => ({
-    vId: el.id,
-    pubDate: el.snippet.publishedAt,
-    id: el.id,
-    ...el.snippet,
-    ...el.contentDetails,
-    liveStreamingDetails: el.liveStreamingDetails,
-  }));
+  const info = data.items.map((el) => {
+    return {
+      id: el.id,
+      ...el.snippet,
+      ...el.contentDetails,
+      liveStreamingDetails: el.liveStreamingDetails,
+      publishedAt: new Date(el.snippet.publishedAt)
+    };
+  });
   if (data.nextPageToken) {
     const rest = await getVideoInfo(idList, data.nextPageToken);
     return info.concat(rest);
@@ -295,4 +363,5 @@ export {
   addVideoToWL,
   isShort,
   getVideoInfo,
+  getChannelMap,
 };

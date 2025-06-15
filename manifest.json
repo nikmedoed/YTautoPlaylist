@@ -10,8 +10,7 @@
   },
   "options_page": "src/settings/settings.html",
   "action": {
-    "default_icon": "icon/icon.png",
-    "default_popup": "src/popup/popup.html"
+    "default_icon": "icon/icon.png"
   },
   "background": {
     "service_worker": "src/background.js",
