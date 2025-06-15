@@ -79,12 +79,14 @@ async function getUploadsLists(userids) {
 }
 
 async function getChannelInfos(ids) {
+  if (!ids || ids.length === 0) return [];
   const data = await callApi("channels", {
     part: "snippet,contentDetails",
     id: ids.join(","),
     maxResults: 50,
   });
-  return data.items.map((el) => ({
+  const items = Array.isArray(data?.items) ? data.items : [];
+  return items.map((el) => ({
     id: el.id,
     title: el.snippet.title,
     uploads: el.contentDetails.relatedPlaylists.uploads,
