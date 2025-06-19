@@ -7,7 +7,6 @@ const DEFAULT_FILTERS = {
 import { parseDuration } from './utils.js';
 
 let filtersCache;
-const playlistCheckCache = new Map();
 
 export function getFilters() {
   if (filtersCache) return Promise.resolve(filtersCache);
@@ -58,18 +57,12 @@ async function fetchInfo(list) {
 
 async function isInPlaylists(videoId, playlistIds) {
   for (const pl of playlistIds) {
-    const key = `${pl}:${videoId}`;
-    if (playlistCheckCache.has(key)) {
-      if (playlistCheckCache.get(key)) return true;
-      continue;
-    }
     try {
-      const inPl = await isVideoInPlaylist(videoId, pl);
-      playlistCheckCache.set(key, inPl);
-      if (inPl) return true;
+      if (await isVideoInPlaylist(videoId, pl)) {
+        return true;
+      }
     } catch (err) {
       console.error('Playlist check failed', pl, videoId, err);
-      playlistCheckCache.set(key, false);
     }
   }
   return false;
@@ -87,6 +80,7 @@ function buildStats(videos) {
         shorts: 0,
         broadcasts: 0,
         add: 0,
+        stoplists: 0,
       };
     }
     stats[ch].new++;
@@ -186,6 +180,7 @@ export async function filterVideos(list) {
       if (reason) {
         if (reason === 'short') st.shorts++;
         else if (reason === 'broadcast') st.broadcasts++;
+        else if (reason === 'playlist') st.stoplists++;
         else st.filtered++;
       } else {
         st.add++;
@@ -205,19 +200,20 @@ export async function filterVideos(list) {
       acc.filtered += st.filtered;
       acc.shorts += st.shorts;
       acc.broadcasts += st.broadcasts;
+      acc.stoplists += st.stoplists;
       acc.passed += st.add;
       return acc;
     },
-    { filtered: 0, shorts: 0, broadcasts: 0, passed: 0 }
+    { filtered: 0, shorts: 0, broadcasts: 0, stoplists: 0, passed: 0 }
   );
 
   for (const st of Object.values(stats)) {
     console.log(
-      `${st.title} new ${st.new}, filtered ${st.filtered}, broadcasts ${st.broadcasts}, shorts ${st.shorts}, to playlist ${st.add}`
+      `${st.title} new ${st.new}, filtered ${st.filtered}, broadcasts ${st.broadcasts}, shorts ${st.shorts}, to playlist ${st.add}, stoplists ${st.stoplists}`
     );
   }
   console.log(
-    `${list.length} videos filter stats: filtered ${totals.filtered}, broadcasts ${totals.broadcasts}, shorts ${totals.shorts}, passed ${totals.passed}`
+    `${list.length} videos filter stats: filtered ${totals.filtered}, broadcasts ${totals.broadcasts}, shorts ${totals.shorts}, stoplists ${totals.stoplists}, passed ${totals.passed}`
   );
   return result;
 }
