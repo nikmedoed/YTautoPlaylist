@@ -78,8 +78,12 @@ function getRules(global, local = {}) {
   return {
     noShorts: local.noShorts ?? global.noShorts,
     noBroadcasts: local.noBroadcasts ?? global.noBroadcasts,
-    title: [...(global.title || []), ...(local.title || [])],
-    tags: [...(global.tags || []), ...(local.tags || [])],
+    title: [...(global.title || []), ...(local.title || [])].map((t) =>
+      t.toLowerCase()
+    ),
+    tags: [...(global.tags || []), ...(local.tags || [])].map((t) =>
+      t.toLowerCase()
+    ),
     duration: [...(global.duration || []), ...(local.duration || [])],
   };
 }
@@ -97,14 +101,16 @@ export async function applyFilters(video, rules) {
 
   if (rules.title.length) {
     const t = (video.title || '').toLowerCase();
-    if (rules.title.some((s) => t.includes(s))) {
+    const titles = rules.title.map((s) => s.toLowerCase());
+    if (titles.some((s) => t.includes(s))) {
       return 'title';
     }
   }
 
   if (rules.tags.length) {
     const tags = (video.tags || []).map((t) => t.toLowerCase());
-    if (rules.tags.some((s) => tags.includes(s))) {
+    const filterTags = rules.tags.map((s) => s.toLowerCase());
+    if (filterTags.some((s) => tags.includes(s))) {
       return 'tag';
     }
   }

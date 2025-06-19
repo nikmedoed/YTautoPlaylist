@@ -1,6 +1,7 @@
 import assert from 'assert';
 import { getNewVideos, __setCallApi } from '../src/youTubeApiConnectors.js';
 import { parseVideoId } from '../src/utils.js';
+import { applyFilters } from '../src/filter.js';
 
 const calls = [];
 __setCallApi(async (path) => {
@@ -34,4 +35,33 @@ __setCallApi(async (path) => {
   assert.strictEqual(parseVideoId(examples[2]), 'hE79n2sUboU');
   assert.strictEqual(parseVideoId(examples[3]), 'hE79n2sUboU');
   console.log('parseVideoId handles messy URLs');
+})();
+
+(async () => {
+  const video = { title: 'Foo BAR', tags: ['MyTag'] };
+  const byTitle = {
+    noShorts: false,
+    noBroadcasts: false,
+    title: ['foo bar'],
+    tags: [],
+    duration: [],
+  };
+  const byTag = {
+    noShorts: false,
+    noBroadcasts: false,
+    title: [],
+    tags: ['mytag'],
+    duration: [],
+  };
+  assert.strictEqual(await applyFilters(video, byTitle), 'title');
+  assert.strictEqual(await applyFilters(video, byTag), 'tag');
+  const byCase = {
+    noShorts: false,
+    noBroadcasts: false,
+    title: ['FOO BAR'],
+    tags: ['MYTAG'],
+    duration: [],
+  };
+  assert.strictEqual(await applyFilters(video, byCase), 'title');
+  console.log('applyFilters is case-insensitive');
 })();
