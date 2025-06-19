@@ -78,8 +78,12 @@ function getRules(global, local = {}) {
   return {
     noShorts: local.noShorts ?? global.noShorts,
     noBroadcasts: local.noBroadcasts ?? global.noBroadcasts,
-    title: [...(global.title || []), ...(local.title || [])],
-    tags: [...(global.tags || []), ...(local.tags || [])],
+    title: [...(global.title || []), ...(local.title || [])].map((t) =>
+      t.toLowerCase()
+    ),
+    tags: [...(global.tags || []), ...(local.tags || [])].map((t) =>
+      t.toLowerCase()
+    ),
     duration: [...(global.duration || []), ...(local.duration || [])],
   };
 }
