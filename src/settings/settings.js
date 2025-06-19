@@ -214,7 +214,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     let playlistOptions = [];
     if (channelId) {
       try {
-        playlistOptions = await getChannelPlaylists(channelId, { includeUploads: true });
+        playlistOptions = await getChannelPlaylists(channelId, { includeUploads: true, refresh: true });
       } catch (e) {
         console.error('Failed to load playlists for', channelId, e);
       }

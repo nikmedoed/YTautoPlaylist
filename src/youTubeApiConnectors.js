@@ -314,11 +314,11 @@ async function addVideoToWL(videoId, playlistId) {
 const channelPlaylistCache = {};
 async function getChannelPlaylists(
   channelId,
-  { includeUploads = false } = {},
+  { includeUploads = false, refresh = false } = {},
   pageToken,
   list = []
 ) {
-  if (!pageToken && channelPlaylistCache[channelId]) {
+  if (!pageToken && !refresh && channelPlaylistCache[channelId]) {
     const cached = channelPlaylistCache[channelId];
     if (!includeUploads || cached.some((p) => p.isUploads)) return cached;
   }
@@ -337,7 +337,7 @@ async function getChannelPlaylists(
     ...data.items.map((el) => ({ id: el.id, title: el.snippet.title }))
   );
   if (data.nextPageToken) {
-    return getChannelPlaylists(channelId, { includeUploads }, data.nextPageToken, list);
+    return getChannelPlaylists(channelId, { includeUploads, refresh }, data.nextPageToken, list);
   }
   channelPlaylistCache[channelId] = list;
   return list;
