@@ -27,6 +27,11 @@ function parseTime(str) {
   return sec;
 }
 
+function toLocalInputValue(date) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
 const durTemplate = document.getElementById("durationRowTemplate");
 function createDurationRow(min = 0, max = Infinity) {
   const row = durTemplate.content.firstElementChild.cloneNode(true);
@@ -101,7 +106,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   chrome.storage.sync.get(["lastVideoDate"], (res) => {
     if (res.lastVideoDate) {
       const d = new Date(res.lastVideoDate);
-      startInput.value = d.toISOString().slice(0, 16);
+      startInput.value = toLocalInputValue(d);
     }
   });
 
@@ -113,7 +118,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         { type: "setStartDate", date: dt.toISOString() },
         (res) => {
           if (res && res.ok) {
-            startInput.value = dt.toISOString().slice(0, 16);
+            startInput.value = toLocalInputValue(dt);
           }
         }
       );
@@ -127,7 +132,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       { type: "videoDate", videoId: id },
       (response) => {
         if (response && response.date) {
-          startInput.value = response.date.slice(0, 16);
+          const d = new Date(response.date);
+          startInput.value = toLocalInputValue(d);
         }
       }
     );
