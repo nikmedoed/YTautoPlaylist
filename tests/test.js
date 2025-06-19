@@ -1,5 +1,10 @@
 import assert from 'assert';
-import { getNewVideos, __setCallApi } from '../src/youTubeApiConnectors.js';
+import {
+  getNewVideos,
+  __setCallApi,
+  isVideoInPlaylist,
+  listChannelPlaylists,
+} from '../src/youTubeApiConnectors.js';
 import { parseVideoId } from '../src/utils.js';
 import { applyFilters } from '../src/filter.js';
 
@@ -16,14 +21,12 @@ __setCallApi(async (path) => {
   return { items: [] };
 });
 
-(async () => {
-  const res = await getNewVideos('UUstub');
-  assert.deepStrictEqual(res, { videos: [], pages: 1 });
-  assert.deepStrictEqual(calls, ['playlistItems', 'search']);
-  console.log('getNewVideos falls back to search');
-})();
+const res = await getNewVideos('UUstub');
+assert.deepStrictEqual(res, { videos: [], pages: 1 });
+assert.deepStrictEqual(calls, ['playlistItems', 'search']);
+console.log('getNewVideos falls back to search');
 
-(() => {
+{
   const examples = [
     'https://youtu.be/HxdM7D8rnpw?si=YCLpPQ9ncgQuHKqu',
     'https://www.youtube.com/watch?v=HxdM7D8rnpw&list=PLAYLIST&index=91',
@@ -35,9 +38,9 @@ __setCallApi(async (path) => {
   assert.strictEqual(parseVideoId(examples[2]), 'hE79n2sUboU');
   assert.strictEqual(parseVideoId(examples[3]), 'hE79n2sUboU');
   console.log('parseVideoId handles messy URLs');
-})();
+}
 
-(async () => {
+{
   const video = { title: 'Foo BAR', tags: ['MyTag'] };
   const byTitle = {
     noShorts: false,
@@ -64,4 +67,25 @@ __setCallApi(async (path) => {
   };
   assert.strictEqual(await applyFilters(video, byCase), 'title');
   console.log('applyFilters is case-insensitive');
-})();
+}
+
+{
+  const calls2 = [];
+  __setCallApi(async (path, params) => {
+    calls2.push(path);
+    if (path === 'playlistItems') {
+      return { items: params.videoId === 'AAA' ? [{}] : [] };
+    }
+    if (path === 'playlists') {
+      return { items: [{ id: 'PL1', snippet: { title: 'List' } }] };
+    }
+    return { items: [] };
+  });
+  const ok = await isVideoInPlaylist('AAA', 'PL1');
+  assert.strictEqual(ok, true);
+  const no = await isVideoInPlaylist('BBB', 'PL1');
+  assert.strictEqual(no, false);
+  const pls = await listChannelPlaylists('CID');
+  assert.deepStrictEqual(pls, [{ id: 'PL1', title: 'List' }]);
+  console.log('playlist helpers work');
+}

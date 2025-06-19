@@ -1,6 +1,6 @@
 import { parseVideoId } from "../utils.js";
 import { getFilters, saveFilters } from "../filter.js";
-import { getChannelMap } from "../youTubeApiConnectors.js";
+import { getChannelMap, listChannelPlaylists } from "../youTubeApiConnectors.js";
 
 function toTimeStr(sec) {
   if (sec === undefined || sec === null || sec === Infinity) return "";
@@ -48,6 +48,24 @@ function createTextRow(type, value = "") {
   return row;
 }
 
+const playlistTemplate = document.getElementById("playlistRowTemplate");
+const playlistCache = {};
+async function createPlaylistRow(channelId, value = "") {
+  const row = playlistTemplate.content.firstElementChild.cloneNode(true);
+  const select = row.querySelector("select");
+  if (!playlistCache[channelId]) {
+    playlistCache[channelId] = await listChannelPlaylists(channelId);
+  }
+  playlistCache[channelId].forEach((pl) => {
+    const opt = document.createElement("option");
+    opt.value = pl.id;
+    opt.textContent = pl.title;
+    select.appendChild(opt);
+  });
+  select.value = value;
+  return row;
+}
+
 const groupTemplate = document.getElementById("filterGroupTemplate");
 const cardTemplate = document.getElementById("filterCardTemplate");
 function createGroup(labelText, type, rows, createRowFn) {
@@ -66,13 +84,18 @@ function createGroup(labelText, type, rows, createRowFn) {
     group.style.display = hasRows ? "" : "none";
   }
 
-  addBtn.addEventListener("click", () => {
-    list.appendChild(createRowFn());
+  async function addRow(r) {
+    const node = await createRowFn(r);
+    list.appendChild(node);
     checkHeader();
+  }
+
+  addBtn.addEventListener("click", () => {
+    addRow();
   });
 
   rows.forEach((r) => {
-    list.appendChild(createRowFn(r));
+    addRow(r);
   });
   list.addEventListener("click", (e) => {
     if (e.target.closest(".remove-row")) {
@@ -161,6 +184,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const btnDur = box.querySelector(".add-duration");
     const btnTitle = box.querySelector(".add-title");
     const btnTag = box.querySelector(".add-tag");
+    const btnPlaylist = box.querySelector(".add-playlist");
 
     if (channelId) {
       link.href = `https://www.youtube.com/channel/${channelId}`;
@@ -201,14 +225,22 @@ document.addEventListener("DOMContentLoaded", async () => {
       data.tags || [],
       (t = "") => createTextRow("tag", t)
     );
+    const playlistGroup = createGroup(
+      "Плейлист",
+      "playlist",
+      data.playlists || [],
+      (id = "") => createPlaylistRow(channelId, id)
+    );
 
     groupsWrap.appendChild(durGroup.group);
     groupsWrap.appendChild(titleGroup.group);
     groupsWrap.appendChild(tagGroup.group);
+    groupsWrap.appendChild(playlistGroup.group);
 
     btnDur.addEventListener("click", durGroup.add);
     btnTitle.addEventListener("click", titleGroup.add);
     btnTag.addEventListener("click", tagGroup.add);
+    btnPlaylist.addEventListener("click", playlistGroup.add);
 
     return box;
   }
@@ -258,6 +290,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const durs = [];
       const titles = [];
       const tags = [];
+      const playlists = [];
       sec.querySelectorAll(".filter-row").forEach((row) => {
         const type = row.dataset.type;
         if (type === "duration") {
@@ -271,11 +304,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         } else if (type === "tag") {
           const val = row.querySelector("input").value.trim();
           if (val) tags.push(val);
+        } else if (type === "playlist") {
+          const val = row.querySelector("select").value;
+          if (val) playlists.push(val);
         }
       });
       if (durs.length) obj.duration = durs;
       if (titles.length) obj.title = titles;
       if (tags.length) obj.tags = tags;
+      if (playlists.length) obj.playlists = playlists;
       if (ch) result.channels[ch] = obj;
       else result.global = obj;
     });

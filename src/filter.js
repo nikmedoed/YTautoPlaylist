@@ -1,4 +1,4 @@
-import { getVideoInfo, isShort } from './youTubeApiConnectors.js';
+import { getVideoInfo, isShort, isVideoInPlaylist } from './youTubeApiConnectors.js';
 
 const DEFAULT_FILTERS = {
   global: { noShorts: true },
@@ -7,6 +7,7 @@ const DEFAULT_FILTERS = {
 import { parseDuration } from './utils.js';
 
 let filtersCache;
+const playlistCheckCache = new Map();
 
 export function getFilters() {
   if (filtersCache) return Promise.resolve(filtersCache);
@@ -55,6 +56,25 @@ async function fetchInfo(list) {
   return list.map((v) => ({ ...v, ...(infoMap[v.id] || {}) }));
 }
 
+async function isInPlaylists(videoId, playlistIds) {
+  for (const pl of playlistIds) {
+    const key = `${pl}:${videoId}`;
+    if (playlistCheckCache.has(key)) {
+      if (playlistCheckCache.get(key)) return true;
+      continue;
+    }
+    try {
+      const inPl = await isVideoInPlaylist(videoId, pl);
+      playlistCheckCache.set(key, inPl);
+      if (inPl) return true;
+    } catch (err) {
+      console.error('Playlist check failed', pl, videoId, err);
+      playlistCheckCache.set(key, false);
+    }
+  }
+  return false;
+}
+
 function buildStats(videos) {
   const stats = {};
   for (const v of videos) {
@@ -85,6 +105,7 @@ function getRules(global, local = {}) {
       t.toLowerCase()
     ),
     duration: [...(global.duration || []), ...(local.duration || [])],
+    playlists: local.playlists || [],
   };
 }
 
@@ -155,7 +176,12 @@ export async function filterVideos(list) {
     while (index < videos.length) {
       const video = videos[index++];
       const rules = getRules(FILTERS.global, FILTERS.channels[video.channelId]);
-      const reason = await applyFilters(video, rules);
+      let reason = await applyFilters(video, rules);
+      if (!reason && rules.playlists && rules.playlists.length) {
+        if (await isInPlaylists(video.id, rules.playlists)) {
+          reason = 'playlist';
+        }
+      }
       const st = stats[video.channelId || 'unknown'];
       if (reason) {
         if (reason === 'short') st.shorts++;
