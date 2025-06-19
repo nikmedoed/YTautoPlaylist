@@ -43,6 +43,21 @@ function createTextRow(type, value = "") {
   return row;
 }
 
+const playlistTemplate = document.getElementById("playlistRowTemplate");
+function createPlaylistRow(options, value = "") {
+  const row = playlistTemplate.content.firstElementChild.cloneNode(true);
+  row.dataset.type = "playlist";
+  const sel = row.querySelector("select");
+  options.forEach((p) => {
+    const opt = document.createElement("option");
+    opt.value = p.id;
+    opt.textContent = p.title;
+    sel.appendChild(opt);
+  });
+  if (value) sel.value = value;
+  return row;
+}
+
 const groupTemplate = document.getElementById("filterGroupTemplate");
 const cardTemplate = document.getElementById("filterCardTemplate");
 function createGroup(labelText, type, rows, createRowFn) {
@@ -143,7 +158,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     addChannelSelect.appendChild(opt);
   });
 
-  function createSection(title, data = {}, channelId) {
+  async function createSection(title, data = {}, channelId) {
     const box = cardTemplate.content.firstElementChild.cloneNode(true);
     box.dataset.channel = channelId || "";
     const heading = box.querySelector(".channel-heading");
@@ -196,27 +211,38 @@ document.addEventListener("DOMContentLoaded", async () => {
       data.tags || [],
       (t = "") => createTextRow("tag", t)
     );
-    const playlistGroup = createGroup(
-      "Плейлист",
-      "playlist",
-      data.playlists || [],
-      (t = "") => createTextRow("playlist", t)
-    );
+    let playlistOptions = [];
+    if (channelId) {
+      try {
+        playlistOptions = await getChannelPlaylists(channelId, { includeUploads: true });
+      } catch (e) {
+        console.error('Failed to load playlists for', channelId, e);
+      }
+    }
+    const playlistGroup = channelId
+      ? createGroup(
+          "Плейлист",
+          "playlist",
+          data.playlists || [],
+          (p = "") => createPlaylistRow(playlistOptions, p)
+        )
+      : null;
 
     groupsWrap.appendChild(durGroup.group);
     groupsWrap.appendChild(titleGroup.group);
     groupsWrap.appendChild(tagGroup.group);
-    groupsWrap.appendChild(playlistGroup.group);
+    if (playlistGroup) groupsWrap.appendChild(playlistGroup.group);
 
     btnDur.addEventListener("click", durGroup.add);
     btnTitle.addEventListener("click", titleGroup.add);
     btnTag.addEventListener("click", tagGroup.add);
-    btnPlaylist.addEventListener("click", playlistGroup.add);
+    if (playlistGroup) btnPlaylist.addEventListener("click", playlistGroup.add);
+    else btnPlaylist.style.display = "none";
 
     return box;
   }
 
-  const globalSec = createSection("Глобальные", filters.global, null);
+  const globalSec = await createSection("Глобальные", filters.global, null);
   globalContainer.appendChild(globalSec);
   globalShortsChk = globalSec.querySelector(".nos");
   globalBroadcastChk = globalSec.querySelector(".nob");
@@ -239,7 +265,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   for (const id of Object.keys(filters.channels)) {
     const chName = channels[id]?.title || id;
-    const sec = createSection(chName, filters.channels[id], id);
+    const sec = await createSection(chName, filters.channels[id], id);
     filtersContainer.insertBefore(sec, addCard);
   }
 
@@ -276,7 +302,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           const val = row.querySelector("input").value.trim();
           if (val) tags.push(val);
         } else if (type === "playlist") {
-          const val = row.querySelector("input").value.trim();
+          const val = row.querySelector("select").value;
           if (val) playlists.push(val);
         }
       });
@@ -290,10 +316,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     saveFilters(result);
   });
 
-  addChannelBtn?.addEventListener("click", () => {
+  addChannelBtn?.addEventListener("click", async () => {
     const id = addChannelSelect.value;
     if (!id) return;
-    const sec = createSection(channels[id]?.title || id, {}, id);
+    const sec = await createSection(channels[id]?.title || id, {}, id);
     filtersContainer.insertBefore(sec, addCard);
     const opt = addChannelSelect.querySelector(`option[value="${id}"]`);
     opt?.remove();

@@ -1,12 +1,7 @@
-import {
-  getVideoInfo,
-  getChannelPlaylists,
-  getPlaylistVideos,
-  isShort,
-} from './youTubeApiConnectors.js';
+import { getVideoInfo, isShort, buildPlaylistIndex } from './youTubeApiConnectors.js';
 
 const DEFAULT_FILTERS = {
-  global: { noShorts: true, playlists: [] },
+  global: { noShorts: true },
   channels: {},
 };
 import { parseDuration } from './utils.js';
@@ -44,7 +39,7 @@ export function saveFilters(filters) {
   });
 }
 
-async function fetchInfo(list, filters) {
+async function fetchInfo(list) {
   const needInfo = list.filter(
     (v) => !v.duration || !v.title || !v.channelId || !v.tags
   );
@@ -57,67 +52,10 @@ async function fetchInfo(list, filters) {
   for (const v of [].concat(...chunks)) {
     infoMap[v.id] = v;
   }
-
-  const playlistMap = await fetchPlaylistInfo(list, filters);
-
   return list.map((v) => ({
     ...v,
     ...(infoMap[v.id] || {}),
-    playlists: playlistMap[v.id] || v.playlists || [],
   }));
-}
-
-async function fetchPlaylistInfo(list, filters) {
-  const result = {};
-  const globalPhrases = (filters.global.playlists || []).map((s) =>
-    s.toLowerCase()
-  );
-  const byChannel = {};
-  for (const v of list) {
-    if (!v.channelId) continue;
-    if (!byChannel[v.channelId]) byChannel[v.channelId] = new Set();
-    byChannel[v.channelId].add(v.id);
-  }
-
-  for (const [channelId, ids] of Object.entries(byChannel)) {
-    const channelPhrases = [
-      ...globalPhrases,
-      ...((filters.channels[channelId]?.playlists || []).map((s) => s.toLowerCase())),
-    ];
-    if (!channelPhrases.length) continue;
-    let playlists;
-    try {
-      console.log('Fetching playlists for', channelId);
-      playlists = await getChannelPlaylists(channelId);
-      console.log('Got', playlists.length, 'playlists');
-    } catch (e) {
-      console.error('Failed to get playlists for', channelId, e);
-      continue;
-    }
-    const relevant = playlists.filter((pl) =>
-      channelPhrases.some((ph) => pl.title.toLowerCase().includes(ph))
-    );
-    console.log('Channel', channelId, 'relevant playlists', relevant.map(p=>p.title));
-    if (!relevant.length) continue;
-    for (const pl of relevant) {
-      console.log('Check playlist', pl.title, pl.id);
-      let vids = [];
-      try {
-        vids = await getPlaylistVideos(pl.id);
-      } catch (e) {
-        console.error('Failed to get items for', pl.id, e);
-        continue;
-      }
-      console.log('Playlist', pl.id, 'contains', vids.length, 'videos');
-      for (const vid of vids) {
-        if (ids.has(vid)) {
-          result[vid] = result[vid] || [];
-          result[vid].push(pl.title);
-        }
-      }
-    }
-  }
-  return result;
 }
 
 function buildStats(videos) {
@@ -145,12 +83,12 @@ function getRules(global, local = {}) {
     noBroadcasts: local.noBroadcasts ?? global.noBroadcasts,
     title: [...(global.title || []), ...(local.title || [])],
     tags: [...(global.tags || []), ...(local.tags || [])],
-    playlists: [...(global.playlists || []), ...(local.playlists || [])],
+    playlists: [...(local.playlists || [])],
     duration: [...(global.duration || []), ...(local.duration || [])],
   };
 }
 
-export async function applyFilters(video, rules) {
+export async function applyFilters(video, rules, playlistIndex = {}) {
 
   if (
     rules.noBroadcasts &&
@@ -176,12 +114,7 @@ export async function applyFilters(video, rules) {
   }
 
   if (rules.playlists.length) {
-    const pls = (video.playlists || []).map((p) => p.toLowerCase());
-    if (
-      rules.playlists.some((s) =>
-        pls.some((name) => name.includes(s))
-      )
-    ) {
+    if (rules.playlists.some((id) => playlistIndex[id]?.has(video.id))) {
       return 'playlist';
     }
   }
@@ -214,7 +147,8 @@ export async function filterVideos(list) {
 
   const FILTERS = await getFilters();
 
-  list = await fetchInfo(list, FILTERS);
+  list = await fetchInfo(list);
+  const playlistIndex = await buildPlaylistIndex(FILTERS);
   const stats = buildStats(list);
 
   const result = [];
@@ -228,7 +162,7 @@ export async function filterVideos(list) {
     while (index < videos.length) {
       const video = videos[index++];
       const rules = getRules(FILTERS.global, FILTERS.channels[video.channelId]);
-      const reason = await applyFilters(video, rules);
+      const reason = await applyFilters(video, rules, playlistIndex);
       const st = stats[video.channelId || 'unknown'];
       if (reason) {
         if (reason === 'short') st.shorts++;

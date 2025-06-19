@@ -369,6 +369,26 @@ async function getPlaylistVideos(
   return ids;
 }
 
+async function buildPlaylistIndex(filters) {
+  const ids = new Set();
+  for (const cfg of Object.values(filters.channels || {})) {
+    if (Array.isArray(cfg.playlists)) {
+      for (const pl of cfg.playlists) ids.add(pl);
+    }
+  }
+  const result = {};
+  for (const id of ids) {
+    try {
+      const vids = await getPlaylistVideos(id);
+      result[id] = new Set(vids);
+    } catch (e) {
+      console.error('Failed to fetch playlist', id, e);
+      result[id] = new Set();
+    }
+  }
+  return result;
+}
+
 async function getPlaylistsOfVideo(videoId, pageToken, titles = []) {
   console.log('Lookup playlists for video', videoId, 'page', pageToken || 'first');
   const data = await callApi("playlistItems", {
@@ -456,6 +476,7 @@ export {
   addVideoToWL,
   getChannelPlaylists,
   getPlaylistVideos,
+  buildPlaylistIndex,
   isShort,
   getVideoInfo,
   getPlaylistsOfVideo,
