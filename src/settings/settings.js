@@ -1,6 +1,6 @@
 import { parseVideoId } from "../utils.js";
 import { getFilters, saveFilters } from "../filter.js";
-import { getChannelMap } from "../youTubeApiConnectors.js";
+import { getChannelMap, getChannelPlaylists } from "../youTubeApiConnectors.js";
 
 function toTimeStr(sec) {
   if (sec === undefined || sec === null || sec === Infinity) return "";
