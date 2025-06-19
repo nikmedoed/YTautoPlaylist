@@ -1,4 +1,4 @@
-import { getVideoInfo, isShort, buildPlaylistIndex } from './youTubeApiConnectors.js';
+import { getVideoInfo, isShort, isVideoInPlaylist } from './youTubeApiConnectors.js';
 
 const DEFAULT_FILTERS = {
   global: { noShorts: true },
@@ -88,7 +88,7 @@ function getRules(global, local = {}) {
   };
 }
 
-export async function applyFilters(video, rules, playlistIndex = {}) {
+export async function applyFilters(video, rules) {
 
   if (
     rules.noBroadcasts &&
@@ -114,8 +114,10 @@ export async function applyFilters(video, rules, playlistIndex = {}) {
   }
 
   if (rules.playlists.length) {
-    if (rules.playlists.some((id) => playlistIndex[id]?.has(video.id))) {
-      return 'playlist';
+    for (const id of rules.playlists) {
+      if (await isVideoInPlaylist(video.id, id)) {
+        return 'playlist';
+      }
     }
   }
 
@@ -148,7 +150,6 @@ export async function filterVideos(list) {
   const FILTERS = await getFilters();
 
   list = await fetchInfo(list);
-  const playlistIndex = await buildPlaylistIndex(FILTERS);
   const stats = buildStats(list);
 
   const result = [];
@@ -162,7 +163,7 @@ export async function filterVideos(list) {
     while (index < videos.length) {
       const video = videos[index++];
       const rules = getRules(FILTERS.global, FILTERS.channels[video.channelId]);
-      const reason = await applyFilters(video, rules, playlistIndex);
+      const reason = await applyFilters(video, rules);
       const st = stats[video.channelId || 'unknown'];
       if (reason) {
         if (reason === 'short') st.shorts++;

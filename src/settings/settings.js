@@ -171,6 +171,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const btnTitle = box.querySelector(".add-title");
     const btnTag = box.querySelector(".add-tag");
     const btnPlaylist = box.querySelector(".add-playlist");
+    const btnRefresh = box.querySelector(".refresh-playlists");
 
     if (channelId) {
       link.href = `https://www.youtube.com/channel/${channelId}`;
@@ -212,13 +213,28 @@ document.addEventListener("DOMContentLoaded", async () => {
       (t = "") => createTextRow("tag", t)
     );
     let playlistOptions = [];
-    if (channelId) {
+    async function loadPlaylists(refresh = false) {
+      if (!channelId) return;
       try {
-        playlistOptions = await getChannelPlaylists(channelId, { includeUploads: true, refresh: true });
+        playlistOptions = await getChannelPlaylists(channelId, { includeUploads: true, refresh });
+        if (playlistGroup) {
+          playlistGroup.list.querySelectorAll('select').forEach((sel) => {
+            const current = sel.value;
+            sel.innerHTML = '';
+            playlistOptions.forEach((p) => {
+              const opt = document.createElement('option');
+              opt.value = p.id;
+              opt.textContent = p.title;
+              sel.appendChild(opt);
+            });
+            if (current) sel.value = current;
+          });
+        }
       } catch (e) {
         console.error('Failed to load playlists for', channelId, e);
       }
     }
+
     const playlistGroup = channelId
       ? createGroup(
           "Плейлист",
@@ -228,6 +244,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         )
       : null;
 
+    if (channelId) {
+      await loadPlaylists(false);
+    }
+
     groupsWrap.appendChild(durGroup.group);
     groupsWrap.appendChild(titleGroup.group);
     groupsWrap.appendChild(tagGroup.group);
@@ -236,8 +256,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     btnDur.addEventListener("click", durGroup.add);
     btnTitle.addEventListener("click", titleGroup.add);
     btnTag.addEventListener("click", tagGroup.add);
-    if (playlistGroup) btnPlaylist.addEventListener("click", playlistGroup.add);
-    else btnPlaylist.style.display = "none";
+    if (playlistGroup) {
+      btnPlaylist.addEventListener("click", playlistGroup.add);
+      btnRefresh.addEventListener("click", () => loadPlaylists(true));
+    } else {
+      btnPlaylist.style.display = "none";
+      btnRefresh.style.display = "none";
+    }
 
     return box;
   }

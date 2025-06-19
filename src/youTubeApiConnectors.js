@@ -422,6 +422,29 @@ async function getPlaylistsOfVideo(videoId, pageToken, titles = []) {
   return result;
 }
 
+const playlistCheckCache = {};
+async function isVideoInPlaylist(videoId, playlistId) {
+  const key = `${playlistId}|${videoId}`;
+  if (key in playlistCheckCache) return playlistCheckCache[key];
+  console.log('Check video', videoId, 'in playlist', playlistId);
+  try {
+    const data = await callApi('playlistItems', {
+      part: 'id',
+      playlistId,
+      videoId,
+      maxResults: 1,
+    });
+    const found = (data.items || []).length > 0;
+    playlistCheckCache[key] = found;
+    console.log('Playlist check', playlistId, videoId, found);
+    return found;
+  } catch (e) {
+    console.warn('Playlist check failed', playlistId, videoId, e);
+    playlistCheckCache[key] = false;
+    return false;
+  }
+}
+
 async function isShort(video) {
   const videoId = video.id;
   if (video.duration && parseDuration(video.duration) < 60) return true;
@@ -477,6 +500,7 @@ export {
   getChannelPlaylists,
   getPlaylistVideos,
   buildPlaylistIndex,
+  isVideoInPlaylist,
   isShort,
   getVideoInfo,
   getPlaylistsOfVideo,
