@@ -58,8 +58,8 @@ __setCallApi(async (path) => {
   const byCase = {
     noShorts: false,
     noBroadcasts: false,
-    title: ['FOO BAR'],
-    tags: ['MYTAG'],
+    title: ['FOO BAR'].map((t) => t.toLowerCase()),
+    tags: ['MYTAG'].map((t) => t.toLowerCase()),
     duration: [],
   };
   assert.strictEqual(await applyFilters(video, byCase), 'title');

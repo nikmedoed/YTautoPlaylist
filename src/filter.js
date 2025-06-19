@@ -101,16 +101,14 @@ export async function applyFilters(video, rules) {
 
   if (rules.title.length) {
     const t = (video.title || '').toLowerCase();
-    const titles = rules.title.map((s) => s.toLowerCase());
-    if (titles.some((s) => t.includes(s))) {
+    if (rules.title.some((s) => t.includes(s))) {
       return 'title';
     }
   }
 
   if (rules.tags.length) {
     const tags = (video.tags || []).map((t) => t.toLowerCase());
-    const filterTags = rules.tags.map((s) => s.toLowerCase());
-    if (filterTags.some((s) => tags.includes(s))) {
+    if (rules.tags.some((s) => tags.includes(s))) {
       return 'tag';
     }
   }
