@@ -6,36 +6,63 @@ const DEFAULT_FILTERS = {
 };
 import { parseDuration } from './utils.js';
 
+function normalizeTag(tag) {
+  return String(tag).replace(/^#/, '').toLowerCase();
+}
+
+export function normalizeRules(rules = {}) {
+  const res = { ...rules };
+  if (res.title) res.title = res.title.map((t) => String(t).toLowerCase());
+  if (res.tags) res.tags = res.tags.map((t) => normalizeTag(t));
+  return res;
+}
+
+export function normalizeFilters(filters = {}) {
+  return {
+    global: normalizeRules(filters.global || {}),
+    channels: Object.fromEntries(
+      Object.entries(filters.channels || {}).map(([id, r]) => [id, normalizeRules(r)])
+    ),
+  };
+}
+
 let filtersCache;
 
 export function getFilters() {
   if (filtersCache) return Promise.resolve(filtersCache);
   if (typeof chrome === 'undefined') {
-    filtersCache = DEFAULT_FILTERS;
+    filtersCache = normalizeFilters(DEFAULT_FILTERS);
     return Promise.resolve(filtersCache);
   }
   return new Promise((resolve) => {
     chrome.storage.local.get(['filters'], (data) => {
+      let raw;
       if (data && data.filters) {
         try {
-          filtersCache = JSON.parse(data.filters);
+          raw = JSON.parse(data.filters);
         } catch (e) {
-          filtersCache = DEFAULT_FILTERS;
+          raw = DEFAULT_FILTERS;
         }
       } else {
-        filtersCache = DEFAULT_FILTERS;
-        chrome.storage.local.set({ filters: JSON.stringify(filtersCache) });
+        raw = DEFAULT_FILTERS;
+        chrome.storage.local.set({ filters: JSON.stringify(raw) });
       }
+      filtersCache = normalizeFilters(raw);
       resolve(filtersCache);
     });
   });
 }
 
 export function saveFilters(filters) {
-  filtersCache = filters;
-  if (typeof chrome === 'undefined') return Promise.resolve();
+  if (typeof chrome === 'undefined') {
+    filtersCache = normalizeFilters(filters);
+    return Promise.resolve();
+  }
   return new Promise((resolve) => {
-    chrome.storage.local.set({ filters: JSON.stringify(filters) }, resolve);
+    chrome.storage.local.set({ filters: JSON.stringify(filters) }, () => {
+      filtersCache = normalizeFilters(filters);
+      resolve();
+    });
   });
 }
 
@@ -103,7 +130,7 @@ export async function applyFilters(video, rules) {
   }
 
   if (rules.tags.length) {
-    const tags = (video.tags || []).map((t) => t.toLowerCase());
+    const tags = (video.tags || []).map(normalizeTag);
     if (rules.tags.some((s) => tags.includes(s))) {
       return 'tag';
     }
