@@ -1,7 +1,7 @@
-import { getVideoInfo, isShort } from './youTubeApiConnectors.js';
+import { getVideoInfo, getPlaylistsOfVideo, isShort } from './youTubeApiConnectors.js';
 
 const DEFAULT_FILTERS = {
-  global: { noShorts: true },
+  global: { noShorts: true, playlists: [] },
   channels: {},
 };
 import { parseDuration } from './utils.js';
@@ -41,7 +41,8 @@ export function saveFilters(filters) {
 
 async function fetchInfo(list) {
   const needInfo = list.filter(
-    (v) => !v.duration || !v.title || !v.channelId || !v.tags
+    (v) =>
+      !v.duration || !v.title || !v.channelId || !v.tags || !v.playlists
   );
   const ids = [...new Set(needInfo.map((v) => v.id))];
   const chunks = [];
@@ -52,7 +53,23 @@ async function fetchInfo(list) {
   for (const v of [].concat(...chunks)) {
     infoMap[v.id] = v;
   }
-  return list.map((v) => ({ ...v, ...(infoMap[v.id] || {}) }));
+
+  const playlistMap = {};
+  const plIds = [...new Set(needInfo.filter((v) => !v.playlists).map((v) => v.id))];
+  for (const id of plIds) {
+    try {
+      playlistMap[id] = await getPlaylistsOfVideo(id);
+    } catch (e) {
+      console.error('Failed to fetch playlists for', id, e);
+      playlistMap[id] = [];
+    }
+  }
+
+  return list.map((v) => ({
+    ...v,
+    ...(infoMap[v.id] || {}),
+    playlists: v.playlists || playlistMap[v.id],
+  }));
 }
 
 function buildStats(videos) {
@@ -80,6 +97,7 @@ function getRules(global, local = {}) {
     noBroadcasts: local.noBroadcasts ?? global.noBroadcasts,
     title: [...(global.title || []), ...(local.title || [])],
     tags: [...(global.tags || []), ...(local.tags || [])],
+    playlists: [...(global.playlists || []), ...(local.playlists || [])],
     duration: [...(global.duration || []), ...(local.duration || [])],
   };
 }
@@ -106,6 +124,17 @@ export async function applyFilters(video, rules) {
     const tags = (video.tags || []).map((t) => t.toLowerCase());
     if (rules.tags.some((s) => tags.includes(s))) {
       return 'tag';
+    }
+  }
+
+  if (rules.playlists.length) {
+    const pls = (video.playlists || []).map((p) => p.toLowerCase());
+    if (
+      rules.playlists.some((s) =>
+        pls.some((name) => name.includes(s))
+      )
+    ) {
+      return 'playlist';
     }
   }
 

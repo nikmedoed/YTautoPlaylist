@@ -311,6 +311,36 @@ async function addVideoToWL(videoId, playlistId) {
   });
 }
 
+async function getPlaylistsOfVideo(videoId, pageToken, titles = []) {
+  const data = await callApi("playlistItems", {
+    part: "snippet",
+    videoId,
+    maxResults: 50,
+    pageToken,
+  });
+  const ids = data.items.map((el) => el.snippet.playlistId);
+  titles.push(...ids);
+  if (data.nextPageToken) {
+    return getPlaylistsOfVideo(videoId, data.nextPageToken, titles);
+  }
+  const unique = [...new Set(titles)];
+  if (!unique.length) return [];
+  let result = [];
+  let chunkIds = unique.slice();
+  while (chunkIds.length) {
+    const chunk = chunkIds.splice(0, 50);
+    const plData = await callApi("playlists", {
+      part: "snippet",
+      id: chunk.join(","),
+      maxResults: 50,
+    });
+    result = result.concat(
+      (plData.items || []).map((p) => p.snippet.title)
+    );
+  }
+  return result;
+}
+
 async function isShort(video) {
   const videoId = video.id;
   if (video.duration && parseDuration(video.duration) < 60) return true;
@@ -365,5 +395,6 @@ export {
   addVideoToWL,
   isShort,
   getVideoInfo,
+  getPlaylistsOfVideo,
   getChannelMap,
 };

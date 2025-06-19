@@ -155,6 +155,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const btnDur = box.querySelector(".add-duration");
     const btnTitle = box.querySelector(".add-title");
     const btnTag = box.querySelector(".add-tag");
+    const btnPlaylist = box.querySelector(".add-playlist");
 
     if (channelId) {
       link.href = `https://www.youtube.com/channel/${channelId}`;
@@ -195,14 +196,22 @@ document.addEventListener("DOMContentLoaded", async () => {
       data.tags || [],
       (t = "") => createTextRow("tag", t)
     );
+    const playlistGroup = createGroup(
+      "Плейлист",
+      "playlist",
+      data.playlists || [],
+      (t = "") => createTextRow("playlist", t)
+    );
 
     groupsWrap.appendChild(durGroup.group);
     groupsWrap.appendChild(titleGroup.group);
     groupsWrap.appendChild(tagGroup.group);
+    groupsWrap.appendChild(playlistGroup.group);
 
     btnDur.addEventListener("click", durGroup.add);
     btnTitle.addEventListener("click", titleGroup.add);
     btnTag.addEventListener("click", tagGroup.add);
+    btnPlaylist.addEventListener("click", playlistGroup.add);
 
     return box;
   }
@@ -252,6 +261,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const durs = [];
       const titles = [];
       const tags = [];
+      const playlists = [];
       sec.querySelectorAll(".filter-row").forEach((row) => {
         const type = row.dataset.type;
         if (type === "duration") {
@@ -265,11 +275,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         } else if (type === "tag") {
           const val = row.querySelector("input").value.trim();
           if (val) tags.push(val);
+        } else if (type === "playlist") {
+          const val = row.querySelector("input").value.trim();
+          if (val) playlists.push(val);
         }
       });
       if (durs.length) obj.duration = durs;
       if (titles.length) obj.title = titles;
       if (tags.length) obj.tags = tags;
+      if (playlists.length) obj.playlists = playlists;
       if (ch) result.channels[ch] = obj;
       else result.global = obj;
     });

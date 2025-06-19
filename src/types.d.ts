@@ -8,6 +8,7 @@ export interface Video {
   duration?: string;
   liveStreamingDetails?: Record<string, any>;
   playlist?: string;
+  playlists?: string[];
 }
 
 export interface ChannelInfo {
