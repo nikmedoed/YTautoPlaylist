@@ -351,6 +351,31 @@ async function getVideoInfo(idList, nextPage) {
   return info;
 }
 
+async function listChannelPlaylists(channelId, nextPage) {
+  const data = await callApi("playlists", {
+    part: "id,snippet",
+    channelId,
+    maxResults: 50,
+    pageToken: nextPage,
+  });
+  const items = data.items.map((it) => ({ id: it.id, title: it.snippet.title }));
+  if (data.nextPageToken) {
+    const rest = await listChannelPlaylists(channelId, data.nextPageToken);
+    return items.concat(rest);
+  }
+  return items;
+}
+
+async function isVideoInPlaylist(videoId, playlistId) {
+  const data = await callApi("playlistItems", {
+    part: "id",
+    maxResults: 25,
+    playlistId,
+    videoId,
+  });
+  return Array.isArray(data.items) && data.items.length > 0;
+}
+
 export function __setCallApi(fn) {
   callApi = fn;
 }
@@ -365,5 +390,7 @@ export {
   addVideoToWL,
   isShort,
   getVideoInfo,
+  listChannelPlaylists,
+  isVideoInPlaylist,
   getChannelMap,
 };
