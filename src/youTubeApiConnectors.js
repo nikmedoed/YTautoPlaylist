@@ -311,6 +311,46 @@ async function addVideoToWL(videoId, playlistId) {
   });
 }
 
+const channelPlaylistCache = {};
+async function getChannelPlaylists(channelId, pageToken, list = []) {
+  if (!pageToken && channelPlaylistCache[channelId]) {
+    return channelPlaylistCache[channelId];
+  }
+  const data = await callApi("playlists", {
+    part: "snippet",
+    channelId,
+    maxResults: 50,
+    pageToken,
+  });
+  list.push(
+    ...data.items.map((el) => ({ id: el.id, title: el.snippet.title }))
+  );
+  if (data.nextPageToken) {
+    return getChannelPlaylists(channelId, data.nextPageToken, list);
+  }
+  channelPlaylistCache[channelId] = list;
+  return list;
+}
+
+const playlistVideosCache = {};
+async function getPlaylistVideos(playlistId, limit = 200, pageToken, ids = []) {
+  if (!pageToken && playlistVideosCache[playlistId]) {
+    return playlistVideosCache[playlistId];
+  }
+  const data = await callApi("playlistItems", {
+    part: "contentDetails",
+    playlistId,
+    maxResults: 50,
+    pageToken,
+  });
+  ids.push(...data.items.map((it) => it.contentDetails.videoId));
+  if (data.nextPageToken && ids.length < limit) {
+    return getPlaylistVideos(playlistId, limit, data.nextPageToken, ids);
+  }
+  playlistVideosCache[playlistId] = ids;
+  return ids;
+}
+
 async function getPlaylistsOfVideo(videoId, pageToken, titles = []) {
   const data = await callApi("playlistItems", {
     part: "snippet",
@@ -393,6 +433,8 @@ export {
   addListToWL,
   createPlayList,
   addVideoToWL,
+  getChannelPlaylists,
+  getPlaylistVideos,
   isShort,
   getVideoInfo,
   getPlaylistsOfVideo,

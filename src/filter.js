@@ -1,4 +1,9 @@
-import { getVideoInfo, getPlaylistsOfVideo, isShort } from './youTubeApiConnectors.js';
+import {
+  getVideoInfo,
+  getChannelPlaylists,
+  getPlaylistVideos,
+  isShort,
+} from './youTubeApiConnectors.js';
 
 const DEFAULT_FILTERS = {
   global: { noShorts: true, playlists: [] },
@@ -39,10 +44,9 @@ export function saveFilters(filters) {
   });
 }
 
-async function fetchInfo(list) {
+async function fetchInfo(list, filters) {
   const needInfo = list.filter(
-    (v) =>
-      !v.duration || !v.title || !v.channelId || !v.tags || !v.playlists
+    (v) => !v.duration || !v.title || !v.channelId || !v.tags
   );
   const ids = [...new Set(needInfo.map((v) => v.id))];
   const chunks = [];
@@ -54,22 +58,61 @@ async function fetchInfo(list) {
     infoMap[v.id] = v;
   }
 
-  const playlistMap = {};
-  const plIds = [...new Set(needInfo.filter((v) => !v.playlists).map((v) => v.id))];
-  for (const id of plIds) {
-    try {
-      playlistMap[id] = await getPlaylistsOfVideo(id);
-    } catch (e) {
-      console.error('Failed to fetch playlists for', id, e);
-      playlistMap[id] = [];
-    }
-  }
+  const playlistMap = await fetchPlaylistInfo(list, filters);
 
   return list.map((v) => ({
     ...v,
     ...(infoMap[v.id] || {}),
-    playlists: v.playlists || playlistMap[v.id],
+    playlists: playlistMap[v.id] || v.playlists || [],
   }));
+}
+
+async function fetchPlaylistInfo(list, filters) {
+  const result = {};
+  const globalPhrases = (filters.global.playlists || []).map((s) =>
+    s.toLowerCase()
+  );
+  const byChannel = {};
+  for (const v of list) {
+    if (!v.channelId) continue;
+    if (!byChannel[v.channelId]) byChannel[v.channelId] = new Set();
+    byChannel[v.channelId].add(v.id);
+  }
+
+  for (const [channelId, ids] of Object.entries(byChannel)) {
+    const channelPhrases = [
+      ...globalPhrases,
+      ...((filters.channels[channelId]?.playlists || []).map((s) => s.toLowerCase())),
+    ];
+    if (!channelPhrases.length) continue;
+    let playlists;
+    try {
+      playlists = await getChannelPlaylists(channelId);
+    } catch (e) {
+      console.error('Failed to get playlists for', channelId, e);
+      continue;
+    }
+    const relevant = playlists.filter((pl) =>
+      channelPhrases.some((ph) => pl.title.toLowerCase().includes(ph))
+    );
+    if (!relevant.length) continue;
+    for (const pl of relevant) {
+      let vids = [];
+      try {
+        vids = await getPlaylistVideos(pl.id, 150);
+      } catch (e) {
+        console.error('Failed to get items for', pl.id, e);
+        continue;
+      }
+      for (const vid of vids) {
+        if (ids.has(vid)) {
+          result[vid] = result[vid] || [];
+          result[vid].push(pl.title);
+        }
+      }
+    }
+  }
+  return result;
 }
 
 function buildStats(videos) {
@@ -166,7 +209,7 @@ export async function filterVideos(list) {
 
   const FILTERS = await getFilters();
 
-  list = await fetchInfo(list);
+  list = await fetchInfo(list, FILTERS);
   const stats = buildStats(list);
 
   const result = [];
