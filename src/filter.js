@@ -87,7 +87,9 @@ async function fetchPlaylistInfo(list, filters) {
     if (!channelPhrases.length) continue;
     let playlists;
     try {
+      console.log('Fetching playlists for', channelId);
       playlists = await getChannelPlaylists(channelId);
+      console.log('Got', playlists.length, 'playlists');
     } catch (e) {
       console.error('Failed to get playlists for', channelId, e);
       continue;
@@ -95,15 +97,18 @@ async function fetchPlaylistInfo(list, filters) {
     const relevant = playlists.filter((pl) =>
       channelPhrases.some((ph) => pl.title.toLowerCase().includes(ph))
     );
+    console.log('Channel', channelId, 'relevant playlists', relevant.map(p=>p.title));
     if (!relevant.length) continue;
     for (const pl of relevant) {
+      console.log('Check playlist', pl.title, pl.id);
       let vids = [];
       try {
-        vids = await getPlaylistVideos(pl.id, 150);
+        vids = await getPlaylistVideos(pl.id);
       } catch (e) {
         console.error('Failed to get items for', pl.id, e);
         continue;
       }
+      console.log('Playlist', pl.id, 'contains', vids.length, 'videos');
       for (const vid of vids) {
         if (ids.has(vid)) {
           result[vid] = result[vid] || [];
