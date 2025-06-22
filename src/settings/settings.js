@@ -1,5 +1,5 @@
 import { parseVideoId } from "../utils.js";
-import { getFilters, saveFilters } from "../filter.js";
+import { getFilters, saveFilters, getFiltersLastSaved } from "../filter.js";
 import { getChannelMap, listChannelPlaylists } from "../youTubeApiConnectors.js";
 
 function toTimeStr(sec) {
@@ -108,6 +108,17 @@ function createGroup(labelText, type, rows, createRowFn) {
   return { group, list, add: () => { addBtn.click(); } };
 }
 
+function showToast(text, isError = false) {
+  const toast = document.getElementById('saveToast');
+  if (!toast) return;
+  toast.textContent = text;
+  toast.className = `notification ${isError ? 'is-danger' : 'is-success'} is-light`;
+  toast.style.display = '';
+  setTimeout(() => {
+    toast.style.display = 'none';
+  }, 3000);
+}
+
 
 document.addEventListener("DOMContentLoaded", async () => {
   const startInput = document.getElementById("startDate");
@@ -117,6 +128,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const filtersContainer = document.getElementById("filtersContainer");
   const globalContainer = document.getElementById("globalFilters");
   const saveFiltersBtn = document.getElementById("saveFilters");
+  const lastSaveInfo = document.getElementById("lastSave");
   const exportBtn = document.getElementById("exportFilters");
   const importInput = document.getElementById("importFilters");
   const addChannelSelect = document.getElementById("addChannelSelect");
@@ -125,6 +137,11 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   let globalShortsChk;
   let globalBroadcastChk;
+
+  const savedTime = getFiltersLastSaved();
+  if (lastSaveInfo && savedTime) {
+    lastSaveInfo.textContent = `Последнее сохранение: ${savedTime.toLocaleString()}`;
+  }
 
   chrome.storage.sync.get(["lastVideoDate"], (res) => {
     if (res.lastVideoDate) {
@@ -316,7 +333,13 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (ch) result.channels[ch] = obj;
       else result.global = obj;
     });
-    saveFilters(result);
+    saveFilters(result).then(() => {
+      showToast("Фильтры сохранены");
+      const dt = getFiltersLastSaved();
+      if (lastSaveInfo && dt) {
+        lastSaveInfo.textContent = `Последнее сохранение: ${dt.toLocaleString()}`;
+      }
+    });
   });
 
   addChannelBtn?.addEventListener("click", () => {
