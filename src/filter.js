@@ -96,7 +96,7 @@ function getRules(global, local = {}) {
       t.toLowerCase()
     ),
     tags: [...(global.tags || []), ...(local.tags || [])].map((t) =>
-      t.toLowerCase()
+      t.toLowerCase().replace(/\s+/g, '')
     ),
     duration: [...(global.duration || []), ...(local.duration || [])],
     playlists: local.playlists || [],
@@ -122,8 +122,13 @@ export async function applyFilters(video, rules) {
   }
 
   if (rules.tags.length) {
-    const tags = (video.tags || []).map((t) => t.toLowerCase());
-    if (rules.tags.some((s) => tags.includes(s))) {
+    const tags = (video.tags || [])
+      .map((t) => t.toLowerCase().replace(/\s+/g, ''));
+    const titleTags = (video.title || '')
+      .match(/#[^\s#]+/g)
+      ?.map((t) => t.slice(1).toLowerCase().replace(/\s+/g, '')) || [];
+    const allTags = tags.concat(titleTags);
+    if (rules.tags.some((s) => allTags.includes(s))) {
       return 'tag';
     }
   }
