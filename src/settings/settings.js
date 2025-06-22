@@ -114,6 +114,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const saveBtn = document.getElementById("saveStartDate");
   const videoInput = document.getElementById("videoId");
   const useBtn = document.getElementById("useVideoId");
+  const checkVideoInput = document.getElementById("checkVideoInput");
+  const checkVideoBtn = document.getElementById("checkVideoBtn");
+  const checkVideoResult = document.getElementById("checkVideoResult");
   const filtersContainer = document.getElementById("filtersContainer");
   const globalContainer = document.getElementById("globalFilters");
   const saveFiltersBtn = document.getElementById("saveFilters");
@@ -157,6 +160,23 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (response && response.date) {
           const d = new Date(response.date);
           startInput.value = toLocalInputValue(d);
+        }
+      }
+    );
+  });
+
+  checkVideoBtn?.addEventListener("click", () => {
+    const id = parseVideoId(checkVideoInput.value);
+    if (!id) return;
+    checkVideoResult.textContent = "Loading...";
+    chrome.runtime.sendMessage(
+      { type: "videoInfo", videoId: id },
+      (resp) => {
+        if (resp && resp.info) {
+          checkVideoResult.textContent = JSON.stringify(resp.info, null, 2);
+        } else {
+          checkVideoResult.textContent =
+            "Error: " + (resp?.error || "unknown");
         }
       }
     );

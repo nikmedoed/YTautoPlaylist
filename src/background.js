@@ -63,6 +63,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         });
       return true;
     }
+    case "videoInfo": {
+      const id = parseVideoId(request.videoId);
+      if (!id) {
+        sendResponse({ error: "Invalid video ID" });
+        return true;
+      }
+      getVideoInfo([id])
+        .then((info) => {
+          sendResponse({ info: info[0] });
+        })
+        .catch((err) => {
+          console.error("Failed to get video info", err);
+          sendResponse({ error: err.message });
+        });
+      return true;
+    }
     case "getLogs":
       sendResponse({ logs: logMessages });
       return true;
