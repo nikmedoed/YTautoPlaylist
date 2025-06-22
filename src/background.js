@@ -71,7 +71,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       }
       getVideoInfo([id])
         .then((info) => {
-          sendResponse({ info: info[0] });
+          const v = info[0];
+          const data = {
+            id: v.id,
+            channelId: v.channelId,
+            channelTitle: v.channelTitle,
+            title: v.title,
+            duration: v.duration,
+            tags: v.tags,
+            publishedAt: v.publishedAt,
+          };
+          if (v.liveStreamingDetails) {
+            data.scheduled = v.liveStreamingDetails.scheduledStartTime;
+            data.actual = v.liveStreamingDetails.actualStartTime;
+          }
+          sendResponse({ info: data });
         })
         .catch((err) => {
           console.error("Failed to get video info", err);

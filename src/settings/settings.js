@@ -169,17 +169,31 @@ document.addEventListener("DOMContentLoaded", async () => {
     const id = parseVideoId(checkVideoInput.value);
     if (!id) return;
     checkVideoResult.textContent = "Loading...";
-    chrome.runtime.sendMessage(
-      { type: "videoInfo", videoId: id },
-      (resp) => {
-        if (resp && resp.info) {
-          checkVideoResult.textContent = JSON.stringify(resp.info, null, 2);
-        } else {
-          checkVideoResult.textContent =
-            "Error: " + (resp?.error || "unknown");
+    chrome.runtime.sendMessage({ type: "videoInfo", videoId: id }, (resp) => {
+      if (resp && resp.info) {
+        const info = resp.info;
+        const lines = [];
+        lines.push(`ID: ${info.id}`);
+        if (info.channelTitle) {
+          lines.push(`Канал: ${info.channelTitle} (${info.channelId})`);
         }
+        if (info.title) lines.push(`Название: ${info.title}`);
+        if (info.tags && info.tags.length)
+          lines.push(`Теги: ${info.tags.join(", ")}`);
+        if (info.duration) lines.push(`Длительность: ${info.duration}`);
+        if (info.publishedAt)
+          lines.push(
+            `Опубликовано: ${new Date(info.publishedAt).toLocaleString("ru")}`
+          );
+        if (info.scheduled)
+          lines.push(`Запланировано: ${info.scheduled}`);
+        if (info.actual) lines.push(`Начало трансляции: ${info.actual}`);
+        checkVideoResult.textContent = lines.join("\n");
+      } else {
+        checkVideoResult.textContent =
+          "Error: " + (resp?.error || "unknown");
       }
-    );
+    });
   });
 
   const filters = await getFilters();
