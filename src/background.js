@@ -1,5 +1,5 @@
 import { initAuthListeners } from "./auth.js";
-import { getVideoInfo } from "./youTubeApiConnectors.js";
+import { getVideoInfo, isShort } from "./youTubeApiConnectors.js";
 import {
   storeDate,
   logMessages,
@@ -69,14 +69,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({ error: "Invalid video ID" });
         return true;
       }
-      getVideoInfo([id])
-        .then((info) => {
+      (async () => {
+        try {
+          const info = await getVideoInfo([id]);
           const v = info[0];
           const data = {
             id: v.id,
             channelId: v.channelId,
             channelTitle: v.channelTitle,
             title: v.title,
+            description: v.description,
             duration: v.duration,
             tags: v.tags,
             publishedAt: v.publishedAt,
@@ -84,13 +86,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           if (v.liveStreamingDetails) {
             data.scheduled = v.liveStreamingDetails.scheduledStartTime;
             data.actual = v.liveStreamingDetails.actualStartTime;
+            data.broadcast =
+              v.liveStreamingDetails.actualStartTime !==
+              v.liveStreamingDetails.scheduledStartTime;
+          } else {
+            data.broadcast = false;
           }
+          data.short = await isShort(v);
           sendResponse({ info: data });
-        })
-        .catch((err) => {
+        } catch (err) {
           console.error("Failed to get video info", err);
           sendResponse({ error: err.message });
-        });
+        }
+      })();
       return true;
     }
     case "getLogs":

@@ -1,4 +1,4 @@
-import { parseVideoId } from "../utils.js";
+import { parseVideoId, parseDuration } from "../utils.js";
 import { getFilters, saveFilters } from "../filter.js";
 import { getChannelMap, listChannelPlaylists } from "../youTubeApiConnectors.js";
 
@@ -170,25 +170,45 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!id) return;
     checkVideoResult.textContent = "Loading...";
     chrome.runtime.sendMessage({ type: "videoInfo", videoId: id }, (resp) => {
+      checkVideoResult.innerHTML = "";
       if (resp && resp.info) {
         const info = resp.info;
-        const lines = [];
-        lines.push(`ID: ${info.id}`);
-        if (info.channelTitle) {
-          lines.push(`Канал: ${info.channelTitle} (${info.channelId})`);
-        }
-        if (info.title) lines.push(`Название: ${info.title}`);
+        const addLine = (label, value) => {
+          if (!value && value !== 0) return;
+          const row = document.createElement("div");
+          const b = document.createElement("b");
+          b.textContent = label + ": ";
+          row.appendChild(b);
+          const span = document.createElement("span");
+          span.textContent = value;
+          row.appendChild(span);
+          checkVideoResult.appendChild(row);
+        };
+
+        addLine("ID", info.id);
+        if (info.channelTitle)
+          addLine("Канал", `${info.channelTitle} (${info.channelId})`);
+        addLine("Название", info.title);
+        addLine("Описание", info.description);
         if (info.tags && info.tags.length)
-          lines.push(`Теги: ${info.tags.join(", ")}`);
-        if (info.duration) lines.push(`Длительность: ${info.duration}`);
-        if (info.publishedAt)
-          lines.push(
-            `Опубликовано: ${new Date(info.publishedAt).toLocaleString("ru")}`
+          addLine(
+            "Теги",
+            info.tags.map((t) => `"${t}"`).join(", ")
           );
-        if (info.scheduled)
-          lines.push(`Запланировано: ${info.scheduled}`);
-        if (info.actual) lines.push(`Начало трансляции: ${info.actual}`);
-        checkVideoResult.textContent = lines.join("\n");
+        if (info.duration)
+          addLine(
+            "Длительность",
+            toTimeStr(parseDuration(info.duration))
+          );
+        if (info.publishedAt)
+          addLine(
+            "Опубликовано",
+            new Date(info.publishedAt).toLocaleString("ru")
+          );
+        addLine("Shorts", info.short ? "Да" : "Нет");
+        addLine("Трансляция", info.broadcast ? "Да" : "Нет");
+        if (info.scheduled) addLine("Запланировано", info.scheduled);
+        if (info.actual) addLine("Начало трансляции", info.actual);
       } else {
         checkVideoResult.textContent =
           "Error: " + (resp?.error || "unknown");
