@@ -7,6 +7,11 @@ const DEFAULT_FILTERS = {
 import { parseDuration } from './utils.js';
 
 let filtersCache;
+let filtersSaveTime;
+
+export function getFiltersLastSaved() {
+  return filtersSaveTime;
+}
 
 export function getFilters() {
   if (filtersCache) return Promise.resolve(filtersCache);
@@ -15,7 +20,7 @@ export function getFilters() {
     return Promise.resolve(filtersCache);
   }
   return new Promise((resolve) => {
-    chrome.storage.local.get(['filters'], (data) => {
+    chrome.storage.local.get(['filters', 'filtersSaveTime'], (data) => {
       if (data && data.filters) {
         try {
           filtersCache = JSON.parse(data.filters);
@@ -26,6 +31,9 @@ export function getFilters() {
         filtersCache = DEFAULT_FILTERS;
         chrome.storage.local.set({ filters: JSON.stringify(filtersCache) });
       }
+      if (data && data.filtersSaveTime) {
+        filtersSaveTime = new Date(data.filtersSaveTime);
+      }
       resolve(filtersCache);
     });
   });
@@ -33,9 +41,13 @@ export function getFilters() {
 
 export function saveFilters(filters) {
   filtersCache = filters;
+  filtersSaveTime = new Date();
   if (typeof chrome === 'undefined') return Promise.resolve();
   return new Promise((resolve) => {
-    chrome.storage.local.set({ filters: JSON.stringify(filters) }, resolve);
+    chrome.storage.local.set(
+      { filters: JSON.stringify(filters), filtersSaveTime: filtersSaveTime.toISOString() },
+      resolve
+    );
   });
 }
 
