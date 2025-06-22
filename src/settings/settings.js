@@ -1,5 +1,8 @@
-import { parseVideoId } from "../utils.js";
+import { parseVideoId, parseDuration } from "../utils.js";
+import { getFilters, saveFilters } from "../filter.js";
 import { getFilters, saveFilters, getFiltersLastSaved } from "../filter.js";
+
+
 import { getChannelMap, listChannelPlaylists } from "../youTubeApiConnectors.js";
 
 function toTimeStr(sec) {
@@ -125,6 +128,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const saveBtn = document.getElementById("saveStartDate");
   const videoInput = document.getElementById("videoId");
   const useBtn = document.getElementById("useVideoId");
+  const checkVideoInput = document.getElementById("checkVideoInput");
+  const checkVideoBtn = document.getElementById("checkVideoBtn");
+  const checkVideoResult = document.getElementById("checkVideoResult");
   const filtersContainer = document.getElementById("filtersContainer");
   const globalContainer = document.getElementById("globalFilters");
   const saveFiltersBtn = document.getElementById("saveFilters");
@@ -177,6 +183,59 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
       }
     );
+  });
+
+  checkVideoBtn?.addEventListener("click", () => {
+    const id = parseVideoId(checkVideoInput.value);
+    if (!id) return;
+    checkVideoResult.textContent = "Loading...";
+    chrome.runtime.sendMessage({ type: "videoInfo", videoId: id }, (resp) => {
+      checkVideoResult.innerHTML = "";
+      if (resp && resp.info) {
+        const info = resp.info;
+        const addLine = (label, value) => {
+          if (value === undefined || value === null) return;
+          const row = document.createElement("div");
+          row.className = "mb-1";
+          const b = document.createElement("b");
+          b.textContent = label + ": ";
+          row.appendChild(b);
+          const span = document.createElement("span");
+          if (Array.isArray(value)) {
+            span.textContent = value.map((v) => `"${v}"`).join(", ");
+          } else {
+            span.textContent = value;
+            if (label === "Описание") span.style.whiteSpace = "pre-wrap";
+          }
+          row.appendChild(span);
+          checkVideoResult.appendChild(row);
+        };
+
+        addLine("ID", info.id);
+        if (info.channelTitle)
+          addLine("Канал", `${info.channelTitle} (${info.channelId})`);
+        addLine("Название", info.title);
+        if (info.tags && info.tags.length) addLine("Теги", info.tags);
+        if (info.duration)
+          addLine(
+            "Длительность",
+            toTimeStr(parseDuration(info.duration))
+          );
+        if (info.publishedAt)
+          addLine(
+            "Опубликовано",
+            new Date(info.publishedAt).toLocaleString("ru")
+          );
+        addLine("Shorts", info.short ? "Да" : "Нет");
+        addLine("Трансляция", info.broadcast ? "Да" : "Нет");
+        if (info.scheduled) addLine("Запланировано", info.scheduled);
+        if (info.actual) addLine("Начало трансляции", info.actual);
+        addLine("Описание", info.description);
+      } else {
+        checkVideoResult.textContent =
+          "Error: " + (resp?.error || "unknown");
+      }
+    });
   });
 
   const filters = await getFilters();
