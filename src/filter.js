@@ -123,7 +123,11 @@ export async function applyFilters(video, rules) {
 
   if (rules.tags.length) {
     const tags = (video.tags || []).map((t) => t.toLowerCase());
-    if (rules.tags.some((s) => tags.includes(s))) {
+    const titleTags = (video.title || '')
+      .match(/#[^\s#]+/g)
+      ?.map((t) => t.slice(1).toLowerCase()) || [];
+    const allTags = tags.concat(titleTags);
+    if (rules.tags.some((s) => allTags.includes(s))) {
       return 'tag';
     }
   }

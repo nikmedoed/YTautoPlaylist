@@ -70,6 +70,19 @@ console.log('getNewVideos falls back to search');
 }
 
 {
+  const video = { title: '#HashTag video', tags: [] };
+  const rules = {
+    noShorts: false,
+    noBroadcasts: false,
+    title: [],
+    tags: ['hashtag'],
+    duration: [],
+  };
+  assert.strictEqual(await applyFilters(video, rules), 'tag');
+  console.log('applyFilters detects hashtags in title');
+}
+
+{
   const calls2 = [];
   __setCallApi(async (path, params) => {
     calls2.push(path);
