@@ -182,7 +182,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           row.appendChild(b);
           const span = document.createElement("span");
           if (Array.isArray(value)) {
-            span.textContent = value.map((v) => `"${v}"`).join(" ");
+            span.textContent = value.map((v) => `"${v}"`).join(", ");
           } else {
             span.textContent = value;
             if (label === "Описание") span.style.whiteSpace = "pre-wrap";
