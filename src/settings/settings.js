@@ -180,19 +180,14 @@ document.addEventListener("DOMContentLoaded", async () => {
           const b = document.createElement("b");
           b.textContent = label + ": ";
           row.appendChild(b);
+          const span = document.createElement("span");
           if (Array.isArray(value)) {
-            value.forEach((v, i) => {
-              const code = document.createElement("code");
-              code.textContent = v;
-              row.appendChild(code);
-              if (i < value.length - 1) row.appendChild(document.createTextNode(" "));
-            });
+            span.textContent = value.map((v) => `"${v}"`).join(" ");
           } else {
-            const span = document.createElement("span");
             span.textContent = value;
             if (label === "Описание") span.style.whiteSpace = "pre-wrap";
-            row.appendChild(span);
           }
+          row.appendChild(span);
           checkVideoResult.appendChild(row);
         };
 
@@ -200,7 +195,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (info.channelTitle)
           addLine("Канал", `${info.channelTitle} (${info.channelId})`);
         addLine("Название", info.title);
-        addLine("Описание", info.description);
         if (info.tags && info.tags.length) addLine("Теги", info.tags);
         if (info.duration)
           addLine(
@@ -216,6 +210,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         addLine("Трансляция", info.broadcast ? "Да" : "Нет");
         if (info.scheduled) addLine("Запланировано", info.scheduled);
         if (info.actual) addLine("Начало трансляции", info.actual);
+        addLine("Описание", info.description);
       } else {
         checkVideoResult.textContent =
           "Error: " + (resp?.error || "unknown");
