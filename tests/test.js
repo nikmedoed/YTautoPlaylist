@@ -70,6 +70,40 @@ console.log('getNewVideos falls back to search');
 }
 
 {
+  const video = { title: '#HashTag video', tags: [] };
+  const rules = {
+    noShorts: false,
+    noBroadcasts: false,
+    title: [],
+    tags: ['hashtag'],
+    duration: [],
+  };
+  assert.strictEqual(await applyFilters(video, rules), 'tag');
+  console.log('applyFilters detects hashtags in title');
+}
+
+{
+  const video = { title: 'Video', tags: ['popular politics'] };
+  const withSpace = {
+    noShorts: false,
+    noBroadcasts: false,
+    title: [],
+    tags: ['popular politics'].map((t) => t.toLowerCase().replace(/\s+/g, '')),
+    duration: [],
+  };
+  const noSpace = {
+    noShorts: false,
+    noBroadcasts: false,
+    title: [],
+    tags: ['popularpolitics'].map((t) => t.toLowerCase().replace(/\s+/g, '')),
+    duration: [],
+  };
+  assert.strictEqual(await applyFilters(video, withSpace), 'tag');
+  assert.strictEqual(await applyFilters(video, noSpace), 'tag');
+  console.log('applyFilters matches tags ignoring spaces');
+}
+
+{
   const calls2 = [];
   __setCallApi(async (path, params) => {
     calls2.push(path);
