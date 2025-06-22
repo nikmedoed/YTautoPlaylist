@@ -305,6 +305,7 @@
               class="is-hidden"
             />
           </div>
+          <p id="lastSave" class="has-text-centered has-text-grey mt-2"></p>
         </div>
       </div>
     </section>
@@ -405,6 +406,11 @@
         <div class="rows-wrap"></div>
       </div>
     </template>
+    <div
+      id="saveToast"
+      class="notification is-success is-light"
+      style="position: fixed; top: 1rem; right: 1rem; display: none; z-index: 1000"
+    ></div>
     <script type="module" src="settings.js"></script>
   </body>
 </html>
