@@ -1,5 +1,4 @@
 import { parseVideoId, parseDuration } from "../utils.js";
-import { getFilters, saveFilters } from "../filter.js";
 import { getFilters, saveFilters, getFiltersLastSaved } from "../filter.js";
 
 
@@ -185,14 +184,21 @@ document.addEventListener("DOMContentLoaded", async () => {
     );
   });
 
-  checkVideoBtn?.addEventListener("click", () => {
+  checkVideoBtn?.addEventListener("click", async () => {
     const id = parseVideoId(checkVideoInput.value);
     if (!id) return;
     checkVideoResult.textContent = "Loading...";
-    chrome.runtime.sendMessage({ type: "videoInfo", videoId: id }, (resp) => {
+    chrome.runtime.sendMessage({ type: "videoInfo", videoId: id }, async (resp) => {
       checkVideoResult.innerHTML = "";
       if (resp && resp.info) {
         const info = resp.info;
+        const reason = resp.filterReason;
+        const filters = await getFilters();
+        const chFilters = {
+          ...(filters.global || {}),
+          ...(filters.channels[info.channelId] || {}),
+        };
+
         const addLine = (label, value) => {
           if (value === undefined || value === null) return;
           const row = document.createElement("div");
@@ -210,6 +216,33 @@ document.addEventListener("DOMContentLoaded", async () => {
           row.appendChild(span);
           checkVideoResult.appendChild(row);
         };
+
+        const reasonMap = {
+          short: "короткое видео",
+          broadcast: "трансляция",
+          title: "фильтр по названию",
+          tag: "фильтр по тегу",
+          duration: "длительность",
+          playlist: "стоп-лист",
+        };
+
+        const verdict = document.createElement("div");
+        verdict.className = `notification mb-2 ${reason ? "is-warning" : "is-info"}`;
+        verdict.innerHTML = reason
+          ? `<b>Будет отфильтровано:</b> ${reasonMap[reason] || reason}`
+          : "<b>Не будет отфильтровано</b>";
+
+        if (reason === "tag" && chFilters.tags?.length) {
+          const d = document.createElement("div");
+          d.textContent = `Теги фильтров: ${chFilters.tags.map((t) => `"${t}"`).join(", ")}`;
+          verdict.appendChild(d);
+        } else if (reason === "title" && chFilters.title?.length) {
+          const d = document.createElement("div");
+          d.textContent = `Фильтры названия: ${chFilters.title.map((t) => `"${t}"`).join(", ")}`;
+          verdict.appendChild(d);
+        }
+
+        checkVideoResult.appendChild(verdict);
 
         addLine("ID", info.id);
         if (info.channelTitle)
