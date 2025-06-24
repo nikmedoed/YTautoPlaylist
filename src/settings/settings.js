@@ -184,15 +184,21 @@ document.addEventListener("DOMContentLoaded", async () => {
     );
   });
 
-  checkVideoBtn?.addEventListener("click", () => {
+  checkVideoBtn?.addEventListener("click", async () => {
     const id = parseVideoId(checkVideoInput.value);
     if (!id) return;
     checkVideoResult.textContent = "Loading...";
-    chrome.runtime.sendMessage({ type: "videoInfo", videoId: id }, (resp) => {
+    chrome.runtime.sendMessage({ type: "videoInfo", videoId: id }, async (resp) => {
       checkVideoResult.innerHTML = "";
       if (resp && resp.info) {
         const info = resp.info;
         const reason = resp.filterReason;
+        const filters = await getFilters();
+        const chFilters = {
+          ...(filters.global || {}),
+          ...(filters.channels[info.channelId] || {}),
+        };
+
         const addLine = (label, value) => {
           if (value === undefined || value === null) return;
           const row = document.createElement("div");
@@ -211,10 +217,6 @@ document.addEventListener("DOMContentLoaded", async () => {
           checkVideoResult.appendChild(row);
         };
 
-        addLine("ID", info.id);
-        if (info.channelTitle)
-          addLine("Канал", `${info.channelTitle} (${info.channelId})`);
-        addLine("Название", info.title);
         const reasonMap = {
           short: "короткое видео",
           broadcast: "трансляция",
@@ -223,10 +225,29 @@ document.addEventListener("DOMContentLoaded", async () => {
           duration: "длительность",
           playlist: "стоп-лист",
         };
-        addLine(
-          "Будет отфильтровано",
-          reason ? `Да (${reasonMap[reason] || reason})` : "Нет"
-        );
+
+        const verdict = document.createElement("div");
+        verdict.className = `notification mb-2 ${reason ? "is-warning" : "is-info"}`;
+        verdict.innerHTML = reason
+          ? `<b>Будет отфильтровано:</b> ${reasonMap[reason] || reason}`
+          : "<b>Не будет отфильтровано</b>";
+
+        if (reason === "tag" && chFilters.tags?.length) {
+          const d = document.createElement("div");
+          d.textContent = `Теги фильтров: ${chFilters.tags.map((t) => `"${t}"`).join(", ")}`;
+          verdict.appendChild(d);
+        } else if (reason === "title" && chFilters.title?.length) {
+          const d = document.createElement("div");
+          d.textContent = `Фильтры названия: ${chFilters.title.map((t) => `"${t}"`).join(", ")}`;
+          verdict.appendChild(d);
+        }
+
+        checkVideoResult.appendChild(verdict);
+
+        addLine("ID", info.id);
+        if (info.channelTitle)
+          addLine("Канал", `${info.channelTitle} (${info.channelId})`);
+        addLine("Название", info.title);
         if (info.tags && info.tags.length) addLine("Теги", info.tags);
         if (info.duration)
           addLine(
