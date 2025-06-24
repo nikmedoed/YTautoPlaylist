@@ -9,6 +9,23 @@ import { parseDuration } from './utils.js';
 let filtersCache;
 let filtersSaveTime;
 
+if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local') {
+      if (changes.filters) {
+        try {
+          filtersCache = JSON.parse(changes.filters.newValue);
+        } catch (e) {
+          filtersCache = DEFAULT_FILTERS;
+        }
+      }
+      if (changes.filtersSaveTime) {
+        filtersSaveTime = new Date(changes.filtersSaveTime.newValue);
+      }
+    }
+  });
+}
+
 export function getFiltersLastSaved() {
   return filtersSaveTime;
 }
@@ -166,6 +183,18 @@ export async function applyFilters(video, rules) {
   }
 
   return undefined;
+}
+
+export async function getVideoFilterReason(video) {
+  const filters = await getFilters();
+  const rules = getRules(filters.global, filters.channels[video.channelId]);
+  let reason = await applyFilters(video, rules);
+  if (!reason && rules.playlists && rules.playlists.length) {
+    if (await isInPlaylists(video.id, rules.playlists)) {
+      reason = 'playlist';
+    }
+  }
+  return reason;
 }
 
 export async function filterVideos(list) {

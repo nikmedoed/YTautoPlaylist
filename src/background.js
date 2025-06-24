@@ -1,5 +1,6 @@
 import { initAuthListeners } from "./auth.js";
 import { getVideoInfo, isShort } from "./youTubeApiConnectors.js";
+import { getVideoFilterReason } from "./filter.js";
 import {
   storeDate,
   logMessages,
@@ -93,7 +94,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             data.broadcast = false;
           }
           data.short = await isShort(v);
-          sendResponse({ info: data });
+          const reason = await getVideoFilterReason(v);
+          sendResponse({ info: data, filterReason: reason });
         } catch (err) {
           console.error("Failed to get video info", err);
           sendResponse({ error: err.message });

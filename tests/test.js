@@ -6,7 +6,7 @@ import {
   listChannelPlaylists,
 } from '../src/youTubeApiConnectors.js';
 import { parseVideoId } from '../src/utils.js';
-import { applyFilters } from '../src/filter.js';
+import { applyFilters, getVideoFilterReason, saveFilters } from '../src/filter.js';
 
 const calls = [];
 __setCallApi(async (path) => {
@@ -122,4 +122,14 @@ console.log('getNewVideos falls back to search');
   const pls = await listChannelPlaylists('CID');
   assert.deepStrictEqual(pls, [{ id: 'PL1', title: 'List' }]);
   console.log('playlist helpers work');
+}
+
+{
+  await saveFilters({
+    global: { noShorts: false, title: ['foo'] },
+    channels: {},
+  });
+  const reason = await getVideoFilterReason({ id: '1', title: 'foo bar' });
+  assert.strictEqual(reason, 'title');
+  console.log('getVideoFilterReason uses saved filters');
 }
