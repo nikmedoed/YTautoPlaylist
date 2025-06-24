@@ -168,6 +168,18 @@ export async function applyFilters(video, rules) {
   return undefined;
 }
 
+export async function getVideoFilterReason(video) {
+  const filters = await getFilters();
+  const rules = getRules(filters.global, filters.channels[video.channelId]);
+  let reason = await applyFilters(video, rules);
+  if (!reason && rules.playlists && rules.playlists.length) {
+    if (await isInPlaylists(video.id, rules.playlists)) {
+      reason = 'playlist';
+    }
+  }
+  return reason;
+}
+
 export async function filterVideos(list) {
   console.log('Fetching info for', list.length, 'videos');
 

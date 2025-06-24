@@ -193,6 +193,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       checkVideoResult.innerHTML = "";
       if (resp && resp.info) {
         const info = resp.info;
+        const reason = resp.filterReason;
         const addLine = (label, value) => {
           if (value === undefined || value === null) return;
           const row = document.createElement("div");
@@ -231,6 +232,18 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (info.scheduled) addLine("Запланировано", info.scheduled);
         if (info.actual) addLine("Начало трансляции", info.actual);
         addLine("Описание", info.description);
+        const reasonMap = {
+          short: "короткое видео",
+          broadcast: "трансляция",
+          title: "фильтр по названию",
+          tag: "фильтр по тегу",
+          duration: "длительность",
+          playlist: "стоп-лист",
+        };
+        addLine(
+          "Будет отфильтровано",
+          reason ? `Да (${reasonMap[reason] || reason})` : "Нет"
+        );
       } else {
         checkVideoResult.textContent =
           "Error: " + (resp?.error || "unknown");
