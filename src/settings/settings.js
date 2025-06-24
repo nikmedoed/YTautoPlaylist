@@ -1,5 +1,4 @@
 import { parseVideoId, parseDuration } from "../utils.js";
-import { getFilters, saveFilters } from "../filter.js";
 import { getFilters, saveFilters, getFiltersLastSaved } from "../filter.js";
 
 
