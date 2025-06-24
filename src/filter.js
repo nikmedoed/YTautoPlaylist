@@ -9,6 +9,23 @@ import { parseDuration } from './utils.js';
 let filtersCache;
 let filtersSaveTime;
 
+if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local') {
+      if (changes.filters) {
+        try {
+          filtersCache = JSON.parse(changes.filters.newValue);
+        } catch (e) {
+          filtersCache = DEFAULT_FILTERS;
+        }
+      }
+      if (changes.filtersSaveTime) {
+        filtersSaveTime = new Date(changes.filtersSaveTime.newValue);
+      }
+    }
+  });
+}
+
 export function getFiltersLastSaved() {
   return filtersSaveTime;
 }

@@ -215,6 +215,18 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (info.channelTitle)
           addLine("Канал", `${info.channelTitle} (${info.channelId})`);
         addLine("Название", info.title);
+        const reasonMap = {
+          short: "короткое видео",
+          broadcast: "трансляция",
+          title: "фильтр по названию",
+          tag: "фильтр по тегу",
+          duration: "длительность",
+          playlist: "стоп-лист",
+        };
+        addLine(
+          "Будет отфильтровано",
+          reason ? `Да (${reasonMap[reason] || reason})` : "Нет"
+        );
         if (info.tags && info.tags.length) addLine("Теги", info.tags);
         if (info.duration)
           addLine(
@@ -231,18 +243,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (info.scheduled) addLine("Запланировано", info.scheduled);
         if (info.actual) addLine("Начало трансляции", info.actual);
         addLine("Описание", info.description);
-        const reasonMap = {
-          short: "короткое видео",
-          broadcast: "трансляция",
-          title: "фильтр по названию",
-          tag: "фильтр по тегу",
-          duration: "длительность",
-          playlist: "стоп-лист",
-        };
-        addLine(
-          "Будет отфильтровано",
-          reason ? `Да (${reasonMap[reason] || reason})` : "Нет"
-        );
       } else {
         checkVideoResult.textContent =
           "Error: " + (resp?.error || "unknown");
