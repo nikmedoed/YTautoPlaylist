@@ -21,22 +21,53 @@ export function process() {
   });
 }
 
-export async function main(startDate = new Date(Date.now() - 604800000)) {
+export async function collectVideos(
+  startDate = new Date(Date.now() - 604800000),
+  progress = () => {}
+) {
   const channels = await getChannelMap();
   const uploads = Object.values(channels)
     .map((c) => c.uploads)
     .filter(Boolean);
   console.log("Subscriptions count:", Object.keys(channels).length);
   console.log("Loading videos from", uploads.length, "playlists");
-  const results = await Promise.all(
-    uploads.map((pl) =>
-      getNewVideos(pl, startDate).then((r) => ({
-        playlist: pl,
-        videos: r.videos,
-        pages: r.pages,
-      }))
-    )
+  progress({
+    phase: "channelsLoaded",
+    channelCount: Object.keys(channels).length,
+    playlistCount: uploads.length,
+  });
+
+  const results = new Array(uploads.length);
+  const concurrency = Math.min(uploads.length, 6) || 1;
+  let cursor = 0;
+  const workers = Array.from({ length: concurrency }, () =>
+    (async () => {
+      while (cursor < uploads.length) {
+        const current = cursor++;
+        const pl = uploads[current];
+        progress({
+          phase: "playlistFetch",
+          index: current + 1,
+          total: uploads.length,
+          playlistId: pl,
+        });
+        const r = await getNewVideos(pl, startDate);
+        results[current] = {
+          playlist: pl,
+          videos: r.videos,
+          pages: r.pages,
+        };
+        progress({
+          phase: "playlistFetched",
+          index: current + 1,
+          total: uploads.length,
+          playlistId: pl,
+          videoCount: r.videos.length,
+        });
+      }
+    })()
   );
+  await Promise.all(workers);
 
   const videoMap = new Map();
   for (const r of results) {
@@ -48,8 +79,16 @@ export async function main(startDate = new Date(Date.now() - 604800000)) {
   }
   let videos = Array.from(videoMap.values());
   console.log("Fetched", videos.length, "videos");
+  progress({ phase: "aggregate", videoCount: videos.length });
+  progress({ phase: "filtering", videoCount: videos.length });
   videos = await filterVideos(videos);
+  progress({ phase: "filtered", videoCount: videos.length });
   videos.sort((a, b) => a.publishedAt - b.publishedAt);
+  return videos;
+}
+
+export async function main(startDate = new Date(Date.now() - 604800000)) {
+  const videos = await collectVideos(startDate);
   console.log(
     videos
       .map((v) =>
