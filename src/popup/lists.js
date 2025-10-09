@@ -10,6 +10,7 @@ const detailMeta = document.getElementById("detailMeta");
 const selectAllBtn = document.getElementById("selectAllBtn");
 const clearSelectionBtn = document.getElementById("clearSelectionBtn");
 const bulkMoveBtn = document.getElementById("bulkMoveBtn");
+const bulkDeleteBtn = document.getElementById("bulkDeleteBtn");
 const selectionCounter = document.getElementById("selectionCounter");
 const statusBox = document.getElementById("status");
 const statusText = document.getElementById("statusText");
@@ -46,6 +47,13 @@ let pendingShiftSelect = false;
 const selectionState = {
   selected: new Set(),
   lastIndex: null,
+};
+
+const dragState = {
+  videoId: null,
+  overRow: null,
+  after: false,
+  listId: null,
 };
 
 const moveMenu = document.createElement("div");
@@ -143,6 +151,7 @@ moveButtons.addEventListener("click", async (event) => {
       setStatus(`Перенесено ${videoIds.length} видео`, "success", 2500);
     }
     await loadState();
+    clearSelection();
   } catch (err) {
     console.error("Failed to move videos", err);
     setStatus("Не удалось перенести", "error", 3000);
@@ -162,6 +171,147 @@ document.addEventListener("keydown", (event) => {
     hideMoveMenu();
   }
 });
+
+function clearDragIndicators() {
+  detailList
+    .querySelectorAll(".manage-video-item.drop-before, .manage-video-item.drop-after")
+    .forEach((card) => card.classList.remove("drop-before", "drop-after"));
+}
+
+function resetDragState() {
+  if (dragState.videoId) {
+    const row = detailList.querySelector(
+      `.manage-list-row[data-id="${dragState.videoId}"]`
+    );
+    row?.querySelector(".manage-video-item")?.classList.remove("dragging");
+  }
+  clearDragIndicators();
+  dragState.videoId = null;
+  dragState.overRow = null;
+  dragState.after = false;
+  dragState.listId = null;
+}
+
+function handleDragStart(event) {
+  const handle = event.target.closest(".video-handle");
+  if (!handle) {
+    event.preventDefault();
+    return;
+  }
+  const row = handle.closest(".manage-list-row");
+  if (!row) {
+    event.preventDefault();
+    return;
+  }
+  dragState.videoId = row.dataset.id || null;
+  dragState.listId = row.dataset.listId || null;
+  dragState.overRow = null;
+  dragState.after = false;
+  row.querySelector(".manage-video-item")?.classList.add("dragging");
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", dragState.videoId || "");
+  }
+}
+
+function handleDragOver(event) {
+  if (!dragState.videoId) return;
+  event.preventDefault();
+  const row = event.target.closest(".manage-list-row");
+  if (!row || row.dataset.id === dragState.videoId) {
+    return;
+  }
+  if (
+    dragState.listId &&
+    row.dataset.listId &&
+    row.dataset.listId !== dragState.listId
+  ) {
+    return;
+  }
+  const card = row.querySelector(".manage-video-item");
+  const rect = card?.getBoundingClientRect() || row.getBoundingClientRect();
+  const after = event.clientY - rect.top > rect.height / 2;
+  if (dragState.overRow !== row || dragState.after !== after) {
+    clearDragIndicators();
+    card?.classList.add(after ? "drop-after" : "drop-before");
+    dragState.overRow = row;
+    dragState.after = after;
+  }
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = "move";
+  }
+}
+
+async function handleDrop(event) {
+  if (!dragState.videoId) return;
+  event.preventDefault();
+  const directRow = event.target.closest(".manage-list-row");
+  let targetRow = directRow || dragState.overRow;
+  if (
+    targetRow &&
+    dragState.listId &&
+    targetRow.dataset.listId &&
+    targetRow.dataset.listId !== dragState.listId
+  ) {
+    resetDragState();
+    return;
+  }
+  const rows = Array.from(detailList.querySelectorAll(".manage-list-row"));
+  let targetIndex;
+  if (!targetRow) {
+    targetIndex = rows.length;
+  } else {
+    targetIndex = rows.indexOf(targetRow);
+    if (targetIndex === -1) {
+      resetDragState();
+      return;
+    }
+    const card = targetRow.querySelector(".manage-video-item");
+    const rect = card?.getBoundingClientRect() || targetRow.getBoundingClientRect();
+    const after =
+      directRow === targetRow
+        ? event.clientY - rect.top > rect.height / 2
+        : dragState.after;
+    if (after) targetIndex += 1;
+  }
+
+  const queue = Array.isArray(selectedListDetails?.queue)
+    ? selectedListDetails.queue
+    : [];
+  const fromIndex = queue.findIndex((video) => video.id === dragState.videoId);
+  if (fromIndex === -1) {
+    resetDragState();
+    return;
+  }
+  if (targetIndex === fromIndex || targetIndex === fromIndex + 1) {
+    resetDragState();
+    return;
+  }
+
+  try {
+    const state = await sendMessage("playlist:reorder", {
+      videoId: dragState.videoId,
+      targetIndex,
+      listId: dragState.listId || selectedListDetails?.id || null,
+    });
+    if (state && Array.isArray(state.lists)) {
+      appState = state;
+      ensureSelectedList(state);
+      renderLists();
+    }
+    await loadListDetails(selectedListId);
+    setStatus("Порядок обновлён", "success", 2000);
+  } catch (err) {
+    console.error("Failed to reorder videos", err);
+    setStatus("Не удалось изменить порядок", "error", 3500);
+  } finally {
+    resetDragState();
+  }
+}
+
+function handleDragEnd() {
+  resetDragState();
+}
 
 function resolveThumbnail(entry) {
   if (entry && typeof entry.thumbnail === "string" && entry.thumbnail) {
@@ -371,9 +521,11 @@ function createVideoRow(video, index, listId) {
   const handle = document.createElement("button");
   handle.type = "button";
   handle.className = "video-handle";
-  handle.disabled = true;
+  handle.title = "Перетащить";
+  handle.setAttribute("aria-label", "Перетащить");
+  handle.setAttribute("draggable", "true");
   handle.tabIndex = -1;
-  handle.setAttribute("aria-hidden", "true");
+  handle.addEventListener("click", (event) => event.preventDefault());
   card.appendChild(handle);
 
   const thumb = document.createElement("img");
@@ -431,6 +583,7 @@ function createVideoRow(video, index, listId) {
 
 function renderDetailVideos(details) {
   hideMoveMenu();
+  resetDragState();
   detailList.textContent = "";
   const videos = Array.isArray(details.queue) ? details.queue : [];
   selectionState.lastIndex = null;
@@ -488,6 +641,13 @@ function updateSelectionUI() {
       count > 1
         ? `Перенести выбранные (${count})`
         : "Перенести выбранные";
+  }
+  if (bulkDeleteBtn) {
+    bulkDeleteBtn.disabled = count === 0;
+    bulkDeleteBtn.textContent =
+      count > 1
+        ? `Удалить выбранные (${count})`
+        : "Удалить выбранные";
   }
 }
 
@@ -807,6 +967,10 @@ detailList.addEventListener("click", (event) => {
 });
 
 detailList.addEventListener("click", handleDetailAction);
+detailList.addEventListener("dragstart", handleDragStart);
+detailList.addEventListener("dragover", handleDragOver);
+detailList.addEventListener("drop", handleDrop);
+detailList.addEventListener("dragend", handleDragEnd);
 
 if (selectAllBtn) {
   selectAllBtn.addEventListener("click", () => {
@@ -824,6 +988,30 @@ if (bulkMoveBtn) {
   bulkMoveBtn.addEventListener("click", (event) => {
     if (!selectedListDetails || selectionState.selected.size === 0) return;
     showMoveMenu(Array.from(selectionState.selected), selectedListDetails.id, event.currentTarget);
+  });
+}
+
+if (bulkDeleteBtn) {
+  bulkDeleteBtn.addEventListener("click", async () => {
+    if (!selectedListDetails || selectionState.selected.size === 0) return;
+    const videoIds = Array.from(selectionState.selected);
+    try {
+      await sendMessage("playlist:remove", {
+        listId: selectedListDetails.id,
+        videoIds,
+      });
+      await loadState();
+      clearSelection();
+      const count = videoIds.length;
+      setStatus(
+        count > 1 ? `Удалено ${count} видео` : "Видео удалено",
+        "success",
+        2500
+      );
+    } catch (err) {
+      console.error("Failed to delete selected videos", err);
+      setStatus("Не удалось удалить", "error", 3500);
+    }
   });
 }
 

@@ -160,18 +160,24 @@ function injectStyles() {
     bottom: 8%;
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     z-index: 2147483647;
     transition: opacity 0.2s ease;
   }
   .yta-player-controls .ytp-button {
     border: none;
+    width: 36px;
+    height: 36px;
     border-radius: 18px;
-    padding: 6px 14px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: rgba(17, 17, 17, 0.78);
     color: #fff;
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 18px;
+    font-weight: 500;
+    line-height: 1;
     cursor: pointer;
     transition: background 0.2s ease, transform 0.15s ease;
   }
@@ -409,7 +415,8 @@ function ensurePlayerControls() {
     const prevBtn = document.createElement("button");
     prevBtn.type = "button";
     prevBtn.className = "ytp-button";
-    prevBtn.textContent = "Предыдущее";
+    prevBtn.textContent = "⏮";
+    prevBtn.title = "Предыдущее";
     prevBtn.setAttribute("aria-label", "Предыдущее видео");
     prevBtn.addEventListener("click", (event) => {
       event.preventDefault();
@@ -418,7 +425,8 @@ function ensurePlayerControls() {
     const nextBtn = document.createElement("button");
     nextBtn.type = "button";
     nextBtn.className = "ytp-button";
-    nextBtn.textContent = "Следующее";
+    nextBtn.textContent = "⏭";
+    nextBtn.title = "Следующее";
     nextBtn.setAttribute("aria-label", "Следующее видео");
     nextBtn.addEventListener("click", (event) => {
       event.preventDefault();
@@ -546,7 +554,7 @@ function showPageActionStatus(text, kind = "info", timeout = 2500) {
   positionPageActions(determinePageContext());
   if (!pageActions.status) return;
   if (pageActions.container) {
-    pageActions.container.dataset.hidden = "";
+    delete pageActions.container.dataset.hidden;
   }
   pageActions.status.textContent = text;
   pageActions.status.dataset.kind = kind;
@@ -662,10 +670,10 @@ function updatePageActions() {
   ensurePageActions();
   if (!pageActions.container) return;
   positionPageActions(context);
-  const showAddCurrent = caps.canAddCurrent && !controlling;
+  const showAddCurrent = caps.canAddCurrent;
   const showAddVisible = caps.canAddVisible;
   const showAddAll = caps.canAddAll;
-  pageActions.container.dataset.hidden = "";
+  delete pageActions.container.dataset.hidden;
   if (pageActions.addCurrent) {
     pageActions.addCurrent.hidden = !showAddCurrent;
   }
