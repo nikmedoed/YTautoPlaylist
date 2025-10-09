@@ -7,7 +7,12 @@ export function logMessage(level, context, count, message) {
   }
 }
 
+import { DEV_MODE } from "../config.js";
+
 export function storeDate(date) {
+  if (DEV_MODE) {
+    return Promise.resolve();
+  }
   if (typeof chrome === "undefined") {
     return Promise.resolve();
   }

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>YT Auto Playlist — Списки</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body class="full-page">
+    <div id="app">
+      <header class="page-header">
+        <div>
+          <h2>Списки расширения</h2>
+          <p>Создавайте, импортируйте и управляйте очередями.</p>
+        </div>
+        <div class="page-actions">
+          <button id="openCreateModal" type="button">Добавить список</button>
+          <button id="openImportModal" class="secondary" type="button">
+            Импортировать
+          </button>
+        </div>
+      </header>
+      <section id="status" hidden>
+        <span id="statusText"></span>
+      </section>
+
+      <section class="lists-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Название</th>
+              <th>Видео</th>
+              <th>Удаление</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody id="listsBody"></tbody>
+        </table>
+      </section>
+
+      <section class="queue">
+        <header>
+          <h3 id="detailTitle">Содержимое списка</h3>
+          <span id="detailMeta"></span>
+        </header>
+        <div class="detail-actions">
+          <button id="moveAllBtn" class="secondary" type="button">
+            Переместить всё в…
+          </button>
+          <select id="moveAllTarget"></select>
+        </div>
+        <ul id="detailList" class="video-list"></ul>
+        <p id="detailEmpty" class="empty" hidden>Список пуст</p>
+      </section>
+    </div>
+
+    <div id="modalBackdrop" class="modal-backdrop" hidden></div>
+
+    <div id="createModal" class="modal" hidden>
+      <form id="createForm" class="modal-content">
+        <h3>Создание списка</h3>
+        <label class="modal-field">
+          <span>Название</span>
+          <input
+            id="createName"
+            type="text"
+            placeholder="Например, Отложить"
+            maxlength="80"
+            required
+          />
+        </label>
+        <label class="modal-checkbox">
+          <input id="createFreeze" type="checkbox" />
+          <span>Не удалять просмотренные</span>
+        </label>
+        <div class="modal-actions">
+          <button type="submit">Создать</button>
+          <button type="button" class="secondary" data-close-modal>
+            Отмена
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div id="importModal" class="modal" hidden>
+      <form id="importForm" class="modal-content">
+        <h3>Импорт списка</h3>
+        <label class="modal-field">
+          <span>Файл JSON</span>
+          <input
+            id="importFile"
+            type="file"
+            accept="application/json"
+            required
+          />
+        </label>
+        <label class="modal-field">
+          <span>Куда импортировать</span>
+          <select id="importModeSelect">
+            <option value="new">Создать новый список</option>
+            <option value="append">Добавить к существующему</option>
+          </select>
+        </label>
+        <label class="modal-field" id="importTargetField" hidden>
+          <span>Выберите список</span>
+          <select id="importTargetSelect"></select>
+        </label>
+        <div class="modal-actions">
+          <button type="submit">Импортировать</button>
+          <button type="button" class="secondary" data-close-modal>
+            Отмена
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div id="editModal" class="modal" hidden>
+      <form id="editForm" class="modal-content">
+        <h3>Настройки списка</h3>
+        <label class="modal-field">
+          <span>Название</span>
+          <input id="editName" type="text" maxlength="80" required />
+        </label>
+        <label class="modal-checkbox">
+          <input id="editFreeze" type="checkbox" />
+          <span>Не удалять просмотренные</span>
+        </label>
+        <div class="modal-actions">
+          <button type="submit">Сохранить</button>
+          <button type="button" class="secondary" data-close-modal>
+            Отмена
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <script type="module" src="lists.js"></script>
+  </body>
+</html>
