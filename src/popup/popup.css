@@ -395,7 +395,7 @@ h3 {
 .video-item {
   position: relative;
   display: grid;
-  grid-template-columns: 24px 132px 1fr;
+  grid-template-columns: 20px 132px minmax(0, 1fr);
   align-items: stretch;
   column-gap: 0;
   row-gap: 0;
@@ -487,16 +487,15 @@ h3 {
   align-self: stretch;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   transition: background 0.2s ease, color 0.2s ease;
-  font-size: 14px;
-  letter-spacing: -1px;
+  font-size: 0;
 }
 
 .video-handle::before {
-  content: "⋮⋮";
+  content: "⋮";
   display: block;
   line-height: 1;
-  font-size: 16px;
-  transform: translateX(-0.5px);
+  font-size: 14px;
+  text-shadow: 4px 0 currentColor;
 }
 
 .video-handle:active {
@@ -621,10 +620,9 @@ h3 {
 }
 
 .manage-list-row {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
+  display: flex;
   align-items: stretch;
-  column-gap: 12px;
+  gap: 12px;
   width: 100%;
 }
 
@@ -633,7 +631,7 @@ h3 {
 }
 
 .manage-select {
-  width: 32px;
+  flex: 0 0 32px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -648,7 +646,7 @@ h3 {
 .manage-video-item {
   position: relative;
   display: grid;
-  grid-template-columns: 24px 132px minmax(0, 1fr);
+  grid-template-columns: 20px 132px minmax(0, 1fr);
   align-items: stretch;
   min-height: 74px;
   padding: 0;

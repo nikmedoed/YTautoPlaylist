@@ -193,12 +193,20 @@ function resetDragState() {
 }
 
 function handleDragStart(event) {
-  const handle = event.target.closest(".video-handle");
-  if (!handle) {
+  const interactive = event.target.closest(
+    "button, a, input, select, textarea, label"
+  );
+  const overHandle = event.target.closest(".video-handle");
+  if (interactive && !overHandle) {
     event.preventDefault();
     return;
   }
-  const row = handle.closest(".manage-list-row");
+  const card = event.target.closest(".manage-video-item");
+  if (!card) {
+    event.preventDefault();
+    return;
+  }
+  const row = card.closest(".manage-list-row");
   if (!row) {
     event.preventDefault();
     return;
@@ -207,7 +215,7 @@ function handleDragStart(event) {
   dragState.listId = row.dataset.listId || null;
   dragState.overRow = null;
   dragState.after = false;
-  row.querySelector(".manage-video-item")?.classList.add("dragging");
+  card.classList.add("dragging");
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", dragState.videoId || "");
@@ -517,6 +525,7 @@ function createVideoRow(video, index, listId) {
   card.dataset.id = video.id;
   card.dataset.index = String(index);
   card.dataset.listId = listId;
+  card.draggable = true;
 
   const handle = document.createElement("button");
   handle.type = "button";

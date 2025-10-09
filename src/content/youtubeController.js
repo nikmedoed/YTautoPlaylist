@@ -37,10 +37,12 @@ const pageActions = {
 const CONTEXT_CAPABILITIES = {
   watch: { canAddCurrent: true, canAddVisible: false, canAddAll: false },
   channelVideos: { canAddCurrent: false, canAddVisible: true, canAddAll: true },
-  channelFeatured: { canAddCurrent: false, canAddVisible: true, canAddAll: false },
-  channelHome: { canAddCurrent: false, canAddVisible: true, canAddAll: false },
-  home: { canAddCurrent: false, canAddVisible: true, canAddAll: false },
-  other: { canAddCurrent: false, canAddVisible: true, canAddAll: false },
+  channelFeatured: { canAddCurrent: false, canAddVisible: true, canAddAll: true },
+  channelHome: { canAddCurrent: false, canAddVisible: true, canAddAll: true },
+  home: { canAddCurrent: false, canAddVisible: true, canAddAll: true },
+  search: { canAddCurrent: false, canAddVisible: true, canAddAll: true },
+  playlist: { canAddCurrent: false, canAddVisible: true, canAddAll: true },
+  other: { canAddCurrent: false, canAddVisible: true, canAddAll: true },
 };
 let lastPageContext = null;
 let lastCapabilities = {
@@ -83,6 +85,12 @@ function determinePageContext() {
   if (pathname.startsWith("/watch") || pathname.startsWith("/shorts/")) {
     return "watch";
   }
+  if (pathname.startsWith("/results")) {
+    return "search";
+  }
+  if (pathname.startsWith("/playlist")) {
+    return "playlist";
+  }
   if (/^\/@[^/]+\/videos\/?$/.test(pathname)) {
     return "channelVideos";
   }
@@ -100,9 +108,8 @@ function determinePageContext() {
 
 function getContextCapabilities(context = determinePageContext()) {
   const base = CONTEXT_CAPABILITIES[context] || CONTEXT_CAPABILITIES.other;
-  const currentAvailable = Boolean(getCurrentVideoId());
   return {
-    canAddCurrent: Boolean(base.canAddCurrent && currentAvailable),
+    canAddCurrent: Boolean(base.canAddCurrent),
     canAddVisible: Boolean(base.canAddVisible),
     canAddAll: Boolean(base.canAddAll),
   };
@@ -160,22 +167,22 @@ function injectStyles() {
     bottom: 8%;
     display: inline-flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     z-index: 2147483647;
     transition: opacity 0.2s ease;
   }
   .yta-player-controls .ytp-button {
     border: none;
-    width: 36px;
-    height: 36px;
-    border-radius: 18px;
+    width: 32px;
+    height: 32px;
+    border-radius: 16px;
     padding: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     background: rgba(17, 17, 17, 0.78);
     color: #fff;
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 500;
     line-height: 1;
     cursor: pointer;
@@ -231,8 +238,8 @@ function injectStyles() {
   .yta-page-actions--player {
     position: absolute;
     top: 16px;
-    left: 16px;
-    right: auto;
+    right: 16px;
+    left: auto;
     bottom: auto;
     flex-direction: row;
     align-items: center;
@@ -514,6 +521,7 @@ function ensurePageActions() {
   container.appendChild(addVisibleBtn);
   container.appendChild(addAllBtn);
   container.appendChild(status);
+  document.body.appendChild(container);
   pageActions.container = container;
   pageActions.addCurrent = addCurrentBtn;
   pageActions.addVisible = addVisibleBtn;
