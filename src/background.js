@@ -540,6 +540,22 @@ const handlers = {
     await ensureDefaultQueueFilled();
     return await getPresentationState();
   },
+  async "playlist:moveVideos"(message) {
+    const targetListId = message?.targetListId;
+    const ids = Array.isArray(message?.videoIds)
+      ? Array.from(new Set(message.videoIds.filter(Boolean)))
+      : [];
+    if (!targetListId || !ids.length) {
+      return await getPresentationState();
+    }
+    for (const videoId of ids) {
+      await moveVideoToList(videoId, targetListId);
+    }
+    await notifyState();
+    await dispatchNotifications();
+    await ensureDefaultQueueFilled();
+    return await getPresentationState();
+  },
   async "playlist:moveAll"(message) {
     if (!message?.sourceListId || !message?.targetListId) {
       return await getPresentationState();

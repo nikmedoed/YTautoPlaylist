@@ -399,7 +399,7 @@ h3 {
   align-items: stretch;
   column-gap: 0;
   row-gap: 0;
-  min-height: 64px;
+  min-height: 74px;
   padding: 0;
   border-radius: 10px;
   overflow: hidden;
@@ -432,12 +432,13 @@ h3 {
 
 .video-thumb {
   width: 100%;
-  height: 100%;
-  object-fit: cover;
+  aspect-ratio: 16 / 9;
+  height: auto;
+  object-fit: contain;
   background: #000;
   flex-shrink: 0;
   overflow: hidden;
-  align-self: stretch;
+  align-self: center;
   justify-self: stretch;
   display: block;
 }
@@ -447,7 +448,7 @@ h3 {
   flex-direction: column;
   gap: 4px;
   min-width: 0;
-  padding: 10px 44px 10px 14px;
+  padding: 12px 44px 12px 16px;
 }
 
 .video-title {
@@ -471,22 +472,30 @@ h3 {
 }
 
 .video-handle {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
+  width: 100%;
   height: 100%;
   padding: 0;
   margin: 0;
   border-radius: 0;
-  background: transparent;
-  color: #ccc;
+  background: rgba(255, 255, 255, 0.02);
+  color: #bdbdbd;
   cursor: grab;
-  font-size: 18px;
   border: none;
   align-self: stretch;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
-  transition: background 0.2s ease;
+  transition: background 0.2s ease, color 0.2s ease;
+  font-size: 15px;
+  letter-spacing: 0;
+}
+
+.video-handle::before {
+  content: "⋮";
+  display: block;
+  line-height: 1;
+  font-size: 16px;
 }
 
 .video-handle:active {
@@ -495,14 +504,15 @@ h3 {
 
 .video-handle:hover {
   background: rgba(255, 255, 255, 0.08);
+  color: #fff;
 }
 
 .video-remove,
 .history-restore {
   line-height: 1;
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 6px;
+  right: 6px;
   width: 26px;
   height: 26px;
   border-radius: 50%;
@@ -518,8 +528,8 @@ h3 {
 
 .video-move {
   position: absolute;
-  top: 40px;
-  right: 8px;
+  bottom: 6px;
+  right: 6px;
   width: 26px;
   height: 26px;
   border-radius: 50%;
@@ -586,6 +596,7 @@ h3 {
   grid-template-columns: 132px 1fr;
   opacity: 0.9;
   cursor: default;
+  min-height: 74px;
 }
 
 .history .video-item:hover {
@@ -593,7 +604,7 @@ h3 {
 }
 
 .history .video-body {
-  padding: 10px 36px 10px 12px;
+  padding: 12px 36px 12px 14px;
 }
 
 .history .history-restore {
@@ -608,55 +619,67 @@ h3 {
   padding: 2px 8px;
 }
 
+.manage-list-row {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  width: 100%;
+}
+
+.manage-list-row + .manage-list-row {
+  margin-top: 8px;
+}
+
+.manage-select {
+  width: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.manage-select input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
 .manage-video-item {
   position: relative;
   display: grid;
   grid-template-columns: 28px 132px 1fr;
   align-items: stretch;
-  min-height: 64px;
+  min-height: 74px;
   padding: 0;
   border-radius: 10px;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.manage-video-item + .manage-video-item {
-  margin-top: 8px;
+  flex: 1;
 }
 
 .manage-video-item .video-body {
-  padding: 10px 12px 12px;
+  padding: 12px 44px 12px 16px;
   gap: 6px;
 }
 
-.manage-video-item .video-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
-.manage-video-item .video-move-block {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.manage-video-item select {
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 6px;
-  color: inherit;
-  padding: 6px 10px;
-}
 .manage-video-item .video-handle {
   cursor: default;
-  color: rgba(204, 204, 204, 0.5);
+  color: rgba(204, 204, 204, 0.45);
+  background: rgba(255, 255, 255, 0.015);
 }
 
 .manage-video-item .video-handle:hover {
-  background: transparent;
+  background: rgba(255, 255, 255, 0.02);
+  color: rgba(204, 204, 204, 0.7);
+}
+
+.manage-list-row.selected .manage-video-item {
+  border-color: rgba(25, 118, 210, 0.65);
+  background: rgba(25, 118, 210, 0.14);
+}
+
+.manage-list-row.selected .manage-select input[type="checkbox"] {
+  accent-color: #1e88e5;
 }
 
 .empty {
@@ -723,23 +746,49 @@ h3 {
 }
 
 .lists-table tr.active-row {
-  background: rgba(229, 57, 53, 0.15);
+  position: relative;
+  background: rgba(25, 118, 210, 0.18);
+}
+
+.lists-table tr.active-row::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-left: 3px solid #1e88e5;
+  pointer-events: none;
+  border-radius: 4px;
 }
 
 .detail-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 8px;
 }
 
-.detail-actions select {
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(0, 0, 0, 0.2);
-  color: inherit;
+.detail-actions .detail-selection-group {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.detail-actions .detail-selection-count {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.detail-actions .detail-selection-count[hidden] {
+  display: none;
+}
+
+.detail-actions .detail-bulk-group {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .list-actions button {

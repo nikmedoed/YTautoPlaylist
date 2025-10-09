@@ -44,10 +44,22 @@
           <span id="detailMeta"></span>
         </header>
         <div class="detail-actions">
-          <button id="moveAllBtn" class="secondary" type="button">
-            Переместить всё в…
-          </button>
-          <select id="moveAllTarget"></select>
+          <div class="detail-selection-group">
+            <button id="selectAllBtn" type="button">Выбрать все</button>
+            <button id="clearSelectionBtn" class="secondary" type="button">
+              Сбросить выбор
+            </button>
+          </div>
+          <div class="detail-bulk-group">
+            <span
+              id="selectionCounter"
+              class="detail-selection-count"
+              hidden
+            ></span>
+            <button id="bulkMoveBtn" class="secondary" type="button" disabled>
+              Перенести выбранные
+            </button>
+          </div>
         </div>
         <ul id="detailList" class="video-list"></ul>
         <p id="detailEmpty" class="empty" hidden>Список пуст</p>

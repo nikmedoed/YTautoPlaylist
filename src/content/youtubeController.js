@@ -21,30 +21,34 @@ const VIDEO_CARD_SELECTOR = [
   "ytd-playlist-panel-video-renderer",
   "ytd-watch-card-compact-video-renderer",
 ].join(",");
-const floatingControls = {
+const playerControls = {
   container: null,
   prev: null,
   next: null,
-  hideTimer: null,
-  cursorTimer: null,
 };
 const pageActions = {
   container: null,
   addCurrent: null,
+  addVisible: null,
   addAll: null,
   status: null,
   timeout: null,
 };
 const CONTEXT_CAPABILITIES = {
-  watch: { canAddCurrent: true, canAddPage: false },
-  channelVideos: { canAddCurrent: false, canAddPage: true },
-  channelFeatured: { canAddCurrent: false, canAddPage: false },
-  channelHome: { canAddCurrent: false, canAddPage: false },
-  home: { canAddCurrent: false, canAddPage: false },
-  other: { canAddCurrent: false, canAddPage: false },
+  watch: { canAddCurrent: true, canAddVisible: false, canAddAll: false },
+  channelVideos: { canAddCurrent: false, canAddVisible: true, canAddAll: true },
+  channelFeatured: { canAddCurrent: false, canAddVisible: true, canAddAll: false },
+  channelHome: { canAddCurrent: false, canAddVisible: true, canAddAll: false },
+  home: { canAddCurrent: false, canAddVisible: true, canAddAll: false },
+  other: { canAddCurrent: false, canAddVisible: true, canAddAll: false },
 };
 let lastPageContext = null;
-let lastCapabilities = { canAddCurrent: null, canAddPage: null };
+let lastCapabilities = {
+  canAddCurrent: null,
+  canAddVisible: null,
+  canAddAll: null,
+  controlling: null,
+};
 const PAGE_COLLECTION_LIMIT = 5000;
 const PAGE_SCROLL_MAX_LOOPS = 120;
 const PAGE_SCROLL_IDLE_LIMIT = 4;
@@ -99,7 +103,8 @@ function getContextCapabilities(context = determinePageContext()) {
   const currentAvailable = Boolean(getCurrentVideoId());
   return {
     canAddCurrent: Boolean(base.canAddCurrent && currentAvailable),
-    canAddPage: Boolean(base.canAddPage),
+    canAddVisible: Boolean(base.canAddVisible),
+    canAddAll: Boolean(base.canAddAll),
   };
 }
 
@@ -151,73 +156,46 @@ function injectStyles() {
   }
   .yta-player-controls {
     position: absolute;
-    top: 12px;
-    right: 12px;
-    display: flex;
+    right: 24px;
+    bottom: 8%;
+    display: inline-flex;
+    align-items: center;
     gap: 8px;
-    z-index: 1000;
-    pointer-events: auto;
+    z-index: 2147483647;
+    transition: opacity 0.2s ease;
   }
-  .yta-player-controls button {
+  .yta-player-controls .ytp-button {
     border: none;
-    border-radius: 16px;
-    padding: 6px 10px;
-    background: rgba(17, 17, 17, 0.7);
+    border-radius: 18px;
+    padding: 6px 14px;
+    background: rgba(17, 17, 17, 0.78);
     color: #fff;
     font-size: 12px;
+    font-weight: 600;
     cursor: pointer;
     transition: background 0.2s ease, transform 0.15s ease;
   }
-  .yta-player-controls button:hover {
+  .yta-player-controls .ytp-button:hover {
     background: rgba(229, 45, 39, 0.9);
     transform: translateY(-1px);
   }
-  .yta-player-controls button[disabled] {
-    opacity: 0.4;
+  .yta-player-controls .ytp-button[disabled] {
+    opacity: 0.45;
     cursor: not-allowed;
+    transform: none;
   }
-  .yta-floating-controls {
-    position: fixed;
-    right: 18px;
-    bottom: 32px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    z-index: 2147483646;
+  .html5-video-player.ytp-autohide .yta-player-controls,
+  .html5-video-player:not(.ytp-chrome-controls-visible) .yta-player-controls {
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.2s ease;
-  }
-  .yta-floating-controls[data-visible="1"] {
-    opacity: 1;
-    pointer-events: auto;
-  }
-  .yta-floating-controls button {
-    border: none;
-    border-radius: 18px;
-    padding: 10px 16px;
-    background: rgba(17, 17, 17, 0.82);
-    color: #fff;
-    font-size: 13px;
-    cursor: pointer;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
-    transition: background 0.2s ease, transform 0.15s ease;
-  }
-  .yta-floating-controls button:hover {
-    background: rgba(229, 45, 39, 0.92);
-    transform: translateY(-1px);
-  }
-  .yta-floating-controls button:disabled {
-    opacity: 0.45;
-    cursor: default;
-    transform: none;
   }
   .yta-page-actions {
     position: fixed;
-    bottom: 96px;
-    right: 16px;
+    top: 120px;
+    right: 20px;
     display: flex;
     flex-direction: column;
+    align-items: flex-end;
     gap: 8px;
     z-index: 2147483647;
     font-size: 12px;
@@ -243,6 +221,22 @@ function injectStyles() {
     opacity: 0.6;
     cursor: progress;
     transform: none;
+  }
+  .yta-page-actions--player {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    right: auto;
+    bottom: auto;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+  }
+  .yta-page-actions--player button {
+    background: rgba(17, 17, 17, 0.7);
+  }
+  .yta-page-actions--player .yta-page-actions__status {
+    align-self: center;
   }
   .yta-page-actions__status {
     padding: 8px 12px;
@@ -389,111 +383,79 @@ function enhanceVideoCards(root = document) {
   }
 }
 
-function updatePlayerControlsUI() {
-  ensureFloatingControls();
-  const disabled = !state.controlsActive;
-  if (floatingControls.prev) floatingControls.prev.disabled = disabled;
-  if (floatingControls.next) floatingControls.next.disabled = disabled;
+function destroyPlayerControls() {
+  if (!playerControls.container) return;
+  playerControls.container.remove();
+  playerControls.container = null;
+  playerControls.prev = null;
+  playerControls.next = null;
 }
 
 function ensurePlayerControls() {
-  ensureFloatingControls();
-}
-
-function ensureFloatingControls() {
   if (determinePageContext() !== "watch") {
-    if (floatingControls.container) {
-      floatingControls.container.remove();
-      floatingControls.container = null;
-      floatingControls.prev = null;
-      floatingControls.next = null;
-    }
+    destroyPlayerControls();
     return;
   }
-  if (floatingControls.container) return;
-  const legacy = document.querySelector(".yta-player-controls");
-  if (legacy) legacy.remove();
-  const container = document.createElement("div");
-  container.className = "yta-floating-controls";
-  const prevBtn = document.createElement("button");
-  prevBtn.type = "button";
-  prevBtn.textContent = "Предыдущее";
-  prevBtn.addEventListener("click", (event) => {
-    event.preventDefault();
-    requestPrevious();
-  });
-  const nextBtn = document.createElement("button");
-  nextBtn.type = "button";
-  nextBtn.textContent = "Следующее";
-  nextBtn.addEventListener("click", (event) => {
-    event.preventDefault();
-    requestNext();
-  });
-  container.append(prevBtn, nextBtn);
-  document.body.append(container);
-  floatingControls.container = container;
-  floatingControls.prev = prevBtn;
-  floatingControls.next = nextBtn;
-  hideFloatingControls(true);
+  const host =
+    document.querySelector("#movie_player.html5-video-player") ||
+    document.querySelector(".html5-video-player");
+  if (!host) {
+    destroyPlayerControls();
+    return;
+  }
+  if (!playerControls.container) {
+    const container = document.createElement("div");
+    container.className = "yta-player-controls";
+    const prevBtn = document.createElement("button");
+    prevBtn.type = "button";
+    prevBtn.className = "ytp-button";
+    prevBtn.textContent = "Предыдущее";
+    prevBtn.setAttribute("aria-label", "Предыдущее видео");
+    prevBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      requestPrevious();
+    });
+    const nextBtn = document.createElement("button");
+    nextBtn.type = "button";
+    nextBtn.className = "ytp-button";
+    nextBtn.textContent = "Следующее";
+    nextBtn.setAttribute("aria-label", "Следующее видео");
+    nextBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      requestNext();
+    });
+    container.append(prevBtn, nextBtn);
+    host.appendChild(container);
+    playerControls.container = container;
+    playerControls.prev = prevBtn;
+    playerControls.next = nextBtn;
+  }
   updatePlayerControlsUI();
 }
 
-function hideFloatingControls(immediate = false) {
-  if (!floatingControls.container) return;
-  if (floatingControls.hideTimer) {
-    clearTimeout(floatingControls.hideTimer);
-    floatingControls.hideTimer = null;
+function updatePlayerControlsUI() {
+  const disabled = !state.controlsActive;
+  if (playerControls.prev) playerControls.prev.disabled = disabled;
+  if (playerControls.next) playerControls.next.disabled = disabled;
+  if (playerControls.container) {
+    const host =
+      document.querySelector("#movie_player.html5-video-player") ||
+      document.querySelector(".html5-video-player");
+    if (host && playerControls.container.parentElement !== host) {
+      playerControls.container.remove();
+      host.appendChild(playerControls.container);
+    }
   }
-  const applyHide = () => {
-    floatingControls.container.dataset.visible = "0";
-  };
-  if (immediate) {
-    applyHide();
-  } else {
-    floatingControls.hideTimer = window.setTimeout(applyHide, 0);
-  }
-}
-
-function showFloatingControls() {
-  if (!floatingControls.container) return;
-  floatingControls.container.dataset.visible = "1";
-  if (floatingControls.hideTimer) {
-    clearTimeout(floatingControls.hideTimer);
-    floatingControls.hideTimer = null;
-  }
-  floatingControls.hideTimer = window.setTimeout(() => {
-    floatingControls.container.dataset.visible = "0";
-    floatingControls.hideTimer = null;
-  }, 1800);
-}
-
-function handlePointerActivity() {
-  ensureFloatingControls();
-  if (!floatingControls.container || !state.controlsActive) {
-    return;
-  }
-  showFloatingControls();
-  if (floatingControls.cursorTimer) {
-    clearTimeout(floatingControls.cursorTimer);
-    floatingControls.cursorTimer = null;
-  }
-  floatingControls.cursorTimer = window.setTimeout(() => {
-    hideFloatingControls();
-  }, 2000);
 }
 
 function setControlsActive(active) {
   const value = Boolean(active);
   if (state.controlsActive === value) return;
   state.controlsActive = value;
-  ensureFloatingControls();
+  ensurePlayerControls();
   updateMediaSessionHandlers();
   updatePlayerControlsUI();
-  if (state.controlsActive) {
-    showFloatingControls();
-  } else {
-    hideFloatingControls();
-  }
+  updatePageActions();
 }
 
 function updateMediaSessionHandlers() {
@@ -524,9 +486,16 @@ function ensurePageActions() {
     event.preventDefault();
     handleAddCurrentFromPage();
   });
+  const addVisibleBtn = document.createElement("button");
+  addVisibleBtn.type = "button";
+  addVisibleBtn.textContent = "Добавить видимые";
+  addVisibleBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    handleAddVisibleFromPage();
+  });
   const addAllBtn = document.createElement("button");
   addAllBtn.type = "button";
-  addAllBtn.textContent = "Добавить страницу";
+  addAllBtn.textContent = "Добавить все";
   addAllBtn.addEventListener("click", (event) => {
     event.preventDefault();
     handleAddAllFromPage();
@@ -534,13 +503,15 @@ function ensurePageActions() {
   const status = document.createElement("div");
   status.className = "yta-page-actions__status";
   container.appendChild(addCurrentBtn);
+  container.appendChild(addVisibleBtn);
   container.appendChild(addAllBtn);
   container.appendChild(status);
-  document.body.appendChild(container);
   pageActions.container = container;
   pageActions.addCurrent = addCurrentBtn;
+  pageActions.addVisible = addVisibleBtn;
   pageActions.addAll = addAllBtn;
   pageActions.status = status;
+  positionPageActions(determinePageContext());
 }
 
 function hidePageActions() {
@@ -549,9 +520,34 @@ function hidePageActions() {
   }
 }
 
+function positionPageActions(context) {
+  if (!pageActions.container) return;
+  const inPlayer = context === "watch";
+  const host = inPlayer
+    ? document.getElementById("movie_player") || document.querySelector("#player-container")
+    : null;
+  if (inPlayer && host) {
+    if (pageActions.container.parentElement !== host) {
+      pageActions.container.remove();
+      host.appendChild(pageActions.container);
+    }
+    pageActions.container.classList.add("yta-page-actions--player");
+  } else {
+    if (pageActions.container.parentElement !== document.body) {
+      pageActions.container.remove();
+      document.body.appendChild(pageActions.container);
+    }
+    pageActions.container.classList.remove("yta-page-actions--player");
+  }
+}
+
 function showPageActionStatus(text, kind = "info", timeout = 2500) {
   ensurePageActions();
+  positionPageActions(determinePageContext());
   if (!pageActions.status) return;
+  if (pageActions.container) {
+    pageActions.container.dataset.hidden = "";
+  }
   pageActions.status.textContent = text;
   pageActions.status.dataset.kind = kind;
   pageActions.status.dataset.visible = "1";
@@ -591,13 +587,35 @@ async function handleAddCurrentFromPage() {
   }
 }
 
+async function handleAddVisibleFromPage() {
+  const caps = getContextCapabilities();
+  if (!caps.canAddVisible) return;
+  ensurePageActions();
+  if (pageActions.addVisible) pageActions.addVisible.disabled = true;
+  try {
+    showPageActionStatus("Добавляю видимые видео...", "info", 0);
+    const videoIds = collectVisibleVideoIds({ includeCurrent: false });
+    if (!videoIds.length) {
+      showPageActionStatus("Видео не найдены", "error", 3000);
+    } else {
+      await sendMessage("playlist:addByIds", { videoIds });
+      showPageActionStatus(`Добавлено ${videoIds.length} видео`, "success", 3000);
+    }
+  } catch (err) {
+    console.error("Failed to add visible videos", err);
+    showPageActionStatus("Не удалось добавить видео", "error", 3500);
+  } finally {
+    if (pageActions.addVisible) pageActions.addVisible.disabled = false;
+  }
+}
+
 async function handleAddAllFromPage() {
   const caps = getContextCapabilities();
-  if (!caps.canAddPage) return;
+  if (!caps.canAddAll) return;
   ensurePageActions();
   if (pageActions.addAll) pageActions.addAll.disabled = true;
   try {
-    showPageActionStatus("Собираю видео со страницы...", "info", 0);
+    showPageActionStatus("Собираю все видео...", "info", 0);
     const videoIds = await collectPageVideosWithContinuation();
     if (!videoIds.length) {
       showPageActionStatus("Видео не найдены", "error", 3000);
@@ -607,7 +625,7 @@ async function handleAddAllFromPage() {
     }
   } catch (err) {
     console.error("Failed to add page videos", err);
-    showPageActionStatus("Не удалось добавить список", "error", 3500);
+    showPageActionStatus("Не удалось добавить видео", "error", 3500);
   } finally {
     if (pageActions.addAll) pageActions.addAll.disabled = false;
   }
@@ -616,31 +634,55 @@ async function handleAddAllFromPage() {
 function updatePageActions() {
   const context = determinePageContext();
   const caps = getContextCapabilities(context);
+  const controlling = Boolean(state.controlsActive);
+  if (pageActions.container) {
+    positionPageActions(context);
+  }
   if (
     context === lastPageContext &&
     pageActions.container &&
     caps.canAddCurrent === lastCapabilities.canAddCurrent &&
-    caps.canAddPage === lastCapabilities.canAddPage
+    caps.canAddVisible === lastCapabilities.canAddVisible &&
+    caps.canAddAll === lastCapabilities.canAddAll &&
+    controlling === lastCapabilities.controlling
   ) {
     return;
   }
   lastPageContext = context;
   lastCapabilities = {
     canAddCurrent: caps.canAddCurrent,
-    canAddPage: caps.canAddPage,
+    canAddVisible: caps.canAddVisible,
+    canAddAll: caps.canAddAll,
+    controlling,
   };
-  if (!caps.canAddCurrent && !caps.canAddPage) {
+  if (!caps.canAddCurrent && !caps.canAddVisible && !caps.canAddAll) {
     hidePageActions();
     return;
   }
   ensurePageActions();
   if (!pageActions.container) return;
+  positionPageActions(context);
+  const showAddCurrent = caps.canAddCurrent && !controlling;
+  const showAddVisible = caps.canAddVisible;
+  const showAddAll = caps.canAddAll;
   pageActions.container.dataset.hidden = "";
   if (pageActions.addCurrent) {
-    pageActions.addCurrent.hidden = !caps.canAddCurrent;
+    pageActions.addCurrent.hidden = !showAddCurrent;
+  }
+  if (pageActions.addVisible) {
+    pageActions.addVisible.hidden = !showAddVisible;
   }
   if (pageActions.addAll) {
-    pageActions.addAll.hidden = !caps.canAddPage;
+    pageActions.addAll.hidden = !showAddAll;
+  }
+  const visibleButtons = [
+    pageActions.addCurrent,
+    pageActions.addVisible,
+    pageActions.addAll,
+  ].filter((btn) => btn && !btn.hidden);
+  const statusVisible = pageActions.status?.dataset.visible === "1";
+  if (!visibleButtons.length && !statusVisible) {
+    pageActions.container.dataset.hidden = "1";
   }
   if (pageActions.status) {
     pageActions.status.dataset.visible = "0";
@@ -754,7 +796,6 @@ const observer = new MutationObserver((mutations) => {
 });
 
 function resetStateForNavigation() {
-  hideFloatingControls(true);
   detachVideoListeners();
   state.controlsActive = false;
   state.currentVideoId = parseVideoId(window.location.href) || null;
@@ -770,23 +811,27 @@ function resetStateForNavigation() {
   }, 0);
 }
 
-function collectVideoIds(scope) {
-  return collectVisibleVideoIds(scope);
+function collectVideoIds(scope = "visible") {
+  if (scope === "current") {
+    const current = getCurrentVideoId();
+    return current ? [current] : [];
+  }
+  if (scope === "visibleNoCurrent") {
+    return collectVisibleVideoIds({ includeCurrent: false });
+  }
+  return collectVisibleVideoIds({ includeCurrent: true });
 }
 
-function collectVisibleVideoIds(scope) {
+function collectVisibleVideoIds({ includeCurrent = true } = {}) {
   const ids = new Set();
-  if (!scope || scope === "current") {
-    const current = getCurrentVideoId();
-    if (current) ids.add(current);
-    return Array.from(ids);
-  }
   document.querySelectorAll(VIDEO_CARD_SELECTOR).forEach((card) => {
     const id = findVideoIdInCard(card);
     if (id) ids.add(id);
   });
-  const current = getCurrentVideoId();
-  if (current) ids.add(current);
+  if (includeCurrent) {
+    const current = getCurrentVideoId();
+    if (current) ids.add(current);
+  }
   return Array.from(ids);
 }
 
@@ -900,7 +945,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "collector:getCapabilities") {
     const context = determinePageContext();
     const caps = getContextCapabilities(context);
-    sendResponse({ context, ...caps });
+    sendResponse({ context, ...caps, controlling: Boolean(state.controlsActive) });
     return false;
   }
   if (message.type === "collector:collect") {
@@ -908,7 +953,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     const caps = getContextCapabilities();
     if (
       (scope === "current" && !caps.canAddCurrent) ||
-      (scope === "page" && !caps.canAddPage)
+      (scope === "page" && !caps.canAddAll) ||
+      (scope === "visible" && !caps.canAddVisible)
     ) {
       sendResponse({ videoIds: [], error: "NOT_ALLOWED" });
       return false;
@@ -927,7 +973,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         });
       return true;
     }
-    const videoIds = collectVisibleVideoIds(scope);
+    const videoIds = collectVideoIds(scope);
     sendResponse({ videoIds });
     return false;
   }
@@ -949,9 +995,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 function init() {
   injectStyles();
-  ensureFloatingControls();
-  document.addEventListener("mousemove", handlePointerActivity, { passive: true });
-  document.addEventListener("touchstart", handlePointerActivity, { passive: true });
+  ensurePlayerControls();
   enhanceVideoCards(document);
   updatePageActions();
   ensurePlayerControls();

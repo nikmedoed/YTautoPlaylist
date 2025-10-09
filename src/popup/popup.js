@@ -30,6 +30,7 @@ let capabilitiesState = {
   canAddCurrent: false,
   canAddPage: false,
   context: "unknown",
+  controlling: false,
 };
 const dragState = {
   videoId: null,
@@ -813,9 +814,11 @@ function applyControlCapabilities(caps) {
     canAddCurrent: Boolean(caps?.canAddCurrent),
     canAddPage: Boolean(caps?.canAddPage),
     context: caps?.context || "unknown",
+    controlling: Boolean(caps?.controlling),
   };
   if (addCurrentBtn) {
-    addCurrentBtn.classList.toggle("hidden", !capabilitiesState.canAddCurrent);
+    const shouldShow = capabilitiesState.canAddCurrent && !capabilitiesState.controlling;
+    addCurrentBtn.classList.toggle("hidden", !shouldShow);
   }
   if (addPageBtn) {
     addPageBtn.classList.toggle("hidden", !capabilitiesState.canAddPage);
@@ -952,9 +955,9 @@ function renderQueue(queueState) {
 
     const handle = document.createElement("button");
     handle.type = "button";
-    handle.className = "icon-button video-handle";
+    handle.className = "video-handle";
     handle.title = "Перетащить";
-    handle.textContent = "⋮⋮";
+    handle.setAttribute("aria-label", "Перетащить");
     handle.setAttribute("draggable", "true");
     li.appendChild(handle);
 
@@ -962,6 +965,7 @@ function renderQueue(queueState) {
     thumb.className = "video-thumb";
     thumb.src = resolveThumbnail(entry);
     thumb.alt = entry.title || "Видео";
+    thumb.decoding = "async";
     thumb.loading = "lazy";
     li.appendChild(thumb);
 
@@ -1021,6 +1025,7 @@ function renderHistory(state) {
     thumb.className = "video-thumb";
     thumb.src = resolveThumbnail(entry);
     thumb.alt = entry.title || "Видео";
+    thumb.decoding = "async";
     thumb.loading = "lazy";
     li.appendChild(thumb);
 

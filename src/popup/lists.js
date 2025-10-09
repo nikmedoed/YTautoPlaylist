@@ -7,8 +7,10 @@ const detailList = document.getElementById("detailList");
 const detailEmpty = document.getElementById("detailEmpty");
 const detailTitle = document.getElementById("detailTitle");
 const detailMeta = document.getElementById("detailMeta");
-const moveAllBtn = document.getElementById("moveAllBtn");
-const moveAllTarget = document.getElementById("moveAllTarget");
+const selectAllBtn = document.getElementById("selectAllBtn");
+const clearSelectionBtn = document.getElementById("clearSelectionBtn");
+const bulkMoveBtn = document.getElementById("bulkMoveBtn");
+const selectionCounter = document.getElementById("selectionCounter");
 const statusBox = document.getElementById("status");
 const statusText = document.getElementById("statusText");
 
@@ -39,6 +41,127 @@ let selectedListId = null;
 let selectedListDetails = null;
 let statusTimeout = null;
 let editingListId = null;
+let pendingShiftSelect = false;
+
+const selectionState = {
+  selected: new Set(),
+  lastIndex: null,
+};
+
+const moveMenu = document.createElement("div");
+moveMenu.className = "move-menu";
+const moveMessage = document.createElement("div");
+moveMessage.className = "move-menu__message";
+const moveButtons = document.createElement("div");
+moveButtons.className = "move-menu__buttons";
+const moveCancel = document.createElement("button");
+moveCancel.type = "button";
+moveCancel.textContent = "Отмена";
+moveCancel.classList.add("secondary");
+moveMenu.append(moveMessage, moveButtons, moveCancel);
+document.body.appendChild(moveMenu);
+
+let moveContext = null;
+
+function hideMoveMenu() {
+  moveMenu.dataset.visible = "0";
+  moveContext = null;
+  moveButtons.textContent = "";
+}
+
+function populateMoveMenu(sourceListId) {
+  moveButtons.textContent = "";
+  const lists = Array.isArray(appState?.lists) ? appState.lists : [];
+  const options = lists.filter((list) => list.id !== sourceListId);
+  if (!options.length) {
+    moveMessage.textContent = "Нет других списков";
+    moveButtons.dataset.empty = "1";
+    moveCancel.textContent = "Закрыть";
+    return false;
+  }
+  moveMessage.textContent = "Перенести в:";
+  moveButtons.dataset.empty = "0";
+  moveCancel.textContent = "Отмена";
+  options.forEach((list) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = list.name;
+    button.dataset.targetListId = list.id;
+    moveButtons.appendChild(button);
+  });
+  return true;
+}
+
+function showMoveMenu(videoIds, sourceListId, anchor) {
+  if (!Array.isArray(videoIds) || !videoIds.length) return;
+  if (!populateMoveMenu(sourceListId)) {
+    setStatus("Нет других списков", "info", 2500);
+    return;
+  }
+  const uniqueIds = Array.from(new Set(videoIds.filter(Boolean)));
+  if (!uniqueIds.length) return;
+  moveContext = { videoIds: uniqueIds, sourceListId };
+  const rect = anchor.getBoundingClientRect();
+  moveMenu.dataset.visible = "1";
+  requestAnimationFrame(() => {
+    const top = rect.bottom + window.scrollY + 6;
+    let left = rect.left + window.scrollX;
+    const width = moveMenu.offsetWidth;
+    if (left + width > window.scrollX + window.innerWidth - 12) {
+      left = window.scrollX + window.innerWidth - width - 12;
+    }
+    moveMenu.style.top = `${top}px`;
+    moveMenu.style.left = `${left}px`;
+  });
+}
+
+moveCancel.addEventListener("click", () => {
+  hideMoveMenu();
+});
+
+moveButtons.addEventListener("click", async (event) => {
+  const button = event.target.closest("button[data-target-list-id]");
+  if (!button || !moveContext) return;
+  const targetListId = button.dataset.targetListId;
+  const videoIds = Array.isArray(moveContext.videoIds)
+    ? moveContext.videoIds
+    : [];
+  hideMoveMenu();
+  if (!targetListId || !videoIds.length) return;
+  try {
+    if (videoIds.length === 1) {
+      await sendMessage("playlist:moveVideo", {
+        videoId: videoIds[0],
+        targetListId,
+      });
+      setStatus("Видео перенесено", "success", 2500);
+    } else {
+      await sendMessage("playlist:moveVideos", {
+        videoIds,
+        targetListId,
+      });
+      setStatus(`Перенесено ${videoIds.length} видео`, "success", 2500);
+    }
+    await loadState();
+  } catch (err) {
+    console.error("Failed to move videos", err);
+    setStatus("Не удалось перенести", "error", 3000);
+  }
+});
+
+document.addEventListener("click", (event) => {
+  if (moveMenu.dataset.visible !== "1") return;
+  if (moveMenu.contains(event.target)) return;
+  if (event.target.closest(".video-move")) return;
+  if (event.target === bulkMoveBtn) return;
+  hideMoveMenu();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && moveMenu.dataset.visible === "1") {
+    hideMoveMenu();
+  }
+});
 
 function resolveThumbnail(entry) {
   if (entry && typeof entry.thumbnail === "string" && entry.thumbnail) {
@@ -194,18 +317,6 @@ function renderLists() {
   });
 }
 
-function renderMoveAllOptions(sourceId) {
-  moveAllTarget.textContent = "";
-  const options = collectListsMeta().filter((list) => list.id !== sourceId);
-  options.forEach((list) => {
-    const option = document.createElement("option");
-    option.value = list.id;
-    option.textContent = list.name;
-    moveAllTarget.appendChild(option);
-  });
-  moveAllBtn.disabled = options.length === 0;
-}
-
 function formatDuration(duration) {
   if (!duration) return "";
   if (typeof duration === "number") {
@@ -235,26 +346,43 @@ function formatDuration(duration) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-function createVideoItem(video, index, listId) {
-  const li = document.createElement("li");
-  li.className = "video-item manage-video-item";
-  li.dataset.id = video.id;
-  li.dataset.index = String(index);
-  li.dataset.listId = listId;
+function createVideoRow(video, index, listId) {
+  const row = document.createElement("li");
+  row.className = "manage-list-row";
+  row.dataset.id = video.id;
+  row.dataset.index = String(index);
+  row.dataset.listId = listId;
+
+  const selectCell = document.createElement("div");
+  selectCell.className = "manage-select";
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.dataset.videoId = video.id;
+  checkbox.dataset.index = String(index);
+  selectCell.appendChild(checkbox);
+  row.appendChild(selectCell);
+
+  const card = document.createElement("div");
+  card.className = "video-item manage-video-item";
+  card.dataset.id = video.id;
+  card.dataset.index = String(index);
+  card.dataset.listId = listId;
 
   const handle = document.createElement("button");
   handle.type = "button";
   handle.className = "video-handle";
-  handle.textContent = "⋮⋮";
   handle.disabled = true;
   handle.tabIndex = -1;
   handle.setAttribute("aria-hidden", "true");
+  card.appendChild(handle);
 
   const thumb = document.createElement("img");
   thumb.className = "video-thumb";
   thumb.src = resolveThumbnail(video);
   thumb.alt = video.title || "Видео";
   thumb.loading = "lazy";
+  thumb.decoding = "async";
+  card.appendChild(thumb);
 
   const body = document.createElement("div");
   body.className = "video-body";
@@ -262,67 +390,154 @@ function createVideoItem(video, index, listId) {
   const title = document.createElement("div");
   title.className = "video-title";
   title.textContent = video.title || "Без названия";
+  body.appendChild(title);
 
   const details = document.createElement("div");
   details.className = "video-details";
   const parts = [];
   if (video.channelTitle) parts.push(video.channelTitle);
-  if (video.publishedAt) parts.push(new Date(video.publishedAt).toLocaleString("ru-RU"));
+  if (video.publishedAt) {
+    parts.push(new Date(video.publishedAt).toLocaleString("ru-RU"));
+  }
   if (video.duration) parts.push(formatDuration(video.duration));
   details.textContent = parts.join(" • ");
+  body.appendChild(details);
 
-  const actions = document.createElement("div");
-  actions.className = "video-actions";
-
-  const moveWrapper = document.createElement("div");
-  moveWrapper.className = "video-move-block";
-  const select = document.createElement("select");
-  select.dataset.videoId = video.id;
-  select.dataset.listId = listId;
-  const targetLists = collectListsMeta().filter((list) => list.id !== listId);
-  targetLists.forEach((list) => {
-    const option = document.createElement("option");
-    option.value = list.id;
-    option.textContent = list.name;
-    select.appendChild(option);
-  });
-  select.disabled = targetLists.length === 0;
-
-  const moveBtn = document.createElement("button");
-  moveBtn.type = "button";
-  moveBtn.className = "secondary";
-  moveBtn.dataset.action = "move";
-  moveBtn.dataset.videoId = video.id;
-  moveBtn.dataset.listId = listId;
-  moveBtn.textContent = "Перенести";
-  moveBtn.disabled = targetLists.length === 0;
-
-  moveWrapper.append(select, moveBtn);
+  card.appendChild(body);
 
   const removeBtn = document.createElement("button");
   removeBtn.type = "button";
+  removeBtn.className = "icon-button video-remove";
   removeBtn.dataset.action = "remove";
   removeBtn.dataset.videoId = video.id;
   removeBtn.dataset.listId = listId;
-  removeBtn.textContent = "Удалить";
+  removeBtn.title = "Удалить из списка";
+  removeBtn.textContent = "✕";
+  card.appendChild(removeBtn);
 
-  actions.append(moveWrapper, removeBtn);
-  body.append(title, details, actions);
-  li.append(handle, thumb, body);
-  return li;
+  const moveBtn = document.createElement("button");
+  moveBtn.type = "button";
+  moveBtn.className = "icon-button video-move";
+  moveBtn.dataset.action = "move";
+  moveBtn.dataset.videoId = video.id;
+  moveBtn.dataset.listId = listId;
+  moveBtn.title = "Перенести в другой список";
+  moveBtn.textContent = "⇄";
+  card.appendChild(moveBtn);
+
+  row.appendChild(card);
+  return row;
 }
 
 function renderDetailVideos(details) {
+  hideMoveMenu();
   detailList.textContent = "";
   const videos = Array.isArray(details.queue) ? details.queue : [];
+  selectionState.lastIndex = null;
+  const availableIds = new Set(videos.map((video) => video.id));
+  selectionState.selected = new Set(
+    Array.from(selectionState.selected).filter((id) => availableIds.has(id))
+  );
   if (!videos.length) {
     detailEmpty.hidden = false;
+    updateSelectionUI();
     return;
   }
   detailEmpty.hidden = true;
   videos.forEach((video, index) => {
-    detailList.appendChild(createVideoItem(video, index, details.id));
+    detailList.appendChild(createVideoRow(video, index, details.id));
   });
+  updateSelectionUI();
+}
+
+function getVideoByIndex(index) {
+  if (
+    !selectedListDetails ||
+    !Array.isArray(selectedListDetails.queue) ||
+    index < 0 ||
+    index >= selectedListDetails.queue.length
+  ) {
+    return null;
+  }
+  return selectedListDetails.queue[index];
+}
+
+function updateSelectionUI() {
+  const count = selectionState.selected.size;
+  detailList.querySelectorAll(".manage-list-row").forEach((row) => {
+    const videoId = row.dataset.id;
+    const selected = videoId ? selectionState.selected.has(videoId) : false;
+    row.classList.toggle("selected", selected);
+    const checkbox = row.querySelector('input[type="checkbox"]');
+    if (checkbox) {
+      checkbox.checked = selected;
+    }
+  });
+  if (selectionCounter) {
+    if (count > 0) {
+      selectionCounter.hidden = false;
+      selectionCounter.textContent = `Выбрано: ${count}`;
+    } else {
+      selectionCounter.hidden = true;
+      selectionCounter.textContent = "";
+    }
+  }
+  if (bulkMoveBtn) {
+    bulkMoveBtn.disabled = count === 0;
+    bulkMoveBtn.textContent =
+      count > 1
+        ? `Перенести выбранные (${count})`
+        : "Перенести выбранные";
+  }
+}
+
+function clearSelection() {
+  selectionState.selected.clear();
+  selectionState.lastIndex = null;
+  updateSelectionUI();
+}
+
+function selectAllVideos() {
+  if (!selectedListDetails || !Array.isArray(selectedListDetails.queue)) {
+    return;
+  }
+  selectionState.selected = new Set(
+    selectedListDetails.queue.map((video) => video.id)
+  );
+  selectionState.lastIndex =
+    selectedListDetails.queue.length > 0
+      ? selectedListDetails.queue.length - 1
+      : null;
+  updateSelectionUI();
+}
+
+function handleSelectionToggle(videoId, index, shouldSelect, useShift) {
+  if (!videoId) return;
+  if (useShift && selectionState.lastIndex != null) {
+    const target = getVideoByIndex(index);
+    const last = getVideoByIndex(selectionState.lastIndex);
+    if (target && last) {
+      const start = Math.min(index, selectionState.lastIndex);
+      const end = Math.max(index, selectionState.lastIndex);
+      for (let i = start; i <= end; i += 1) {
+        const video = getVideoByIndex(i);
+        if (!video) continue;
+        if (shouldSelect) {
+          selectionState.selected.add(video.id);
+        } else {
+          selectionState.selected.delete(video.id);
+        }
+      }
+    }
+  } else {
+    if (shouldSelect) {
+      selectionState.selected.add(videoId);
+    } else {
+      selectionState.selected.delete(videoId);
+    }
+  }
+  selectionState.lastIndex = Number.isFinite(index) && index >= 0 ? index : null;
+  updateSelectionUI();
 }
 
 async function loadListDetails(listId) {
@@ -336,7 +551,12 @@ async function loadListDetails(listId) {
   selectedListId = listId;
   const details = await sendMessage("playlist:getList", { listId });
   if (!details) return;
+  const previousListId = selectedListDetails?.id;
   selectedListDetails = details;
+  if (previousListId !== details.id) {
+    selectionState.selected.clear();
+    selectionState.lastIndex = null;
+  }
   detailTitle.textContent = details.name;
   const removalText =
     details.id === DEFAULT_LIST_ID
@@ -345,7 +565,6 @@ async function loadListDetails(listId) {
       ? "Просмотренные остаются"
       : "Просмотренные удаляются";
   detailMeta.textContent = `${details.length || 0} видео • ${removalText}`;
-  renderMoveAllOptions(details.id);
   renderDetailVideos(details);
   highlightSelectedRow(details.id);
 }
@@ -373,24 +592,6 @@ function toggleImportTarget() {
   const show = mode === "append" && importTargetSelect.options.length > 0;
   importTargetField.hidden = !show;
   importTargetSelect.disabled = !show;
-}
-
-function getSelectedMoveTarget(selectElement) {
-  if (!selectElement) return null;
-  return selectElement.value || null;
-}
-
-async function applyMoveAll() {
-  if (!selectedListDetails) return;
-  const targetListId = moveAllTarget.value;
-  if (!targetListId) return;
-  if (!confirm("Перенести все видео в выбранный список?")) return;
-  await sendMessage("playlist:moveAll", {
-    sourceListId: selectedListDetails.id,
-    targetListId,
-  });
-  await loadState();
-  setStatus("Видео перенесены", "success");
 }
 
 async function handleListAction(event) {
@@ -427,20 +628,9 @@ async function handleDetailAction(event) {
       await loadState();
       setStatus("Видео удалено", "info");
       break;
-    case "move": {
-      const select = button
-        .closest(".video-move-block")
-        ?.querySelector("select");
-      const targetListId = getSelectedMoveTarget(select);
-      if (!targetListId) {
-        setStatus("Выберите список для переноса", "info", 2500);
-        return;
-      }
-      await sendMessage("playlist:moveVideo", { videoId, targetListId });
-      await loadState();
-      setStatus("Видео перенесено", "success");
+    case "move":
+      showMoveMenu([videoId], listId, button);
       break;
-    }
     default:
       break;
   }
@@ -599,9 +789,43 @@ editForm.addEventListener("submit", async (event) => {
   editingListId = null;
 });
 
-moveAllBtn.addEventListener("click", applyMoveAll);
 listsBody.addEventListener("click", handleListAction);
+
+detailList.addEventListener("pointerdown", (event) => {
+  pendingShiftSelect = Boolean(event.shiftKey && event.target.closest(".manage-select"));
+});
+
+detailList.addEventListener("click", (event) => {
+  const checkbox = event.target.closest('.manage-select input[type="checkbox"]');
+  if (!checkbox) return;
+  const videoId = checkbox.dataset.videoId || "";
+  const index = Number(checkbox.dataset.index);
+  const useShift = pendingShiftSelect || event.shiftKey;
+  pendingShiftSelect = false;
+  handleSelectionToggle(videoId, Number.isNaN(index) ? -1 : index, checkbox.checked, useShift);
+  event.stopPropagation();
+});
+
 detailList.addEventListener("click", handleDetailAction);
+
+if (selectAllBtn) {
+  selectAllBtn.addEventListener("click", () => {
+    selectAllVideos();
+  });
+}
+
+if (clearSelectionBtn) {
+  clearSelectionBtn.addEventListener("click", () => {
+    clearSelection();
+  });
+}
+
+if (bulkMoveBtn) {
+  bulkMoveBtn.addEventListener("click", (event) => {
+    if (!selectedListDetails || selectionState.selected.size === 0) return;
+    showMoveMenu(Array.from(selectionState.selected), selectedListDetails.id, event.currentTarget);
+  });
+}
 
 registerModalDismiss();
 
