@@ -103,7 +103,8 @@
     dropIndex: null as number | null,
   }
   let currentDragItem: HTMLElement | null = null
-  let currentHoverItem: HTMLElement | null = null
+  let dropBeforeItem: HTMLElement | null = null
+  let dropAfterItem: HTMLElement | null = null
   let queueDropIndicator: HTMLDivElement | null = null
   let queueDropLine: HTMLDivElement | null = null
 
@@ -178,9 +179,13 @@
       currentDragItem.classList.remove('dragging')
       currentDragItem = null
     }
-    if (currentHoverItem) {
-      currentHoverItem.classList.remove('drop-before', 'drop-after')
-      currentHoverItem = null
+    if (dropBeforeItem) {
+      dropBeforeItem.classList.remove('drop-after')
+      dropBeforeItem = null
+    }
+    if (dropAfterItem) {
+      dropAfterItem.classList.remove('drop-before')
+      dropAfterItem = null
     }
     if (queueDropIndicator?.parentElement) {
       queueDropIndicator.remove()
@@ -188,6 +193,127 @@
     dragState.videoId = null
     dragState.listId = null
     dragState.dropIndex = null
+  }
+
+  function getQueueElements() {
+    if (!queueListEl) return []
+    return Array.from(queueListEl.querySelectorAll<HTMLLIElement>('.video-item'))
+  }
+
+  function applyDropClasses(before: HTMLElement | null, after: HTMLElement | null) {
+    if (dropBeforeItem && dropBeforeItem !== before) {
+      dropBeforeItem.classList.remove('drop-after')
+    }
+    if (dropAfterItem && dropAfterItem !== after) {
+      dropAfterItem.classList.remove('drop-before')
+    }
+    dropBeforeItem = before ?? null
+    dropAfterItem = after ?? null
+    if (dropBeforeItem) {
+      dropBeforeItem.classList.add('drop-after')
+    }
+    if (dropAfterItem) {
+      dropAfterItem.classList.add('drop-before')
+    }
+  }
+
+  function updateDropIndicatorPosition(
+    before: HTMLLIElement | null,
+    after: HTMLLIElement | null,
+    items: HTMLLIElement[],
+  ) {
+    if (!queueListEl) return
+    ensureQueueDropIndicator()
+    if (!queueDropIndicator) return
+    const listRect = queueListEl.getBoundingClientRect()
+    const scrollTop = queueListEl.scrollTop
+    const EDGE_OFFSET = 12
+    let targetTop: number
+
+    if (before && after) {
+      const beforeRect = before.getBoundingClientRect()
+      const afterRect = after.getBoundingClientRect()
+      const gap = afterRect.top - beforeRect.bottom
+      const offset = gap > 0 ? gap / 2 : 0
+      targetTop = beforeRect.bottom + offset
+    } else if (!before && after) {
+      const afterRect = after.getBoundingClientRect()
+      const offset = Math.min(EDGE_OFFSET, afterRect.height / 2)
+      targetTop = afterRect.top - offset
+    } else if (before && !after) {
+      const beforeRect = before.getBoundingClientRect()
+      const offset = Math.min(EDGE_OFFSET, beforeRect.height / 2)
+      targetTop = beforeRect.bottom + offset
+    } else if (!items.length) {
+      targetTop = listRect.top + scrollTop
+    } else {
+      const listHeight = queueListEl.clientHeight
+      targetTop = listRect.top + listHeight / 2
+    }
+
+    const normalizedTop = Math.max(
+      0,
+      Math.min(queueListEl.scrollHeight, targetTop - listRect.top + scrollTop),
+    )
+    queueDropIndicator.style.top = `${normalizedTop}px`
+    if (!queueDropIndicator.parentElement) {
+      queueListEl.appendChild(queueDropIndicator)
+    }
+  }
+
+  function updateQueueDropTarget(event: DragEvent) {
+    if (!dragState.videoId || !queueListEl) return
+    const items = getQueueElements()
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'move'
+    }
+    if (!items.length) {
+      dragState.dropIndex = 0
+      applyDropClasses(null, null)
+      updateDropIndicatorPosition(null, null, items)
+      return
+    }
+
+    const pointerY = event.clientY
+    let before: HTMLLIElement | null = null
+    let after: HTMLLIElement | null = null
+    let targetIndex = items.length
+
+    for (let index = 0; index < items.length; index += 1) {
+      const element = items[index]
+      if (element.dataset.id === dragState.videoId) {
+        continue
+      }
+      const rect = element.getBoundingClientRect()
+      if (pointerY < rect.top + rect.height / 2) {
+        after = element
+        targetIndex = index
+        break
+      }
+      before = element
+    }
+
+    dragState.dropIndex = targetIndex
+    applyDropClasses(before, after)
+    updateDropIndicatorPosition(before, after, items)
+  }
+
+  function resolveDropIndex(event: DragEvent) {
+    if (!queueListEl) return null
+    if (typeof dragState.dropIndex === 'number') {
+      return dragState.dropIndex
+    }
+    const target = (event.target as HTMLElement | null)?.closest<HTMLLIElement>('.video-item')
+    if (!target) {
+      return getQueueElements().length
+    }
+    const items = getQueueElements()
+    const index = items.indexOf(target)
+    if (index === -1) {
+      return items.length
+    }
+    const rect = target.getBoundingClientRect()
+    return event.clientY < rect.top + rect.height / 2 ? index : index + 1
   }
 
   function handleQueueItemDragStart({ entry, index, event }: QueueItemEventDetail) {
@@ -209,59 +335,30 @@
   }
 
   function handleQueueItemDragOver({ event }: QueueItemEventDetail) {
-    if (!dragState.videoId || !queueListEl) return
-    const target = event.currentTarget as HTMLLIElement | null
-    if (!target) return
+    if (!dragState.videoId) return
     event.preventDefault()
-    if (target === currentDragItem) {
-      if (currentHoverItem && currentHoverItem !== target) {
-        currentHoverItem.classList.remove('drop-before', 'drop-after')
-        currentHoverItem = null
-      }
-      if (queueDropIndicator?.parentElement) {
-        queueDropIndicator.remove()
-      }
-      return
-    }
-    const items = Array.from(queueListEl.querySelectorAll<HTMLLIElement>('.video-item'))
-    const index = items.indexOf(target)
-    if (index === -1) return
-    const rect = target.getBoundingClientRect()
-    const before = event.clientY - rect.top < rect.height / 2
-    target.classList.toggle('drop-before', before)
-    target.classList.toggle('drop-after', !before)
-    if (currentHoverItem && currentHoverItem !== target) {
-      currentHoverItem.classList.remove('drop-before', 'drop-after')
-    }
-    currentHoverItem = target
-    dragState.dropIndex = before ? index : index + 1
-    ensureQueueDropIndicator()
-    if (queueDropIndicator) {
-      const top = target.offsetTop + (before ? 0 : target.offsetHeight)
-      queueDropIndicator.style.top = `${top}px`
-    }
+    updateQueueDropTarget(event)
   }
 
   function handleQueueContainerDragOver(event: DragEvent) {
-    if (!dragState.videoId || !queueListEl) return
-    const targetItem = (event.target as HTMLElement | null)?.closest<HTMLLIElement>(
-      '.video-item',
-    )
-    if (targetItem) return
+    if (!dragState.videoId) return
     event.preventDefault()
-    dragState.dropIndex = queueItems.length
-    if (currentHoverItem) {
-      currentHoverItem.classList.remove('drop-before', 'drop-after')
-      currentHoverItem = null
-    }
-    ensureQueueDropIndicator()
-    if (queueDropIndicator) {
-      queueDropIndicator.style.top = `${queueListEl.scrollHeight}px`
-    }
+    updateQueueDropTarget(event)
   }
 
   async function commitQueueReorder(event: DragEvent) {
-    if (!dragState.videoId || dragState.dropIndex === null) {
+    if (!dragState.videoId) {
+      resetDragVisuals()
+      return
+    }
+    const dropIndex = resolveDropIndex(event)
+    if (dropIndex === null) {
+      resetDragVisuals()
+      return
+    }
+    const boundedIndex = Math.max(0, Math.min(queueItems.length, dropIndex))
+    const fromIndex = queueItems.findIndex((entry) => entry.id === dragState.videoId)
+    if (fromIndex === -1 || boundedIndex === fromIndex || boundedIndex === fromIndex + 1) {
       resetDragVisuals()
       return
     }
@@ -269,7 +366,7 @@
     try {
       const response = await sendMessage<PlaylistPresentation>('playlist:reorder', {
         videoId: dragState.videoId,
-        targetIndex: dragState.dropIndex,
+        targetIndex: boundedIndex,
       })
       await applyStateResult(response)
       setStatus('Порядок обновлён', 'info')
