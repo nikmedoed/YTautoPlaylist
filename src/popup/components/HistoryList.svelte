@@ -13,7 +13,7 @@
     restore: { entry: HistoryEntry; position: number; event: Event }
   }>()
 
-  export let items: HistoryListItem[] = []
+  const { items = [] } = $props<{ items?: HistoryListItem[] }>()
 </script>
 
 {#if items.length}
@@ -49,7 +49,7 @@
           type="button"
           title="Вернуть в очередь"
           aria-label="Вернуть в очередь"
-          on:click={(event) => dispatch('restore', { entry: item, position: index, event })}
+          onclick={(event) => dispatch('restore', { entry: item, position: index, event })}
         >
           ↺
         </button>

@@ -1,8 +1,10 @@
 <script lang="ts">
   import type { StatusMessage } from '../types'
 
-  export let status: StatusMessage | null = null
-  export let onClose: () => void
+  const { status = null, onClose } = $props<{
+    status?: StatusMessage | null
+    onClose: () => void
+  }>()
 </script>
 
 <section
@@ -18,7 +20,7 @@
     type="button"
     class="status-close"
     aria-label="Скрыть уведомление"
-    on:click={onClose}
+    onclick={onClose}
   >
     ×
   </button>

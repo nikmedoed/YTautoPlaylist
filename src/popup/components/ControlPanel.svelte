@@ -6,8 +6,15 @@
 
   const dispatch = createEventDispatcher<{ action: { type: ControlActions } }>()
 
-  export let capabilities: Capabilities
-  export let loadings: { addCurrent: boolean; addPage: boolean; collect: boolean; playNext: boolean }
+  const { capabilities, loadings } = $props<{
+    capabilities: Capabilities
+    loadings: {
+      addCurrent: boolean
+      addPage: boolean
+      collect: boolean
+      playNext: boolean
+    }
+  }>()
 </script>
 
 <section class="controls">
@@ -15,18 +22,18 @@
     <button
       type="button"
       disabled={!capabilities.canAddCurrent || loadings.addCurrent}
-      on:click={() => dispatch('action', { type: 'add-current' })}
+      onclick={() => dispatch('action', { type: 'add-current' })}
     >
       Добавить текущее
     </button>
     <button
       type="button"
       disabled={!capabilities.canAddPage || loadings.addPage}
-      on:click={() => dispatch('action', { type: 'add-page' })}
+      onclick={() => dispatch('action', { type: 'add-page' })}
     >
       Добавить со страницы
     </button>
-    <button type="button" disabled={loadings.collect} on:click={() => dispatch('action', { type: 'collect' })}>
+    <button type="button" disabled={loadings.collect} onclick={() => dispatch('action', { type: 'collect' })}>
       Собрать из подписок
     </button>
   </div>
@@ -36,7 +43,7 @@
       class="secondary"
       type="button"
       disabled={loadings.playNext}
-      on:click={() => dispatch('action', { type: 'play-next' })}
+      onclick={() => dispatch('action', { type: 'play-next' })}
     >
       Следующее
     </button>

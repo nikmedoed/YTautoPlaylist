@@ -5,18 +5,20 @@
 
   const dispatch = createEventDispatcher<{ change: { listId: string }; manage: void }>()
 
-  export let lists: PlaylistListMeta[] = []
-  export let selectedId = ''
-  export let disabled = false
+  const { lists = [], selectedId = '', disabled = false } = $props<{
+    lists?: PlaylistListMeta[]
+    selectedId?: string
+    disabled?: boolean
+  }>()
 </script>
 
 <div class="list-bar">
   <label for="listSelect">Список</label>
   <select
     id="listSelect"
-    bind:value={selectedId}
+    value={selectedId}
     disabled={disabled}
-    on:change={(event) =>
+    onchange={(event) =>
       dispatch('change', { listId: (event.currentTarget as HTMLSelectElement).value })
     }
   >
@@ -30,7 +32,7 @@
       {/each}
     {/if}
   </select>
-  <button class="secondary" type="button" on:click={() => dispatch('manage')}>
+  <button class="secondary" type="button" onclick={() => dispatch('manage')}>
     Управление списками
   </button>
 </div>

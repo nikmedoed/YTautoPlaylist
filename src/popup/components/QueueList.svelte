@@ -13,12 +13,19 @@
     keypress: { entry: VideoEntry; event: KeyboardEvent }
   }>()
 
-  export let items: VideoEntry[] = []
-  export let activeVideoId: string | null = null
-  export let currentListId: string | null = null
-  export let moveTargets: PlaylistListMeta[] = []
+  const {
+    items = [],
+    activeVideoId = null,
+    currentListId = null,
+    moveTargets = [],
+  } = $props<{
+    items?: VideoEntry[]
+    activeVideoId?: string | null
+    currentListId?: string | null
+    moveTargets?: PlaylistListMeta[]
+  }>()
 
-  let listElement: HTMLUListElement | null = null
+  let listElement = $state<HTMLUListElement | null>(null)
   let openMenuVideoId = $state<string | null>(null)
   let dropIndicator: HTMLDivElement | null = null
   let dropLine: HTMLDivElement | null = null
@@ -162,7 +169,13 @@
     openMenuVideoId = openMenuVideoId === id ? null : id
   }
 
-  function closeMenu() {
+  function closeMenu(event?: MouseEvent) {
+    if (event) {
+      const target = event.target as HTMLElement | null
+      if (target?.closest('.video-move-menu')) {
+        return
+      }
+    }
     if (openMenuVideoId !== null) {
       openMenuVideoId = null
     }

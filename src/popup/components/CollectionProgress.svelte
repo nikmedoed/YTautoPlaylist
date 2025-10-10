@@ -5,7 +5,7 @@
 
   const dispatch = createEventDispatcher<{ toggle: void }>()
 
-  export let collection: CollectionState
+  const { collection } = $props<{ collection: CollectionState }>()
 </script>
 
 {#if collection.active || collection.entries.length}
@@ -22,7 +22,7 @@
       </div>
       <div class="collection-actions">
         <span>{collection.counters}</span>
-        <button class="secondary" type="button" on:click={() => dispatch('toggle')}>
+        <button class="secondary" type="button" onclick={() => dispatch('toggle')}>
           {collection.collapsed ? 'Показать логи' : 'Скрыть логи'}
         </button>
       </div>
