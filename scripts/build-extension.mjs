@@ -50,6 +50,8 @@ async function main() {
   }
 
   await rm(TEMP_DIR, { recursive: true, force: true })
+
+  console.log('[build-extension] Extension bundle is ready in', OUT_DIR)
 }
 
 async function exists(path) {

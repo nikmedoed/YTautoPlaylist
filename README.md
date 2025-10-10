@@ -71,6 +71,12 @@ The collector can be launched from both the popup and the management page. It ru
 
 ## Development notes
 
+- Install dependencies once with `npm install`.
+- During UI work run `npm run dev` and open `http://localhost:5173/src/popup/popup.html` to see the popup with hot module reload. This preview is served by Vite and does **not** update the packaged extension automatically.
+- To produce a Chrome-loadable build run `npm run build:extension`. The script compiles the Svelte sources with Vite and stages the result, together with `manifest.json` and icons, inside `build/extension`.
+- Load the unpacked extension from `build/extension` via `chrome://extensions` (enable Developer Mode → "Load unpacked"). After every rebuild, click the "Reload" button next to the extension entry so Chrome picks up the new `assets/*.js` bundle and HTML.
+- `npm run build` outputs to `dist/` for static hosting; it will not refresh the extension directory.
+- To clean build artifacts remove the `dist/` and `build/extension/` folders.
 - The default list cannot be removed or renamed. All other lists are fully editable.
 - Exported list files contain the queue items together with metadata and can be re-imported at any time.
 - Debug mode skips persisting the collector timestamp in storage so repeated runs are possible without manual clean-up.
