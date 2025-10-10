@@ -1,70 +1,15 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    />
     <title>YT Auto Playlist</title>
-    <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
-    <div id="app">
-      <section class="list-bar">
-        <label for="listSelect">Список</label>
-        <select id="listSelect"></select>
-        <button id="openManager" class="secondary" type="button">
-          Управление списками
-        </button>
-      </section>
-      <section class="controls">
-        <div class="control-row control-row--actions">
-          <button id="addCurrent" type="button">Добавить текущее</button>
-          <button id="addPage" type="button">Добавить со страницы</button>
-          <button id="collectSubscriptions" type="button">
-            Собрать из подписок
-          </button>
-        </div>
-        <div class="control-row control-row--secondary">
-          <button id="playNext" class="secondary" type="button">
-            Следующее
-          </button>
-        </div>
-      </section>
-      <section id="status" hidden>
-        <span id="statusText"></span>
-      </section>
-      <section id="collectionProgress" class="collection" hidden>
-        <header>
-          <div class="collection-info">
-            <h4>Сбор подписок</h4>
-            <span id="collectionStage"></span>
-          </div>
-          <div class="collection-actions">
-            <span id="collectionCounters"></span>
-            <button id="collectionToggle" class="secondary" type="button">
-              Показать логи
-            </button>
-          </div>
-        </header>
-        <div class="collection-body">
-          <ul id="collectionLog" class="collection-log"></ul>
-        </div>
-      </section>
-      <section class="queue">
-        <header>
-          <h3>Очередь</h3>
-          <span id="queueCount"></span>
-        </header>
-        <ul id="queueList" class="video-list"></ul>
-        <p id="queueEmpty" class="empty" hidden>Очередь пустая</p>
-      </section>
-      <section class="history">
-        <header>
-          <h3>Последние 10</h3>
-        </header>
-        <ul id="historyList" class="video-list"></ul>
-        <p id="historyEmpty" class="empty" hidden>Истории пока нет</p>
-      </section>
-    </div>
-    <script type="module" src="popup.js"></script>
+    <div id="app"></div>
+    <script type="module" src="/src/popup/main.ts"></script>
   </body>
 </html>
