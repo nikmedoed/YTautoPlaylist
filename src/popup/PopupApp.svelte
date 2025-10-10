@@ -18,14 +18,9 @@
     VideoEntry,
     HistoryEntry,
   } from './types'
-  import {
-    formatDateTime,
-    formatDuration,
-    formatListName,
-    formatShortDate,
-    formatTime,
-    resolveThumbnail,
-  } from './utils'
+  import { formatListName, formatTime } from './utils'
+  import QueueItem, { type QueueItemEventDetail } from './components/QueueItem.svelte'
+  import HistoryItem from './components/HistoryItem.svelte'
 
   const MAX_COLLECTION_LOG_ITEMS = 8
 
@@ -101,7 +96,7 @@
   )
 
   let statusTimeout: ReturnType<typeof setTimeout> | null = null
-  let queueListEl: HTMLUListElement | null = null
+  let queueListEl = $state<HTMLUListElement | null>(null)
   const dragState = {
     videoId: null as string | null,
     listId: null as string | null,
@@ -195,31 +190,31 @@
     dragState.dropIndex = null
   }
 
-  function handleDragStart(event: DragEvent) {
+  function handleQueueItemDragStart({ entry, index, event }: QueueItemEventDetail) {
     const handle = (event.target as HTMLElement | null)?.closest('.video-handle')
     if (!handle) {
       event.preventDefault()
       return
     }
     const item = handle.closest<HTMLLIElement>('.video-item')
-    if (!item || !item.dataset.id) {
+    if (!item) {
       event.preventDefault()
       return
     }
-    dragState.videoId = item.dataset.id
-    dragState.listId = item.dataset.listId ?? presentation?.currentQueue?.id ?? null
-    dragState.dropIndex = Array.from(queueListEl?.children ?? []).indexOf(item)
+    dragState.videoId = entry.id
+    dragState.listId = presentation?.currentQueue?.id ?? null
+    dragState.dropIndex = index
     item.classList.add('dragging')
     currentDragItem = item
     if (event.dataTransfer) {
       event.dataTransfer.effectAllowed = 'move'
-      event.dataTransfer.setData('text/plain', dragState.videoId)
+      event.dataTransfer.setData('text/plain', entry.id)
     }
   }
 
-  function handleDragOver(event: DragEvent) {
+  function handleQueueItemDragOver({ event }: QueueItemEventDetail) {
     if (!dragState.videoId || !queueListEl) return
-    const target = (event.target as HTMLElement | null)?.closest<HTMLLIElement>('.video-item')
+    const target = event.currentTarget as HTMLLIElement | null
     if (!target) return
     event.preventDefault()
     if (target === currentDragItem) {
@@ -251,7 +246,25 @@
     }
   }
 
-  async function handleDrop(event: DragEvent) {
+  function handleQueueContainerDragOver(event: DragEvent) {
+    if (!dragState.videoId || !queueListEl) return
+    const targetItem = (event.target as HTMLElement | null)?.closest<HTMLLIElement>(
+      '.video-item',
+    )
+    if (targetItem) return
+    event.preventDefault()
+    dragState.dropIndex = queueItems.length
+    if (currentHoverItem) {
+      currentHoverItem.classList.remove('drop-before', 'drop-after')
+      currentHoverItem = null
+    }
+    ensureQueueDropIndicator()
+    if (queueDropIndicator) {
+      queueDropIndicator.style.top = `${queueListEl.scrollHeight}px`
+    }
+  }
+
+  async function commitQueueReorder(event: DragEvent) {
     if (!dragState.videoId || dragState.dropIndex === null) {
       resetDragVisuals()
       return
@@ -272,15 +285,21 @@
     }
   }
 
-  function handleDragEnd() {
+  async function handleQueueItemDrop({ event }: QueueItemEventDetail) {
+    await commitQueueReorder(event)
+  }
+
+  async function handleQueueContainerDrop(event: DragEvent) {
+    await commitQueueReorder(event)
+  }
+
+  function handleQueueItemDragEnd() {
     resetDragVisuals()
   }
 
-  function handleQueueBodyKeydown(event: KeyboardEvent, entry: VideoEntry) {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault()
-      handleQueuePlay(entry)
-    }
+  function handleQueueItemKeyActivate({ entry, event }: { entry: VideoEntry; event: KeyboardEvent }) {
+    event.preventDefault()
+    handleQueuePlay(entry)
   }
 
   function openMoveMenu(entry: VideoEntry, event: MouseEvent) {
@@ -787,74 +806,24 @@
       id="queueList"
       class="video-list"
       bind:this={queueListEl}
-      ondragstart={handleDragStart}
-      ondragover={handleDragOver}
-      ondrop={handleDrop}
-      ondragend={handleDragEnd}
+      ondragover={handleQueueContainerDragOver}
+      ondrop={handleQueueContainerDrop}
     >
       {#each queueItems as item, index (item.id)}
-        <li
-          class={`video-item${item.id === activeVideoId ? ' active' : ''}`}
-          data-id={item.id}
-          data-index={index}
-          data-list-id={presentation?.currentQueue?.id ?? ''}
-          draggable="true"
-        >
-          <button
-            class="video-handle"
-            type="button"
-            aria-label="Перетащить видео"
-            title="Перетащить видео"
-          ></button>
-          <img
-            class="video-thumb"
-            src={resolveThumbnail(item)}
-            alt=""
-            loading="lazy"
-            decoding="async"
-          />
-          <div
-            class="video-body"
-            role="button"
-            tabindex="0"
-            onclick={() => handleQueuePlay(item)}
-            onkeydown={(event) => handleQueueBodyKeydown(event, item)}
-          >
-            <div class="video-title">{item.title}</div>
-            <div class="video-details">
-              {#if item.channelTitle}
-                <span>{item.channelTitle}</span>
-              {/if}
-              {#if item.duration}
-                <span>{formatDuration(item.duration)}</span>
-              {/if}
-              {#if item.publishedAt}
-                <span>{formatShortDate(item.publishedAt)}</span>
-              {/if}
-              {#if item.addedAt}
-                <span>добавлено {formatDateTime(item.addedAt)}</span>
-              {/if}
-            </div>
-          </div>
-          <button
-            class="video-move"
-            type="button"
-            title="Переместить в другой список"
-            aria-label="Переместить в другой список"
-            onclick={(event) => openMoveMenu(item, event)}
-          >
-            ⋮
-          </button>
-          <button
-            class="video-remove"
-            type="button"
-            title="Удалить"
-            aria-label="Удалить"
-            onclick={(event) => handleQueueRemove(item, event)}
-          >
-            ×
-          </button>
-        </li>
+        <QueueItem
+          entry={item}
+          {index}
+          listId={presentation?.currentQueue?.id ?? ''}
+          active={item.id === activeVideoId}
+          on:play={({ detail }) => handleQueuePlay(detail.entry)}
+          on:keyactivate={({ detail }) => handleQueueItemKeyActivate(detail)}
+          on:move={({ detail }) => openMoveMenu(detail.entry, detail.event)}
+          on:remove={({ detail }) => handleQueueRemove(detail.entry, detail.event)}
+          on:dragstart={({ detail }) => handleQueueItemDragStart(detail)}
+          on:dragover={({ detail }) => handleQueueItemDragOver(detail)}
+          on:drop={({ detail }) => handleQueueItemDrop(detail)}
+          on:dragend={() => handleQueueItemDragEnd()}
+        />
       {/each}
     </ul>
   {:else}
@@ -866,45 +835,15 @@
   <header>
     <h3>Последние 10</h3>
   </header>
-{#if historyView.length}
-  <ul id="historyList" class="video-list">
-    {#each historyView as { item, index, listLabel } (item.id + index)}
-      <li class="video-item" data-id={item.id} data-position={index}>
-        <img
-          class="video-thumb"
-          src={resolveThumbnail(item)}
-          alt=""
-          loading="lazy"
-            decoding="async"
-          />
-          <div class="video-body">
-            <div class="video-title">{item.title}</div>
-          <div class="video-details">
-            {#if item.channelTitle}
-              <span>{item.channelTitle}</span>
-            {/if}
-            {#if item.duration}
-              <span>{formatDuration(item.duration)}</span>
-            {/if}
-            {#if listLabel}
-              <span class="list-label">{listLabel}</span>
-            {/if}
-            {#if item.watchedAt}
-              <span>{formatDateTime(item.watchedAt)}</span>
-            {/if}
-          </div>
-          </div>
-          <button
-            class="history-restore"
-            type="button"
-            title="Вернуть в очередь"
-            aria-label="Вернуть в очередь"
-            data-action="restore"
-            onclick={(event) => handleHistoryRestore(item, index, event)}
-          >
-            ↺
-          </button>
-        </li>
+  {#if historyView.length}
+    <ul id="historyList" class="video-list">
+      {#each historyView as { item, index, listLabel } (item.id + index)}
+        <HistoryItem
+          entry={item}
+          {index}
+          {listLabel}
+          on:restore={({ detail }) => handleHistoryRestore(detail.entry, detail.index, detail.event)}
+        />
       {/each}
     </ul>
   {:else}
