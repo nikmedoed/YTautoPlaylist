@@ -74,11 +74,11 @@
   bind:this={element}
   data-id={entry.id}
   data-list-id={listId ?? ''}
-  draggable="true"
-  ondragstart={(event) => forwardDrag('dragstart', event)}
-  ondragover={(event) => forwardDrag('dragover', event)}
-  ondrop={(event) => forwardDrag('drop', event)}
-  ondragend={(event) => forwardDrag('dragend', event)}
+  draggable={true}
+  on:dragstart={(event) => forwardDrag('dragstart', event)}
+  on:dragover={(event) => forwardDrag('dragover', event)}
+  on:drop={(event) => forwardDrag('drop', event)}
+  on:dragend={(event) => forwardDrag('dragend', event)}
 >
   <button
     class="video-handle"
@@ -97,8 +97,8 @@
     class="video-body"
     role="button"
     tabindex="0"
-    onclick={handlePlay}
-    onkeydown={handleBodyKeydown}
+    on:click={handlePlay}
+    on:keydown={handleBodyKeydown}
   >
     <div class="video-title">{entry.title}</div>
     <div class="video-details">
@@ -122,18 +122,20 @@
     title="Переместить в другой список"
     aria-label="Переместить в другой список"
     data-menu-open={menuOpen ? '1' : '0'}
-    onclick={toggleMenu}
+    on:click={toggleMenu}
   >
-    ⋮
+    <span aria-hidden="true">⋮</span>
+    <span class="sr-only">Переместить</span>
   </button>
   <button
     class="video-remove"
     type="button"
     title="Удалить"
     aria-label="Удалить"
-    onclick={handleRemove}
+    on:click={handleRemove}
   >
-    ×
+    <span aria-hidden="true">×</span>
+    <span class="sr-only">Удалить</span>
   </button>
   {#if menuOpen}
     <div class="video-move-menu">
@@ -142,7 +144,7 @@
         <ul>
           {#each moveTargets as target (target.id)}
             <li>
-              <button type="button" onclick={() => handleMove(target.id)}>
+              <button type="button" on:click={() => handleMove(target.id)}>
                 {target.name}
               </button>
             </li>

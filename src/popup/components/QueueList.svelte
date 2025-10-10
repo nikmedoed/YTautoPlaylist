@@ -75,7 +75,12 @@
     event: DragEvent
   }) {
     const { entry, element, event } = detail
-    const handle = (event.target as HTMLElement | null)?.closest('.video-handle')
+    const handle = event
+      .composedPath()
+      .find(
+        (node): node is HTMLElement =>
+          node instanceof HTMLElement && node.classList.contains('video-handle'),
+      )
     if (!handle) {
       event.preventDefault()
       return
