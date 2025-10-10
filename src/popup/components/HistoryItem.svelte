@@ -48,14 +48,16 @@
       </div>
     {/if}
   </div>
-  <button
-    class="icon-button history-restore"
-    type="button"
-    title="Вернуть в очередь"
-    aria-label="Вернуть в очередь"
-    data-action="restore"
-    onclick={(event) => dispatch('restore', { entry, index, event })}
-  >
-    ↺
-  </button>
+  <div class="video-actions history-actions">
+    <button
+      class="icon-button history-restore"
+      type="button"
+      title="Вернуть в очередь"
+      aria-label="Вернуть в очередь"
+      data-action="restore"
+      onclick={(event) => dispatch('restore', { entry, index, event })}
+    >
+      ↺
+    </button>
+  </div>
 </li>

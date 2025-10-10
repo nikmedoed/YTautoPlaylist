@@ -44,7 +44,7 @@
 </script>
 
 <li
-  class={`video-item${active ? ' active' : ''}`}
+  class={`video-item queue-item${active ? ' active' : ''}`}
   data-id={entry.id}
   data-index={index}
   data-list-id={listId}
@@ -101,22 +101,24 @@
       </div>
     {/if}
   </div>
-  <button
-    class="icon-button video-move"
-    type="button"
-    title="Переместить в другой список"
-    aria-label="Переместить в другой список"
-    onclick={(event) => dispatch('move', { entry, event })}
-  >
-    ⇄
-  </button>
-  <button
-    class="icon-button video-remove"
-    type="button"
-    title="Удалить"
-    aria-label="Удалить"
-    onclick={(event) => dispatch('remove', { entry, event })}
-  >
-    ✕
-  </button>
+  <div class="video-actions">
+    <button
+      class="icon-button queue-action queue-action--move"
+      type="button"
+      title="Переместить в другой список"
+      aria-label="Переместить в другой список"
+      onclick={(event) => dispatch('move', { entry, event })}
+    >
+      ⇄
+    </button>
+    <button
+      class="icon-button queue-action queue-action--remove"
+      type="button"
+      title="Удалить"
+      aria-label="Удалить"
+      onclick={(event) => dispatch('remove', { entry, event })}
+    >
+      ✕
+    </button>
+  </div>
 </li>

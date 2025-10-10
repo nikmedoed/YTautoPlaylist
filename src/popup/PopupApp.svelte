@@ -83,10 +83,7 @@
   const queueFreezeLabel = $derived(
     presentation?.currentQueue?.freeze ? 'Список без удаления' : '',
   )
-  const queueCountLabel = $derived(() => {
-    const count = presentation?.currentQueue?.queue.length ?? 0
-    return count > 0 ? `${count}` : '0'
-  })
+  const queueCount = $derived(presentation?.currentQueue?.queue.length ?? 0)
   const historyView = $derived(
     historyItems.map((item, index) => ({
       item,
@@ -103,8 +100,6 @@
     dropIndex: null as number | null,
   }
   let currentDragItem: HTMLElement | null = null
-  let dropBeforeItem: HTMLElement | null = null
-  let dropAfterItem: HTMLElement | null = null
   let queueDropIndicator: HTMLDivElement | null = null
   let queueDropLine: HTMLDivElement | null = null
 
@@ -179,14 +174,6 @@
       currentDragItem.classList.remove('dragging')
       currentDragItem = null
     }
-    if (dropBeforeItem) {
-      dropBeforeItem.classList.remove('drop-after')
-      dropBeforeItem = null
-    }
-    if (dropAfterItem) {
-      dropAfterItem.classList.remove('drop-before')
-      dropAfterItem = null
-    }
     if (queueDropIndicator?.parentElement) {
       queueDropIndicator.remove()
     }
@@ -198,23 +185,6 @@
   function getQueueElements() {
     if (!queueListEl) return []
     return Array.from(queueListEl.querySelectorAll<HTMLLIElement>('.video-item'))
-  }
-
-  function applyDropClasses(before: HTMLElement | null, after: HTMLElement | null) {
-    if (dropBeforeItem && dropBeforeItem !== before) {
-      dropBeforeItem.classList.remove('drop-after')
-    }
-    if (dropAfterItem && dropAfterItem !== after) {
-      dropAfterItem.classList.remove('drop-before')
-    }
-    dropBeforeItem = before ?? null
-    dropAfterItem = after ?? null
-    if (dropBeforeItem) {
-      dropBeforeItem.classList.add('drop-after')
-    }
-    if (dropAfterItem) {
-      dropAfterItem.classList.add('drop-before')
-    }
   }
 
   function updateDropIndicatorPosition(
@@ -269,7 +239,6 @@
     }
     if (!items.length) {
       dragState.dropIndex = 0
-      applyDropClasses(null, null)
       updateDropIndicatorPosition(null, null, items)
       return
     }
@@ -294,7 +263,6 @@
     }
 
     dragState.dropIndex = targetIndex
-    applyDropClasses(before, after)
     updateDropIndicatorPosition(before, after, items)
   }
 
@@ -892,7 +860,7 @@
         <span class="queue-subtitle">{queueFreezeLabel}</span>
       {/if}
     </div>
-    <span id="queueCount">{queueCountLabel}</span>
+    <span id="queueCount">{queueCount}</span>
   </header>
   {#if queueItems.length}
     <ul
@@ -963,7 +931,7 @@
     border: none;
     text-align: left;
     color: inherit;
-    padding: 10px 40px 10px 14px;
+    padding: 10px 16px;
   }
 
   .video-body:focus-visible {
