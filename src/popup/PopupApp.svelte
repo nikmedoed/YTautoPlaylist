@@ -191,12 +191,8 @@
   }
 
   function handleQueueItemDragStart({ entry, index, event }: QueueItemEventDetail) {
-    const handle = (event.target as HTMLElement | null)?.closest('.video-handle')
-    if (!handle) {
-      event.preventDefault()
-      return
-    }
-    const item = handle.closest<HTMLLIElement>('.video-item')
+    const handle = event.target as HTMLElement | null
+    const item = handle?.closest<HTMLLIElement>('.video-item')
     if (!item) {
       event.preventDefault()
       return

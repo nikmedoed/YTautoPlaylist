@@ -22,23 +22,34 @@
   />
   <div class="video-body">
     <div class="video-title">{entry.title}</div>
-    <div class="video-details">
-      {#if entry.channelTitle}
-        <span>{entry.channelTitle}</span>
-      {/if}
-      {#if entry.duration}
-        <span>{formatDuration(entry.duration)}</span>
-      {/if}
-      {#if listLabel}
-        <span class="list-label">{listLabel}</span>
-      {/if}
-      {#if entry.watchedAt}
-        <span>{formatDateTime(entry.watchedAt)}</span>
-      {/if}
-    </div>
+    {#if entry.channelTitle || entry.duration || listLabel || entry.watchedAt}
+      <div class="video-details">
+        {#if entry.channelTitle}
+          <span>{entry.channelTitle}</span>
+        {/if}
+        {#if entry.duration}
+          {#if entry.channelTitle}
+            <span class="video-details__sep" aria-hidden="true">•</span>
+          {/if}
+          <span>{formatDuration(entry.duration)}</span>
+        {/if}
+        {#if listLabel}
+          {#if entry.channelTitle || entry.duration}
+            <span class="video-details__sep" aria-hidden="true">•</span>
+          {/if}
+          <span class="list-label">{listLabel}</span>
+        {/if}
+        {#if entry.watchedAt}
+          {#if entry.channelTitle || entry.duration || listLabel}
+            <span class="video-details__sep" aria-hidden="true">•</span>
+          {/if}
+          <span>{formatDateTime(entry.watchedAt)}</span>
+        {/if}
+      </div>
+    {/if}
   </div>
   <button
-    class="history-restore"
+    class="icon-button history-restore"
     type="button"
     title="Вернуть в очередь"
     aria-label="Вернуть в очередь"

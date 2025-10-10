@@ -30,7 +30,9 @@
   export let active = false
   export let listId = ''
 
-  function emitDrag(type: 'dragstart' | 'dragover' | 'drop' | 'dragend', event: DragEvent) {
+  type DragEventType = 'dragstart' | 'dragover' | 'drop' | 'dragend'
+
+  function emitDrag(type: DragEventType, event: DragEvent) {
     dispatch(type, { entry, index, event })
   }
 
@@ -46,17 +48,17 @@
   data-id={entry.id}
   data-index={index}
   data-list-id={listId}
-  draggable="true"
-  ondragstart={(event) => emitDrag('dragstart', event)}
   ondragover={(event) => emitDrag('dragover', event)}
   ondrop={(event) => emitDrag('drop', event)}
-  ondragend={(event) => emitDrag('dragend', event)}
 >
   <button
     class="video-handle"
     type="button"
     aria-label="Перетащить видео"
     title="Перетащить видео"
+    draggable="true"
+    ondragstart={(event) => emitDrag('dragstart', event)}
+    ondragend={(event) => emitDrag('dragend', event)}
   ></button>
   <img
     class="video-thumb"
@@ -73,37 +75,48 @@
     onkeydown={handleKeydown}
   >
     <div class="video-title">{entry.title}</div>
-    <div class="video-details">
-      {#if entry.channelTitle}
-        <span>{entry.channelTitle}</span>
-      {/if}
-      {#if entry.duration}
-        <span>{formatDuration(entry.duration)}</span>
-      {/if}
-      {#if entry.publishedAt}
-        <span>{formatShortDate(entry.publishedAt)}</span>
-      {/if}
-      {#if entry.addedAt}
-        <span>добавлено {formatDateTime(entry.addedAt)}</span>
-      {/if}
-    </div>
+    {#if entry.channelTitle || entry.duration || entry.publishedAt || entry.addedAt}
+      <div class="video-details">
+        {#if entry.channelTitle}
+          <span>{entry.channelTitle}</span>
+        {/if}
+        {#if entry.duration}
+          {#if entry.channelTitle}
+            <span class="video-details__sep" aria-hidden="true">•</span>
+          {/if}
+          <span>{formatDuration(entry.duration)}</span>
+        {/if}
+        {#if entry.publishedAt}
+          {#if entry.channelTitle || entry.duration}
+            <span class="video-details__sep" aria-hidden="true">•</span>
+          {/if}
+          <span>{formatShortDate(entry.publishedAt)}</span>
+        {/if}
+        {#if entry.addedAt}
+          {#if entry.channelTitle || entry.duration || entry.publishedAt}
+            <span class="video-details__sep" aria-hidden="true">•</span>
+          {/if}
+          <span>добавлено {formatDateTime(entry.addedAt)}</span>
+        {/if}
+      </div>
+    {/if}
   </div>
   <button
-    class="video-move"
+    class="icon-button video-move"
     type="button"
     title="Переместить в другой список"
     aria-label="Переместить в другой список"
     onclick={(event) => dispatch('move', { entry, event })}
   >
-    ⋮
+    ⇄
   </button>
   <button
-    class="video-remove"
+    class="icon-button video-remove"
     type="button"
     title="Удалить"
     aria-label="Удалить"
     onclick={(event) => dispatch('remove', { entry, event })}
   >
-    ×
+    ✕
   </button>
 </li>
