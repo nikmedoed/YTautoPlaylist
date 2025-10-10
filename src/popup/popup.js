@@ -25,6 +25,7 @@ const DEFAULT_LIST_ID = "default";
 
 let playlistState = null;
 let statusTimeout = null;
+let statusHideTimer = null;
 let isCollecting = false;
 let capabilitiesState = {
   canAddCurrent: false,
@@ -34,9 +35,8 @@ let capabilitiesState = {
 };
 const dragState = {
   videoId: null,
-  overElement: null,
-  after: false,
   listId: null,
+  dropIndex: null,
 };
 
 const COLLECTION_STAGE_DEFS = {
@@ -90,6 +90,20 @@ const collectionState = {
   collapsed: true,
   stages: new Map(),
 };
+
+if (statusBox) {
+  statusBox.addEventListener("click", () => {
+    hideStatus(true);
+  });
+  statusBox.hidden = true;
+  statusBox.dataset.visible = "0";
+  statusText.textContent = "";
+  if (!statusBox.hasAttribute("role")) {
+    statusBox.setAttribute("role", "status");
+  }
+  statusBox.setAttribute("aria-live", "polite");
+  statusBox.setAttribute("aria-atomic", "true");
+}
 
 const moveMenu = document.createElement("div");
 moveMenu.className = "move-menu";
@@ -765,23 +779,53 @@ function getCollectionStatusInfo(event) {
   }
 }
 
-function setStatus(text, kind = "info", timeout = 2200) {
-  if (!text) {
+function hideStatus(immediate = false) {
+  if (!statusBox || !statusText) return;
+  if (statusTimeout) {
+    clearTimeout(statusTimeout);
+    statusTimeout = null;
+  }
+  if (statusHideTimer) {
+    clearTimeout(statusHideTimer);
+    statusHideTimer = null;
+  }
+  const finalize = () => {
+    statusHideTimer = null;
     statusBox.hidden = true;
     statusBox.removeAttribute("data-kind");
-    if (statusTimeout) clearTimeout(statusTimeout);
-    statusTimeout = null;
+    statusText.textContent = "";
+  };
+  statusBox.dataset.visible = "0";
+  if (immediate) {
+    finalize();
     return;
+  }
+  statusHideTimer = window.setTimeout(() => {
+    if (statusBox.dataset.visible !== "1") {
+      finalize();
+    }
+  }, 220);
+}
+
+function setStatus(text, kind = "info", timeout = 5000) {
+  if (!statusBox || !statusText) return;
+  if (!text) {
+    hideStatus(true);
+    return;
+  }
+  if (statusHideTimer) {
+    clearTimeout(statusHideTimer);
+    statusHideTimer = null;
   }
   statusText.textContent = text;
   statusBox.dataset.kind = kind;
   statusBox.hidden = false;
+  void statusBox.offsetWidth;
+  statusBox.dataset.visible = "1";
   if (statusTimeout) clearTimeout(statusTimeout);
   if (timeout && timeout > 0) {
     statusTimeout = window.setTimeout(() => {
-      statusBox.hidden = true;
-      statusBox.removeAttribute("data-kind");
-      statusTimeout = null;
+      hideStatus();
     }, timeout);
   } else {
     statusTimeout = null;
@@ -900,10 +944,17 @@ function renderLists(state) {
   }
 }
 
+const queueDropIndicator = document.createElement("div");
+queueDropIndicator.className = "queue-drop-indicator";
+const queueDropIndicatorLine = document.createElement("div");
+queueDropIndicatorLine.className = "queue-drop-indicator__line";
+queueDropIndicator.appendChild(queueDropIndicatorLine);
+
 function clearDragIndicators() {
   queueList
     .querySelectorAll(".drop-before, .drop-after")
     .forEach((el) => el.classList.remove("drop-before", "drop-after"));
+  queueDropIndicator.remove();
 }
 
 function resetDragState() {
@@ -915,9 +966,8 @@ function resetDragState() {
   }
   clearDragIndicators();
   dragState.videoId = null;
-  dragState.overElement = null;
-  dragState.after = false;
   dragState.listId = null;
+  dragState.dropIndex = null;
 }
 
 function renderQueue(queueState) {
@@ -1273,9 +1323,9 @@ function handleDragStart(event) {
     return;
   }
   dragState.videoId = item.dataset.id;
-  dragState.overElement = null;
-  dragState.after = false;
   dragState.listId = item.dataset.listId || playlistState?.currentQueue?.id || null;
+  dragState.dropIndex = null;
+  queueDropIndicator.remove();
   item.classList.add("dragging");
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = "move";
@@ -1286,52 +1336,89 @@ function handleDragStart(event) {
 function handleDragOver(event) {
   if (!dragState.videoId) return;
   event.preventDefault();
-  const item = event.target.closest(".video-item");
-  if (!item || item.dataset.id === dragState.videoId) {
-    return;
-  }
-  const targetListId = item.dataset.listId;
-  if (targetListId && dragState.listId && targetListId !== dragState.listId) {
-    return;
-  }
-  const rect = item.getBoundingClientRect();
-  const after = event.clientY - rect.top > rect.height / 2;
-  if (dragState.overElement !== item || dragState.after !== after) {
-    clearDragIndicators();
-    item.classList.add(after ? "drop-after" : "drop-before");
-    dragState.overElement = item;
-    dragState.after = after;
-  }
+  const items = Array.from(
+    queueList.querySelectorAll(".video-item")
+  ).filter((element) => {
+    if (!dragState.listId) return true;
+    const { listId } = element.dataset;
+    return !listId || listId === dragState.listId;
+  });
   if (event.dataTransfer) {
     event.dataTransfer.dropEffect = "move";
+  }
+  if (!items.length) {
+    dragState.dropIndex = 0;
+    const scrollTop = queueList.scrollTop;
+    queueDropIndicator.style.top = `${Math.max(0, scrollTop)}px`;
+    if (!queueList.contains(queueDropIndicator)) {
+      queueList.appendChild(queueDropIndicator);
+    }
+    return;
+  }
+  const pointerY = event.clientY;
+  let targetIndex = items.length;
+  for (let index = 0; index < items.length; index += 1) {
+    const element = items[index];
+    if (element.dataset.id === dragState.videoId) continue;
+    const rect = element.getBoundingClientRect();
+    if (pointerY < rect.top + rect.height / 2) {
+      targetIndex = index;
+      break;
+    }
+  }
+  dragState.dropIndex = targetIndex;
+
+  const listRect = queueList.getBoundingClientRect();
+  const scrollTop = queueList.scrollTop;
+  const beforeElement = targetIndex > 0 ? items[targetIndex - 1] : null;
+  const afterElement = targetIndex < items.length ? items[targetIndex] : null;
+  const beforeRect = beforeElement?.getBoundingClientRect() || null;
+  const afterRect = afterElement?.getBoundingClientRect() || null;
+  const EDGE_OFFSET = 12;
+  let targetTop;
+  if (beforeRect && afterRect) {
+    const gap = afterRect.top - beforeRect.bottom;
+    const offset = gap > 0 ? gap / 2 : 0;
+    targetTop = beforeRect.bottom + offset;
+  } else if (!beforeRect && afterRect) {
+    const offset = Math.min(EDGE_OFFSET, afterRect.height / 2);
+    targetTop = afterRect.top - offset;
+  } else if (beforeRect && !afterRect) {
+    const offset = Math.min(EDGE_OFFSET, beforeRect.height / 2);
+    targetTop = beforeRect.bottom + offset;
+  } else {
+    targetTop = listRect.top + queueList.clientHeight / 2;
+  }
+  const normalizedTop = Math.max(
+    0,
+    Math.min(queueList.scrollHeight, targetTop - listRect.top + scrollTop)
+  );
+  queueDropIndicator.style.top = `${normalizedTop}px`;
+  if (!queueList.contains(queueDropIndicator)) {
+    queueList.appendChild(queueDropIndicator);
   }
 }
 
 async function handleDrop(event) {
   if (!dragState.videoId) return;
   event.preventDefault();
-  const item = event.target.closest(".video-item");
-  let targetElement = item || dragState.overElement;
-  let targetIndex;
-  if (targetElement && dragState.listId && targetElement.dataset.listId && targetElement.dataset.listId !== dragState.listId) {
-    resetDragState();
-    return;
-  }
-  if (!targetElement) {
-    targetIndex = queueList.children.length;
-  } else {
-    const items = Array.from(queueList.querySelectorAll(".video-item"));
-    targetIndex = items.indexOf(targetElement);
-    if (targetIndex === -1) {
-      resetDragState();
-      return;
+  const items = Array.from(
+    queueList.querySelectorAll(".video-item")
+  ).filter((element) => {
+    if (!dragState.listId) return true;
+    const { listId } = element.dataset;
+    return !listId || listId === dragState.listId;
+  });
+  let targetIndex = dragState.dropIndex;
+  if (typeof targetIndex !== "number") {
+    const directElement = event.target.closest(".video-item");
+    if (directElement && items.includes(directElement)) {
+      const rect = directElement.getBoundingClientRect();
+      const baseIndex = items.indexOf(directElement);
+      targetIndex = event.clientY < rect.top + rect.height / 2 ? baseIndex : baseIndex + 1;
+    } else {
+      targetIndex = items.length;
     }
-    const rect = targetElement.getBoundingClientRect();
-    const after =
-      item === targetElement
-        ? event.clientY - rect.top > rect.height / 2
-        : dragState.after;
-    if (after) targetIndex += 1;
   }
 
   const queue = Array.isArray(playlistState?.currentQueue?.queue)
@@ -1342,7 +1429,8 @@ async function handleDrop(event) {
     resetDragState();
     return;
   }
-  if (targetIndex === fromIndex || targetIndex === fromIndex + 1) {
+  const boundedIndex = Math.max(0, Math.min(queue.length, Number(targetIndex)));
+  if (boundedIndex === fromIndex || boundedIndex === fromIndex + 1) {
     resetDragState();
     return;
   }
@@ -1350,7 +1438,7 @@ async function handleDrop(event) {
   try {
     const state = await sendMessage("playlist:reorder", {
       videoId: dragState.videoId,
-      targetIndex,
+      targetIndex: boundedIndex,
     });
     if (state) {
       renderState(state);

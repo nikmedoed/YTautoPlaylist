@@ -41,6 +41,7 @@ let appState = null;
 let selectedListId = null;
 let selectedListDetails = null;
 let statusTimeout = null;
+let statusHideTimer = null;
 let editingListId = null;
 let pendingShiftSelect = false;
 
@@ -51,9 +52,8 @@ const selectionState = {
 
 const dragState = {
   videoId: null,
-  overRow: null,
-  after: false,
   listId: null,
+  dropIndex: null,
 };
 
 const moveMenu = document.createElement("div");
@@ -70,6 +70,12 @@ moveMenu.append(moveMessage, moveButtons, moveCancel);
 document.body.appendChild(moveMenu);
 
 let moveContext = null;
+
+const dropIndicator = document.createElement("div");
+dropIndicator.className = "manage-drop-indicator";
+const dropIndicatorLine = document.createElement("div");
+dropIndicatorLine.className = "manage-drop-indicator__line";
+dropIndicator.appendChild(dropIndicatorLine);
 
 function hideMoveMenu() {
   moveMenu.dataset.visible = "0";
@@ -112,12 +118,29 @@ function showMoveMenu(videoIds, sourceListId, anchor) {
   const rect = anchor.getBoundingClientRect();
   moveMenu.dataset.visible = "1";
   requestAnimationFrame(() => {
-    const top = rect.bottom + window.scrollY + 6;
-    let left = rect.left + window.scrollX;
     const width = moveMenu.offsetWidth;
-    if (left + width > window.scrollX + window.innerWidth - 12) {
-      left = window.scrollX + window.innerWidth - width - 12;
+    const height = moveMenu.offsetHeight;
+    let left = rect.left;
+    let top = rect.bottom + 6;
+
+    const padding = 12;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    if (left + width > viewportWidth - padding) {
+      left = viewportWidth - width - padding;
     }
+    if (left < padding) {
+      left = padding;
+    }
+
+    if (top + height > viewportHeight - padding) {
+      top = rect.top - height - 6;
+    }
+    if (top < padding) {
+      top = padding;
+    }
+
     moveMenu.style.top = `${top}px`;
     moveMenu.style.left = `${left}px`;
   });
@@ -176,6 +199,7 @@ function clearDragIndicators() {
   detailList
     .querySelectorAll(".manage-video-item.drop-before, .manage-video-item.drop-after")
     .forEach((card) => card.classList.remove("drop-before", "drop-after"));
+  dropIndicator.remove();
 }
 
 function resetDragState() {
@@ -187,9 +211,8 @@ function resetDragState() {
   }
   clearDragIndicators();
   dragState.videoId = null;
-  dragState.overRow = null;
-  dragState.after = false;
   dragState.listId = null;
+  dragState.dropIndex = null;
 }
 
 function handleDragStart(event) {
@@ -213,8 +236,8 @@ function handleDragStart(event) {
   }
   dragState.videoId = row.dataset.id || null;
   dragState.listId = row.dataset.listId || null;
-  dragState.overRow = null;
-  dragState.after = false;
+  dragState.dropIndex = null;
+  dropIndicator.remove();
   card.classList.add("dragging");
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = "move";
@@ -225,62 +248,96 @@ function handleDragStart(event) {
 function handleDragOver(event) {
   if (!dragState.videoId) return;
   event.preventDefault();
-  const row = event.target.closest(".manage-list-row");
-  if (!row || row.dataset.id === dragState.videoId) {
-    return;
-  }
-  if (
-    dragState.listId &&
-    row.dataset.listId &&
-    row.dataset.listId !== dragState.listId
-  ) {
-    return;
-  }
-  const card = row.querySelector(".manage-video-item");
-  const rect = card?.getBoundingClientRect() || row.getBoundingClientRect();
-  const after = event.clientY - rect.top > rect.height / 2;
-  if (dragState.overRow !== row || dragState.after !== after) {
-    clearDragIndicators();
-    card?.classList.add(after ? "drop-after" : "drop-before");
-    dragState.overRow = row;
-    dragState.after = after;
-  }
+  const rows = Array.from(
+    detailList.querySelectorAll(".manage-list-row")
+  ).filter((row) => {
+    if (!dragState.listId) return true;
+    const { listId } = row.dataset;
+    return !listId || listId === dragState.listId;
+  });
   if (event.dataTransfer) {
     event.dataTransfer.dropEffect = "move";
+  }
+  if (!rows.length) {
+    dragState.dropIndex = 0;
+    const scrollTop = detailList.scrollTop;
+    dropIndicator.style.top = `${Math.max(0, scrollTop)}px`;
+    if (!detailList.contains(dropIndicator)) {
+      detailList.appendChild(dropIndicator);
+    }
+    return;
+  }
+  const pointerY = event.clientY;
+  let targetIndex = rows.length;
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    const card = row.querySelector(".manage-video-item");
+    const rect = card?.getBoundingClientRect() || row.getBoundingClientRect();
+    if (pointerY < rect.top + rect.height / 2) {
+      targetIndex = index;
+      break;
+    }
+  }
+  dragState.dropIndex = targetIndex;
+
+  const listRect = detailList.getBoundingClientRect();
+  const scrollTop = detailList.scrollTop;
+  const beforeRow = targetIndex > 0 ? rows[targetIndex - 1] : null;
+  const afterRow = targetIndex < rows.length ? rows[targetIndex] : null;
+  const beforeRect = beforeRow
+    ? beforeRow.querySelector(".manage-video-item")?.getBoundingClientRect() ||
+      beforeRow.getBoundingClientRect()
+    : null;
+  const afterRect = afterRow
+    ? afterRow.querySelector(".manage-video-item")?.getBoundingClientRect() ||
+      afterRow.getBoundingClientRect()
+    : null;
+  const EDGE_OFFSET = 12;
+  let targetTop;
+  if (beforeRect && afterRect) {
+    const gap = afterRect.top - beforeRect.bottom;
+    const offset = gap > 0 ? gap / 2 : 0;
+    targetTop = beforeRect.bottom + offset;
+  } else if (!beforeRect && afterRect) {
+    const offset = Math.min(EDGE_OFFSET, afterRect.height / 2);
+    targetTop = afterRect.top - offset;
+  } else if (beforeRect && !afterRect) {
+    const offset = Math.min(EDGE_OFFSET, beforeRect.height / 2);
+    targetTop = beforeRect.bottom + offset;
+  } else {
+    targetTop = listRect.top + detailList.clientHeight / 2;
+  }
+  const normalizedTop = Math.max(
+    0,
+    Math.min(detailList.scrollHeight, targetTop - listRect.top + scrollTop)
+  );
+  dropIndicator.style.top = `${normalizedTop}px`;
+  if (!detailList.contains(dropIndicator)) {
+    detailList.appendChild(dropIndicator);
   }
 }
 
 async function handleDrop(event) {
   if (!dragState.videoId) return;
   event.preventDefault();
-  const directRow = event.target.closest(".manage-list-row");
-  let targetRow = directRow || dragState.overRow;
-  if (
-    targetRow &&
-    dragState.listId &&
-    targetRow.dataset.listId &&
-    targetRow.dataset.listId !== dragState.listId
-  ) {
-    resetDragState();
-    return;
-  }
-  const rows = Array.from(detailList.querySelectorAll(".manage-list-row"));
-  let targetIndex;
-  if (!targetRow) {
-    targetIndex = rows.length;
-  } else {
-    targetIndex = rows.indexOf(targetRow);
-    if (targetIndex === -1) {
-      resetDragState();
-      return;
+  const rows = Array.from(
+    detailList.querySelectorAll(".manage-list-row")
+  ).filter((row) => {
+    if (!dragState.listId) return true;
+    const { listId } = row.dataset;
+    return !listId || listId === dragState.listId;
+  });
+  let targetIndex = dragState.dropIndex;
+  if (typeof targetIndex !== "number") {
+    const directRow = event.target.closest(".manage-list-row");
+    if (directRow && rows.includes(directRow)) {
+      const card = directRow.querySelector(".manage-video-item");
+      const rect = card?.getBoundingClientRect() || directRow.getBoundingClientRect();
+      const baseIndex = rows.indexOf(directRow);
+      targetIndex = event.clientY < rect.top + rect.height / 2 ? baseIndex : baseIndex + 1;
+    } else {
+      targetIndex = rows.length;
     }
-    const card = targetRow.querySelector(".manage-video-item");
-    const rect = card?.getBoundingClientRect() || targetRow.getBoundingClientRect();
-    const after =
-      directRow === targetRow
-        ? event.clientY - rect.top > rect.height / 2
-        : dragState.after;
-    if (after) targetIndex += 1;
   }
 
   const queue = Array.isArray(selectedListDetails?.queue)
@@ -291,7 +348,8 @@ async function handleDrop(event) {
     resetDragState();
     return;
   }
-  if (targetIndex === fromIndex || targetIndex === fromIndex + 1) {
+  const boundedIndex = Math.max(0, Math.min(queue.length, Number(targetIndex)));
+  if (boundedIndex === fromIndex || boundedIndex === fromIndex + 1) {
     resetDragState();
     return;
   }
@@ -299,7 +357,7 @@ async function handleDrop(event) {
   try {
     const state = await sendMessage("playlist:reorder", {
       videoId: dragState.videoId,
-      targetIndex,
+      targetIndex: boundedIndex,
       listId: dragState.listId || selectedListDetails?.id || null,
     });
     if (state && Array.isArray(state.lists)) {
@@ -337,25 +395,71 @@ async function sendMessage(type, payload = {}) {
   }
 }
 
-function setStatus(text, kind = "info", timeout = 2500) {
-  if (!text) {
+function hideStatus(immediate = false) {
+  if (!statusBox || !statusText) return;
+  if (statusTimeout) {
+    clearTimeout(statusTimeout);
+    statusTimeout = null;
+  }
+  if (statusHideTimer) {
+    clearTimeout(statusHideTimer);
+    statusHideTimer = null;
+  }
+  const finalize = () => {
+    statusHideTimer = null;
     statusBox.hidden = true;
     statusBox.removeAttribute("data-kind");
-    if (statusTimeout) clearTimeout(statusTimeout);
-    statusTimeout = null;
+    statusText.textContent = "";
+  };
+  statusBox.dataset.visible = "0";
+  if (immediate) {
+    finalize();
     return;
+  }
+  statusHideTimer = window.setTimeout(() => {
+    if (statusBox.dataset.visible !== "1") {
+      finalize();
+    }
+  }, 220);
+}
+
+function setStatus(text, kind = "info", timeout = 5000) {
+  if (!statusBox || !statusText) return;
+  if (!text) {
+    hideStatus(true);
+    return;
+  }
+  if (statusHideTimer) {
+    clearTimeout(statusHideTimer);
+    statusHideTimer = null;
   }
   statusText.textContent = text;
   statusBox.dataset.kind = kind;
   statusBox.hidden = false;
+  void statusBox.offsetWidth;
+  statusBox.dataset.visible = "1";
   if (statusTimeout) clearTimeout(statusTimeout);
   if (timeout && timeout > 0) {
     statusTimeout = window.setTimeout(() => {
-      statusBox.hidden = true;
-      statusBox.removeAttribute("data-kind");
-      statusTimeout = null;
+      hideStatus();
     }, timeout);
+  } else {
+    statusTimeout = null;
   }
+}
+
+if (statusBox) {
+  statusBox.addEventListener("click", () => {
+    hideStatus(true);
+  });
+  statusBox.hidden = true;
+  statusBox.dataset.visible = "0";
+  statusText.textContent = "";
+  if (!statusBox.hasAttribute("role")) {
+    statusBox.setAttribute("role", "status");
+  }
+  statusBox.setAttribute("aria-live", "polite");
+  statusBox.setAttribute("aria-atomic", "true");
 }
 
 function ensureSelectedList(state) {
