@@ -431,47 +431,62 @@ function renderLists() {
   listsBody.textContent = "";
   const lists = collectListsMeta();
   lists.forEach((list) => {
-    const tr = document.createElement("tr");
-    tr.dataset.listId = list.id;
+    const item = document.createElement("li");
+    item.className = "list-card";
+    item.dataset.listId = list.id;
     if (list.id === selectedListId) {
-      tr.classList.add("active-row");
+      item.classList.add("active");
     }
 
-    const nameTd = document.createElement("td");
-    nameTd.textContent = list.name;
-    tr.appendChild(nameTd);
+    const main = document.createElement("div");
+    main.className = "list-card-main";
 
-    const countTd = document.createElement("td");
-    countTd.textContent = String(list.length ?? 0);
-    tr.appendChild(countTd);
+    const header = document.createElement("div");
+    header.className = "list-card-header";
 
-    const freezeTd = document.createElement("td");
+    const title = document.createElement("div");
+    title.className = "list-card-title";
+    title.textContent = list.name || "Без названия";
+    header.appendChild(title);
+
     if (list.id === DEFAULT_LIST_ID) {
-      freezeTd.textContent = "Удаляет просмотренные";
-    } else {
-      freezeTd.textContent = list.freeze
-        ? "Сохраняет просмотренные"
-        : "Удаляет просмотренные";
+      const badge = document.createElement("span");
+      badge.className = "list-card-badge";
+      badge.textContent = "Основной";
+      header.appendChild(badge);
     }
-    tr.appendChild(freezeTd);
 
-    const actionsTd = document.createElement("td");
-    actionsTd.className = "list-actions";
-    actionsTd.appendChild(makeActionButton("Открыть", "view", list.id));
-    actionsTd.appendChild(makeActionButton("Редактировать", "edit", list.id));
-    actionsTd.appendChild(makeActionButton("Экспорт", "export", list.id));
+    main.appendChild(header);
+
+    const meta = document.createElement("div");
+    meta.className = "list-card-meta";
+    const metaParts = [`${list.length ?? 0} видео`];
+    metaParts.push(
+      list.freeze ? "Сохраняет просмотренные" : "Удаляет просмотренные"
+    );
+    meta.textContent = metaParts.join(" • ");
+    main.appendChild(meta);
+
+    item.appendChild(main);
+
+    const actions = document.createElement("div");
+    actions.className = "list-card-actions";
+    actions.appendChild(makeActionButton("Открыть", "view", list.id));
+    actions.appendChild(makeActionButton("Редактировать", "edit", list.id));
+    actions.appendChild(makeActionButton("Экспорт", "export", list.id));
     if (list.id !== DEFAULT_LIST_ID) {
-      actionsTd.appendChild(
+      actions.appendChild(
         makeActionButton("Удалить", "delete", list.id, { className: "secondary" })
       );
-    } else {
-      const note = document.createElement("span");
-      note.className = "list-note";
-      note.textContent = "Основной список";
-      actionsTd.appendChild(note);
     }
-    tr.appendChild(actionsTd);
-    listsBody.appendChild(tr);
+    item.appendChild(actions);
+
+    item.addEventListener("click", (event) => {
+      if (event.target.closest("button")) return;
+      loadListDetails(list.id).catch(() => {});
+    });
+
+    listsBody.appendChild(item);
   });
 }
 
@@ -739,8 +754,8 @@ async function loadListDetails(listId) {
 }
 
 function highlightSelectedRow(listId) {
-  Array.from(listsBody.querySelectorAll("tr")).forEach((row) => {
-    row.classList.toggle("active-row", row.dataset.listId === listId);
+  Array.from(listsBody.querySelectorAll(".list-card")).forEach((item) => {
+    item.classList.toggle("active", item.dataset.listId === listId);
   });
 }
 
