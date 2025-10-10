@@ -124,8 +124,7 @@
     data-menu-open={menuOpen ? '1' : '0'}
     on:click={toggleMenu}
   >
-    <span aria-hidden="true">⋮</span>
-    <span class="sr-only">Переместить</span>
+    ⋮
   </button>
   <button
     class="video-remove"
@@ -134,8 +133,7 @@
     aria-label="Удалить"
     on:click={handleRemove}
   >
-    <span aria-hidden="true">×</span>
-    <span class="sr-only">Удалить</span>
+    ×
   </button>
   {#if menuOpen}
     <div class="video-move-menu">
