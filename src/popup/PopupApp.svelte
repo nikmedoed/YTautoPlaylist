@@ -6,26 +6,25 @@
     openListsManager,
     sendMessage,
   } from './api'
+  import CollectionProgress from './components/CollectionProgress.svelte'
+  import ControlPanel, { type ControlActions } from './components/ControlPanel.svelte'
+  import HistoryList, { type HistoryListItem } from './components/HistoryList.svelte'
+  import ListSelector from './components/ListSelector.svelte'
+  import QueueList, { type QueueReorderEvent } from './components/QueueList.svelte'
+  import StatusBanner from './components/StatusBanner.svelte'
   import type {
     Capabilities,
     CollectionLogEntry,
     CollectionProgressEvent,
     CollectionState,
+    HistoryEntry,
     PlaylistListMeta,
     PlaylistPresentation,
     StatusKind,
     StatusMessage,
     VideoEntry,
-    HistoryEntry,
   } from './types'
-  import {
-    formatDateTime,
-    formatDuration,
-    formatListName,
-    formatShortDate,
-    formatTime,
-    resolveThumbnail,
-  } from './utils'
+  import { formatListName } from './utils'
 
   const MAX_COLLECTION_LOG_ITEMS = 8
 
@@ -92,7 +91,11 @@
     const count = presentation?.currentQueue?.queue.length ?? 0
     return count > 0 ? `${count}` : '0'
   })
-  const historyView = $derived(
+  const moveTargets = $derived(() => {
+    const currentId = presentation?.currentQueue?.id ?? presentation?.currentListId ?? ''
+    return lists.filter((list) => list.id !== currentId)
+  })
+  const historyView = $derived<HistoryListItem[]>(() =>
     historyItems.map((item, index) => ({
       item,
       index,
@@ -101,37 +104,6 @@
   )
 
   let statusTimeout: ReturnType<typeof setTimeout> | null = null
-  let queueListEl: HTMLUListElement | null = null
-  const dragState = {
-    videoId: null as string | null,
-    listId: null as string | null,
-    dropIndex: null as number | null,
-  }
-  let currentDragItem: HTMLElement | null = null
-  let currentHoverItem: HTMLElement | null = null
-  let queueDropIndicator: HTMLDivElement | null = null
-  let queueDropLine: HTMLDivElement | null = null
-
-  type MoveMenuState = {
-    visible: boolean
-    x: number
-    y: number
-    videoId: string | null
-    listId: string | null
-  }
-
-  let moveMenuState = $state<MoveMenuState>({
-    visible: false,
-    x: 0,
-    y: 0,
-    videoId: null,
-    listId: null,
-  })
-
-  const moveTargets = $derived(() => {
-    const currentId = presentation?.currentQueue?.id ?? presentation?.currentListId ?? ''
-    return lists.filter((list) => list.id !== currentId)
-  })
 
   $effect(() => {
     const next = presentation?.currentQueue?.id ?? presentation?.currentListId ?? ''
@@ -160,176 +132,6 @@
       statusTimeout = null
     }
     status = null
-  }
-
-  function ensureQueueDropIndicator() {
-    if (!queueListEl) return
-    if (!queueDropIndicator) {
-      queueDropIndicator = document.createElement('div')
-      queueDropIndicator.className = 'queue-drop-indicator'
-    }
-    if (!queueDropLine) {
-      queueDropLine = document.createElement('div')
-      queueDropLine.className = 'queue-drop-indicator__line'
-      queueDropIndicator.appendChild(queueDropLine)
-    }
-    if (!queueDropIndicator.parentElement) {
-      queueListEl.appendChild(queueDropIndicator)
-    }
-  }
-
-  function resetDragVisuals() {
-    if (currentDragItem) {
-      currentDragItem.classList.remove('dragging')
-      currentDragItem = null
-    }
-    if (currentHoverItem) {
-      currentHoverItem.classList.remove('drop-before', 'drop-after')
-      currentHoverItem = null
-    }
-    if (queueDropIndicator?.parentElement) {
-      queueDropIndicator.remove()
-    }
-    dragState.videoId = null
-    dragState.listId = null
-    dragState.dropIndex = null
-  }
-
-  function handleDragStart(event: DragEvent) {
-    const handle = (event.target as HTMLElement | null)?.closest('.video-handle')
-    if (!handle) {
-      event.preventDefault()
-      return
-    }
-    const item = handle.closest<HTMLLIElement>('.video-item')
-    if (!item || !item.dataset.id) {
-      event.preventDefault()
-      return
-    }
-    dragState.videoId = item.dataset.id
-    dragState.listId = item.dataset.listId ?? presentation?.currentQueue?.id ?? null
-    dragState.dropIndex = Array.from(queueListEl?.children ?? []).indexOf(item)
-    item.classList.add('dragging')
-    currentDragItem = item
-    if (event.dataTransfer) {
-      event.dataTransfer.effectAllowed = 'move'
-      event.dataTransfer.setData('text/plain', dragState.videoId)
-    }
-  }
-
-  function handleDragOver(event: DragEvent) {
-    if (!dragState.videoId || !queueListEl) return
-    const target = (event.target as HTMLElement | null)?.closest<HTMLLIElement>('.video-item')
-    if (!target) return
-    event.preventDefault()
-    if (target === currentDragItem) {
-      if (currentHoverItem && currentHoverItem !== target) {
-        currentHoverItem.classList.remove('drop-before', 'drop-after')
-        currentHoverItem = null
-      }
-      if (queueDropIndicator?.parentElement) {
-        queueDropIndicator.remove()
-      }
-      return
-    }
-    const items = Array.from(queueListEl.querySelectorAll<HTMLLIElement>('.video-item'))
-    const index = items.indexOf(target)
-    if (index === -1) return
-    const rect = target.getBoundingClientRect()
-    const before = event.clientY - rect.top < rect.height / 2
-    target.classList.toggle('drop-before', before)
-    target.classList.toggle('drop-after', !before)
-    if (currentHoverItem && currentHoverItem !== target) {
-      currentHoverItem.classList.remove('drop-before', 'drop-after')
-    }
-    currentHoverItem = target
-    dragState.dropIndex = before ? index : index + 1
-    ensureQueueDropIndicator()
-    if (queueDropIndicator) {
-      const top = target.offsetTop + (before ? 0 : target.offsetHeight)
-      queueDropIndicator.style.top = `${top}px`
-    }
-  }
-
-  async function handleDrop(event: DragEvent) {
-    if (!dragState.videoId || dragState.dropIndex === null) {
-      resetDragVisuals()
-      return
-    }
-    event.preventDefault()
-    try {
-      const response = await sendMessage<PlaylistPresentation>('playlist:reorder', {
-        videoId: dragState.videoId,
-        targetIndex: dragState.dropIndex,
-      })
-      await applyStateResult(response)
-      setStatus('Порядок обновлён', 'info')
-    } catch (error) {
-      console.error(error)
-      setStatus('Не удалось изменить порядок', 'error', 3000)
-    } finally {
-      resetDragVisuals()
-    }
-  }
-
-  function handleDragEnd() {
-    resetDragVisuals()
-  }
-
-  function handleQueueBodyKeydown(event: KeyboardEvent, entry: VideoEntry) {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault()
-      handleQueuePlay(entry)
-    }
-  }
-
-  function openMoveMenu(entry: VideoEntry, event: MouseEvent) {
-    event.stopPropagation()
-    const target = event.currentTarget as HTMLElement | null
-    if (!target) return
-    const rect = target.getBoundingClientRect()
-    moveMenuState.x = rect.right - 180
-    moveMenuState.y = rect.bottom + 6
-    moveMenuState.videoId = entry.id
-    moveMenuState.listId = presentation?.currentQueue?.id ?? null
-    moveMenuState.visible = true
-  }
-
-  function closeMoveMenu() {
-    moveMenuState.visible = false
-    moveMenuState.videoId = null
-    moveMenuState.listId = null
-  }
-
-  async function moveVideoTo(targetListId: string) {
-    if (!moveMenuState.videoId) return
-    try {
-      const response = await sendMessage<PlaylistPresentation>('playlist:moveVideo', {
-        videoId: moveMenuState.videoId,
-        targetListId,
-      })
-      await applyStateResult(response)
-      setStatus('Видео перемещено', 'success')
-    } catch (error) {
-      console.error(error)
-      setStatus('Не удалось переместить видео', 'error', 3000)
-    } finally {
-      closeMoveMenu()
-    }
-  }
-
-  function handleWindowClick(event: MouseEvent) {
-    if (!moveMenuState.visible) return
-    const target = event.target as HTMLElement | null
-    if (!target?.closest('[data-move-menu]')) {
-      closeMoveMenu()
-    }
-  }
-
-  function handleWindowKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape' && moveMenuState.visible) {
-      closeMoveMenu()
-    }
   }
 
   function diffQueueLength(next: PlaylistPresentation | null | undefined): number {
@@ -520,6 +322,43 @@
     }
   }
 
+  async function handleQueueMove(entry: VideoEntry, targetListId: string) {
+    if (!entry?.id || !targetListId) return
+    try {
+      const response = await sendMessage<PlaylistPresentation>('playlist:moveVideo', {
+        videoId: entry.id,
+        targetListId,
+      })
+      await applyStateResult(response)
+      setStatus('Видео перемещено', 'success')
+    } catch (error) {
+      console.error('Failed to move video', error)
+      setStatus('Не удалось переместить видео', 'error', 3000)
+    }
+  }
+
+  async function handleQueueReorder(event: QueueReorderEvent) {
+    if (!event.videoId) return
+    try {
+      const response = await sendMessage<PlaylistPresentation>('playlist:reorder', {
+        videoId: event.videoId,
+        targetIndex: event.targetIndex,
+      })
+      await applyStateResult(response)
+      setStatus('Порядок обновлён', 'info')
+    } catch (error) {
+      console.error(error)
+      setStatus('Не удалось изменить порядок', 'error', 3000)
+    }
+  }
+
+  function handleQueueKeypress(event: KeyboardEvent, entry: VideoEntry) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      handleQueuePlay(entry)
+    }
+  }
+
   async function handleHistoryRestore(entry: HistoryEntry, position: number, event: Event) {
     event.stopPropagation()
     setStatus('Возвращаю видео...', 'info')
@@ -619,15 +458,70 @@
     collection.collapsed = !collection.collapsed
   }
 
-  function listOptionLabel(item: PlaylistListMeta): string {
-    return item.id === 'default' ? item.name : formatListName(item.name, item.freeze)
-  }
-
   function resolveListLabel(listId: string | null | undefined): string | null {
     if (!listId || !presentation?.lists) return null
     const match = presentation.lists.find((list) => list.id === listId)
     if (!match) return null
     return formatListName(match.name, match.freeze)
+  }
+
+  function handleListChange(event: CustomEvent<{ listId: string }>) {
+    const { listId } = event.detail
+    listSelection = listId
+    changeList(listId)
+  }
+
+  async function handleManageLists() {
+    try {
+      await openListsManager()
+    } finally {
+      await refreshPresentation()
+    }
+  }
+
+  function handleControlAction(event: CustomEvent<{ type: ControlActions }>) {
+    switch (event.detail.type) {
+      case 'add-current':
+        handleAdd('current')
+        break
+      case 'add-page':
+        handleAdd('page')
+        break
+      case 'collect':
+        handleCollect()
+        break
+      case 'play-next':
+        handlePlayNext()
+        break
+    }
+  }
+
+  function handleQueueEvent(event: CustomEvent<{ entry: VideoEntry }>) {
+    handleQueuePlay(event.detail.entry)
+  }
+
+  function handleQueueRemoveEvent(
+    event: CustomEvent<{ entry: VideoEntry; event: MouseEvent }>,
+  ) {
+    handleQueueRemove(event.detail.entry, event.detail.event)
+  }
+
+  function handleQueueMoveEvent(
+    event: CustomEvent<{ entry: VideoEntry; targetListId: string }>,
+  ) {
+    handleQueueMove(event.detail.entry, event.detail.targetListId)
+  }
+
+  function handleQueueKeypressEvent(
+    event: CustomEvent<{ entry: VideoEntry; event: KeyboardEvent }>,
+  ) {
+    handleQueueKeypress(event.detail.event, event.detail.entry)
+  }
+
+  function handleHistoryRestoreEvent(
+    event: CustomEvent<{ entry: HistoryEntry; position: number; event: Event }>,
+  ) {
+    handleHistoryRestore(event.detail.entry, event.detail.position, event.detail.event)
   }
 
   onMount(() => {
@@ -651,126 +545,19 @@
 
 <svelte:window onfocus={updateCapabilities} />
 
-<div class="list-bar">
-  <label for="listSelect">Список</label>
-  <select
-    id="listSelect"
-    bind:value={listSelection}
-    disabled={isSwitchingList}
-    onchange={(event) => changeList((event.currentTarget as HTMLSelectElement).value)}
-  >
-    {#if !lists.length}
-      <option value="">Списки не найдены</option>
-    {:else}
-      {#each lists as list (list.id)}
-        <option value={list.id}>{listOptionLabel(list)}</option>
-      {/each}
-    {/if}
-  </select>
-  <button class="secondary" type="button" onclick={openListsManager}>
-    Управление списками
-  </button>
-</div>
+<ListSelector
+  lists={lists}
+  selectedId={listSelection}
+  disabled={isSwitchingList}
+  on:change={handleListChange}
+  on:manage={handleManageLists}
+/>
 
-<section class="controls">
-  <div class="control-row control-row--actions">
-    <button
-      type="button"
-      disabled={!capabilities.canAddCurrent || loadings.addCurrent}
-      onclick={() => handleAdd('current')}
-    >
-      Добавить текущее
-    </button>
-    <button
-      type="button"
-      disabled={!capabilities.canAddPage || loadings.addPage}
-      onclick={() => handleAdd('page')}
-    >
-      Добавить со страницы
-    </button>
-    <button type="button" disabled={loadings.collect} onclick={handleCollect}>
-      Собрать из подписок
-    </button>
-  </div>
-  <div class="control-row control-row--secondary">
-    <button
-      id="playNext"
-      class="secondary"
-      type="button"
-      disabled={loadings.playNext}
-      onclick={handlePlayNext}
-    >
-      Следующее
-    </button>
-  </div>
-</section>
+<ControlPanel capabilities={capabilities} loadings={loadings} on:action={handleControlAction} />
 
-<section
-  id="status"
-  role="status"
-  aria-live="polite"
-  aria-atomic="true"
-  data-visible={status ? '1' : '0'}
-  data-kind={status?.kind ?? 'info'}
->
-  <span>{status?.text ?? ''}</span>
-  <button
-    type="button"
-    class="status-close"
-    aria-label="Скрыть уведомление"
-    onclick={clearStatus}
-  >
-    ×
-  </button>
-</section>
+<StatusBanner status={status} onClose={clearStatus} />
 
-{#if collection.active || collection.entries.length}
-  <section
-    id="collectionProgress"
-    class={`collection${collection.collapsed ? ' collapsed' : ''}${
-      !collection.active && !collection.errorMessage ? ' finished' : ''
-    }${collection.errorMessage ? ' error' : ''}`}
-  >
-    <header>
-      <div class="collection-info">
-        <h4>Сбор подписок</h4>
-        <span>{collection.stageTitle ?? 'Ожидание'}</span>
-      </div>
-      <div class="collection-actions">
-        <span>{collection.counters}</span>
-        <button class="secondary" type="button" onclick={toggleCollectionCollapsed}>
-          {collection.collapsed ? 'Показать логи' : 'Скрыть логи'}
-        </button>
-      </div>
-    </header>
-    <div class="collection-body">
-      <ul class="collection-log">
-        {#if !collection.entries.length}
-          <li class="collection-stage__log">Логи пока отсутствуют</li>
-        {:else}
-          {#each collection.entries as entry (entry.id)}
-            <li class="collection-stage">
-              <details open>
-                <summary>
-                  <span class="collection-stage__title">{entry.message}</span>
-                  <span class="collection-stage__meta">{formatTime(entry.timestamp)}</span>
-                </summary>
-                {#if entry.detail}
-                  <div class="collection-stage__body">
-                    <div class="collection-stage__log">{entry.detail}</div>
-                  </div>
-                {/if}
-              </details>
-            </li>
-          {/each}
-        {/if}
-      </ul>
-      {#if collection.errorMessage}
-        <p class="collection-stage__log">{collection.errorMessage}</p>
-      {/if}
-    </div>
-  </section>
-{/if}
+<CollectionProgress collection={collection} on:toggle={toggleCollectionCollapsed} />
 
 <section class="queue">
   <header>
@@ -782,180 +569,22 @@
     </div>
     <span id="queueCount">{queueCountLabel}</span>
   </header>
-  {#if queueItems.length}
-    <ul
-      id="queueList"
-      class="video-list"
-      bind:this={queueListEl}
-      ondragstart={handleDragStart}
-      ondragover={handleDragOver}
-      ondrop={handleDrop}
-      ondragend={handleDragEnd}
-    >
-      {#each queueItems as item, index (item.id)}
-        <li
-          class={`video-item${item.id === activeVideoId ? ' active' : ''}`}
-          data-id={item.id}
-          data-index={index}
-          data-list-id={presentation?.currentQueue?.id ?? ''}
-          draggable="true"
-        >
-          <button
-            class="video-handle"
-            type="button"
-            aria-label="Перетащить видео"
-            title="Перетащить видео"
-          ></button>
-          <img
-            class="video-thumb"
-            src={resolveThumbnail(item)}
-            alt=""
-            loading="lazy"
-            decoding="async"
-          />
-          <div
-            class="video-body"
-            role="button"
-            tabindex="0"
-            onclick={() => handleQueuePlay(item)}
-            onkeydown={(event) => handleQueueBodyKeydown(event, item)}
-          >
-            <div class="video-title">{item.title}</div>
-            <div class="video-details">
-              {#if item.channelTitle}
-                <span>{item.channelTitle}</span>
-              {/if}
-              {#if item.duration}
-                <span>{formatDuration(item.duration)}</span>
-              {/if}
-              {#if item.publishedAt}
-                <span>{formatShortDate(item.publishedAt)}</span>
-              {/if}
-              {#if item.addedAt}
-                <span>добавлено {formatDateTime(item.addedAt)}</span>
-              {/if}
-            </div>
-          </div>
-          <button
-            class="video-move"
-            type="button"
-            title="Переместить в другой список"
-            aria-label="Переместить в другой список"
-            onclick={(event) => openMoveMenu(item, event)}
-          >
-            ⋮
-          </button>
-          <button
-            class="video-remove"
-            type="button"
-            title="Удалить"
-            aria-label="Удалить"
-            onclick={(event) => handleQueueRemove(item, event)}
-          >
-            ×
-          </button>
-        </li>
-      {/each}
-    </ul>
-  {:else}
-    <p class="empty">Очередь пустая</p>
-  {/if}
+  <QueueList
+    items={queueItems}
+    activeVideoId={activeVideoId}
+    currentListId={presentation?.currentQueue?.id ?? null}
+    moveTargets={moveTargets}
+    on:play={handleQueueEvent}
+    on:remove={handleQueueRemoveEvent}
+    on:move={handleQueueMoveEvent}
+    on:reorder={(event) => handleQueueReorder(event.detail)}
+    on:keypress={handleQueueKeypressEvent}
+  />
 </section>
 
 <section class="history">
   <header>
     <h3>Последние 10</h3>
   </header>
-{#if historyView.length}
-  <ul id="historyList" class="video-list">
-    {#each historyView as { item, index, listLabel } (item.id + index)}
-      <li class="video-item" data-id={item.id} data-position={index}>
-        <img
-          class="video-thumb"
-          src={resolveThumbnail(item)}
-          alt=""
-          loading="lazy"
-            decoding="async"
-          />
-          <div class="video-body">
-            <div class="video-title">{item.title}</div>
-          <div class="video-details">
-            {#if item.channelTitle}
-              <span>{item.channelTitle}</span>
-            {/if}
-            {#if item.duration}
-              <span>{formatDuration(item.duration)}</span>
-            {/if}
-            {#if listLabel}
-              <span class="list-label">{listLabel}</span>
-            {/if}
-            {#if item.watchedAt}
-              <span>{formatDateTime(item.watchedAt)}</span>
-            {/if}
-          </div>
-          </div>
-          <button
-            class="history-restore"
-            type="button"
-            title="Вернуть в очередь"
-            aria-label="Вернуть в очередь"
-            data-action="restore"
-            onclick={(event) => handleHistoryRestore(item, index, event)}
-          >
-            ↺
-          </button>
-        </li>
-      {/each}
-    </ul>
-  {:else}
-    <p class="empty">Истории пока нет</p>
-  {/if}
+  <HistoryList items={historyView} on:restore={handleHistoryRestoreEvent} />
 </section>
-
-<style>
-  .queue-subtitle {
-    display: block;
-    font-size: 11px;
-    opacity: 0.7;
-    margin-top: 2px;
-  }
-
-  .list-label {
-    background: rgba(0, 0, 0, 0.25);
-    border-radius: 10px;
-    padding: 2px 8px;
-  }
-
-  .video-body {
-    background: none;
-    border: none;
-    text-align: left;
-    color: inherit;
-    padding: 10px 40px 10px 14px;
-  }
-
-  .video-body:focus-visible {
-    outline: 2px solid rgba(244, 67, 54, 0.7);
-    outline-offset: 2px;
-  }
-
-  #status {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .status-close {
-    border: none;
-    background: transparent;
-    color: inherit;
-    font-size: 18px;
-    line-height: 1;
-    padding: 0;
-    cursor: pointer;
-  }
-
-  .status-close:hover {
-    opacity: 0.85;
-  }
-</style>
