@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>YT Auto Playlist</title>
+    <link rel="stylesheet" href="styles/base.css" />
+    <link rel="stylesheet" href="styles/video-item.css" />
+    <link rel="stylesheet" href="styles/collection.css" />
+    <link rel="stylesheet" href="styles/queue.css" />
+  </head>
+  <body>
+    <div id="app">
+      <section class="controls">
+        <div class="control-row control-row--playback">
+          <div class="playback-block">
+            <button
+              id="startPlayback"
+              class="playback-control playback-start"
+              type="button"
+            >
+              Запустить плейлист
+            </button>
+            <div
+              class="playback-controls hidden"
+              role="group"
+              aria-label="Управление воспроизведением"
+            >
+              <button
+                id="playPrev"
+                class="icon-button icon-button--lg playback-jump"
+                type="button"
+                aria-label="Предыдущее"
+              >
+                <span class="icon" aria-hidden="true">⏮</span>
+                <span class="visually-hidden">Предыдущее</span>
+              </button>
+              <button
+                id="togglePlayback"
+                class="playback-toggle hidden"
+                type="button"
+                aria-label="Пауза"
+                title="Пауза"
+              >
+                <span class="icon" aria-hidden="true">⏸</span>
+                <span class="visually-hidden">Пауза</span>
+              </button>
+              <button
+                id="playNext"
+                class="icon-button icon-button--lg playback-jump"
+                type="button"
+                aria-label="Следующее"
+              >
+                <span class="icon" aria-hidden="true">⏭</span>
+                <span class="visually-hidden">Следующее</span>
+              </button>
+            </div>
+            <button
+              id="postponeCurrent"
+              class="secondary playback-control"
+              type="button"
+            >
+              Отложить
+            </button>
+          </div>
+          <div class="control-group control-group--management">
+            <button id="openFilterSettings" class="secondary management-button" type="button">
+              <span class="control-icon" aria-hidden="true">✎</span>
+              <span class="control-text">Фильтры</span>
+            </button>
+            <button id="openManager" class="secondary management-button" type="button">
+              <span class="control-icon" aria-hidden="true">📂</span>
+              <span class="control-text">Списки</span>
+            </button>
+          </div>
+        </div>
+        <div class="control-row control-row--add hidden">
+          <span class="control-label">Добавить:</span>
+          <div class="control-group control-group--add">
+            <button
+              id="addCurrent"
+              type="button"
+              aria-label="Добавить текущее видео"
+            >
+              Текущее
+            </button>
+            <button
+              id="addAll"
+              type="button"
+              aria-label="Добавить все видео на странице"
+            >
+              Все на странице
+            </button>
+            <button
+              id="addVisible"
+              type="button"
+              aria-label="Добавить видимые видео"
+            >
+              Видимые
+            </button>
+          </div>
+        </div>
+      </section>
+      <section id="status" hidden>
+        <span id="statusText"></span>
+      </section>
+      <section class="history">
+        <header class="history-header">
+          <div class="history-tabs" role="tablist" aria-label="История">
+            <button
+              id="historyLatest"
+              class="history-tab is-active"
+              type="button"
+              data-history-mode="latest"
+              role="tab"
+              aria-selected="true"
+            >
+              Последнее просмотренное
+            </button>
+            <button
+              id="historyLatestTen"
+              class="history-tab"
+              type="button"
+              data-history-mode="recent"
+              role="tab"
+              aria-selected="false"
+            >
+              Последние 10
+            </button>
+            <button
+              id="historyDeleted"
+              class="history-tab"
+              type="button"
+              data-history-mode="deleted"
+              role="tab"
+              aria-selected="false"
+            >
+              Удалённые
+            </button>
+          </div>
+        </header>
+        <ul id="historyList" class="video-list"></ul>
+        <p id="historyEmpty" class="empty" hidden>Истории пока нет</p>
+      </section>
+      <section class="queue">
+        <header class="queue-header">
+          <div class="queue-heading">
+            <h3 class="queue-heading__title">
+              <label class="queue-selector" for="listSwitcher">
+                <span class="visually-hidden">Список очереди</span>
+                <select
+                  id="listSwitcher"
+                  class="queue-selector__select"
+                  aria-label="Выберите список"
+                ></select>
+              </label>
+            </h3>
+            <span
+              id="queueFreezeIndicator"
+              class="queue-freeze-indicator"
+              role="img"
+              aria-label="Список неизменяемый: видео не удаляются автоматически"
+              title="Список неизменяемый: видео не удаляются автоматически"
+              hidden
+            ></span>
+          </div>
+        </header>
+        <ul id="queueList" class="video-list"></ul>
+        <p id="queueEmpty" class="empty" hidden>Очередь пустая</p>
+        <section id="collectionArea" class="collection-area" hidden>
+          <div class="collection-launch">
+            <button id="collectSubscriptions" type="button">
+              Собрать из подписок
+            </button>
+          </div>
+          <p id="collectionNote" class="collection-note" hidden></p>
+          <section id="collectionProgress" class="collection" hidden>
+            <header>
+              <div class="collection-info">
+                <h4>Сбор подписок</h4>
+                <span id="collectionStage"></span>
+              </div>
+              <div class="collection-actions">
+                <div id="collectionCounters" class="collection-metrics"></div>
+              </div>
+            </header>
+            <div class="collection-body">
+              <ul id="collectionLog" class="collection-log"></ul>
+            </div>
+          </section>
+        </section>
+      </section>
+    </div>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

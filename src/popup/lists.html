@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>YT Auto Playlist — Списки</title>
+    <link rel="stylesheet" href="styles/base.css" />
+    <link rel="stylesheet" href="styles/video-item.css" />
+    <link rel="stylesheet" href="styles/collection.css" />
+    <link rel="stylesheet" href="styles/queue.css" />
+    <link rel="stylesheet" href="styles/manager.css" />
+  </head>
+  <body class="full-page">
+    <div id="app">
+      <header class="page-header">
+        <div>
+          <h2>Списки расширения</h2>
+          <p>Создавайте, импортируйте и управляйте очередями.</p>
+        </div>
+        <div class="page-actions">
+          <button id="openCreateModal" type="button">Добавить список</button>
+          <button id="openImportModal" class="secondary" type="button">
+            Импортировать
+          </button>
+        </div>
+      </header>
+      <section id="status" hidden>
+        <span id="statusText"></span>
+        <div id="statusProgress" class="status-progress" hidden>
+          <div id="statusProgressBar" class="status-progress-bar"></div>
+        </div>
+      </section>
+
+      <section class="lists-overview">
+        <ul id="listsBody" class="list-cards"></ul>
+      </section>
+
+      <section class="queue">
+        <div class="detail-actions">
+        <div class="detail-selection-group">
+          <button id="selectAllBtn" type="button">Выбрать все</button>
+          <button id="clearSelectionBtn" class="secondary" type="button">
+            Сбросить выбор
+          </button>
+        </div>
+        <div class="detail-bulk-group">
+          <button id="openAddLinksModal" type="button" class="secondary">
+            Добавить по ссылке
+          </button>
+          <button id="clearListBtn" type="button" disabled>
+            Очистить список
+          </button>
+        </div>
+      </div>
+        <section id="managerCollectionArea" class="collection-area" hidden>
+          <div class="collection-launch">
+            <button id="managerCollectSubscriptions" type="button">
+              Собрать из подписок
+            </button>
+          </div>
+          <p id="managerCollectionNote" class="collection-note" hidden></p>
+          <section id="managerCollectionProgress" class="collection" hidden>
+            <header>
+              <div class="collection-info">
+                <h4>Сбор подписок</h4>
+                <span id="managerCollectionStage"></span>
+              </div>
+              <div class="collection-actions">
+                <span id="managerCollectionCounters"></span>
+              </div>
+            </header>
+            <div class="collection-body">
+              <ul id="managerCollectionLog" class="collection-log"></ul>
+            </div>
+          </section>
+        </section>
+        <ul id="detailList" class="video-list"></ul>
+        <p id="detailEmpty" class="empty" hidden>Список пуст</p>
+        <div
+          id="floatingSelectionActions"
+          class="detail-floating-actions"
+          hidden
+        >
+          <button id="bulkMoveBtn" class="secondary" type="button" disabled>
+            Перенести
+          </button>
+          <button id="bulkDeleteBtn" type="button" disabled>
+            Удалить
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <div id="modalBackdrop" class="modal-backdrop" hidden></div>
+
+    <div id="createModal" class="modal" hidden>
+      <form id="createForm" class="modal-content">
+        <h3>Создание списка</h3>
+        <label class="modal-field">
+          <span>Название</span>
+          <input
+            id="createName"
+            type="text"
+            placeholder="Например, Отложить"
+            maxlength="80"
+            required
+          />
+        </label>
+        <label class="modal-checkbox">
+          <input id="createFreeze" type="checkbox" />
+          <span>Не удалять просмотренные</span>
+        </label>
+        <div class="modal-actions">
+          <button type="submit">Создать</button>
+          <button type="button" class="secondary" data-close-modal>
+            Отмена
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div id="importModal" class="modal" hidden>
+      <form id="importForm" class="modal-content">
+        <h3>Импорт списка</h3>
+        <label class="modal-field">
+          <span>Файл JSON</span>
+          <input
+            id="importFile"
+            type="file"
+            accept="application/json"
+            required
+          />
+        </label>
+        <label class="modal-field">
+          <span>Куда импортировать</span>
+          <select id="importModeSelect">
+            <option value="new">Создать новый список</option>
+            <option value="append">Добавить к существующему</option>
+          </select>
+        </label>
+        <label class="modal-field" id="importTargetField" hidden>
+          <span>Выберите список</span>
+          <select id="importTargetSelect"></select>
+        </label>
+        <div class="modal-actions">
+          <button type="submit">Импортировать</button>
+          <button type="button" class="secondary" data-close-modal>
+            Отмена
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div id="editModal" class="modal" hidden>
+      <form id="editForm" class="modal-content">
+        <h3>Настройки списка</h3>
+        <label class="modal-field">
+          <span>Название</span>
+          <input id="editName" type="text" maxlength="80" required />
+        </label>
+        <label class="modal-checkbox">
+          <input id="editFreeze" type="checkbox" />
+          <span>Не удалять просмотренные</span>
+        </label>
+        <div class="modal-actions">
+          <button type="submit">Сохранить</button>
+          <button type="button" class="secondary" data-close-modal>
+            Отмена
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div id="addLinksModal" class="modal" hidden>
+      <form id="addLinksForm" class="modal-content">
+        <h3>Добавление по ссылкам</h3>
+        <label class="modal-field">
+          <span>Ссылки или ID</span>
+          <textarea
+            id="addLinksTextarea"
+            rows="8"
+            placeholder="https://youtu.be/…&#10;https://www.youtube.com/watch?v=…"
+            required
+          ></textarea>
+          <span class="modal-help"
+            >Можно вставить несколько ссылок построчно или через пробел.</span
+          >
+        </label>
+        <div class="modal-actions">
+          <button type="submit">Добавить</button>
+          <button type="button" class="secondary" data-close-modal>
+            Отмена
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <script type="module" src="lists.js"></script>
+  </body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "LICENSE": 675,
+  "src/background/messageHandlers.js": 804,
+  "src/content/inlinePlaylist.js": 2062,
+  "src/content/pageActions.js": 830,
+  "src/content/playerControls.js": 1024,
+  "src/content/styles.js": 936,
+  "src/content/videoCards.js": 576,
+  "src/filter.js": 414,
+  "src/popup/lists.js": 1277,
+  "src/popup/modules/dragController.js": 535,
+  "src/popup/modules/queue.js": 805,
+  "src/popup/popup.js": 1169,
+  "src/popup/styles/collection.css": 448,
+  "src/settings/settings.html": 644,
+  "src/settings/settings.js": 1754,
+  "src/store/state.js": 873,
+  "src/store/store.js": 1034,
+  "src/youTubeApiConnectors.js": 515
+}

@@ -1,3 +1,7 @@
+const MAX_CAPTURED_LOGS = 100;
+const YOUTUBE_ID_PATTERN = /[\w-]{11}/;
+const PLAYLIST_ID_PATTERN = /[\w-]{13,64}/;
+
 export function logMessage(level, context, count, message) {
   const text = `[${context}] item ${count}: ${message}`;
   if (level === "warn") {
@@ -7,47 +11,6 @@ export function logMessage(level, context, count, message) {
   }
 }
 
-export function storeDate(date) {
-  if (typeof chrome === "undefined") {
-    return Promise.resolve();
-  }
-  return new Promise((resolve) => {
-    chrome.storage.sync.set({ lastVideoDate: date.toString() }, () => {
-      console.log("lastVideoDate is set to " + date);
-      resolve();
-    });
-  });
-}
-
-export function formatDate(date) {
-  const options = {
-    year: "2-digit",
-    month: "numeric",
-    day: "numeric",
-    hour: "numeric",
-    minute: "numeric",
-    second: "numeric",
-  };
-  return date.toLocaleString("ru", options);
-}
-
-export function parseDuration(duration) {
-  const reptms = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/;
-  let hours = 0,
-    minutes = 0,
-    seconds = 0;
-  let totalseconds;
-
-  if (reptms.test(duration)) {
-    const matches = reptms.exec(duration);
-    if (matches[1]) hours = Number(matches[1]);
-    if (matches[2]) minutes = Number(matches[2]);
-    if (matches[3]) seconds = Number(matches[3]);
-    totalseconds = hours * 3600 + minutes * 60 + seconds;
-  }
-  return totalseconds;
-}
-
 export function parseVideoId(input) {
   if (!input) return "";
   const str = String(input).trim();
@@ -55,35 +18,79 @@ export function parseVideoId(input) {
   try {
     const url = new URL(str);
     if (url.hostname.includes("youtu.be")) {
-      const parts = url.pathname.split("/").filter(Boolean);
-      const id = parts[0];
+      const id = url.pathname.split("/").filter(Boolean)[0];
       if (/^[\w-]{11}$/.test(id)) return id;
     }
-    if (url.searchParams.has("v")) {
-      const id = url.searchParams.get("v");
-      if (id && /^[\w-]{11}$/.test(id)) return id;
-    }
+    const candidate = url.searchParams.get("v");
+    if (candidate && /^[\w-]{11}$/.test(candidate)) return candidate;
     const segments = url.pathname.split("/");
-    for (const part of segments) {
-      if (/^[\w-]{11}$/.test(part)) return part;
+    for (const segment of segments) {
+      if (/^[\w-]{11}$/.test(segment)) return segment;
     }
-  } catch (e) {
+  } catch {
     /* not a URL */
   }
-  const match = str.match(/[\w-]{11}/);
+  const match = str.match(YOUTUBE_ID_PATTERN);
   return match ? match[0] : "";
 }
 
+export function parsePlaylistId(input) {
+  if (!input) return "";
+  const str = String(input).trim();
+  if (str.length === 11) {
+    return "";
+  }
+  if (/^[\w-]{13,64}$/.test(str)) {
+    return str;
+  }
+  try {
+    const url = new URL(str, "https://www.youtube.com");
+    const listParam = url.searchParams.get("list");
+    if (listParam && listParam.length !== 11 && /^[\w-]{13,64}$/.test(listParam)) {
+      return listParam;
+    }
+    const segments = url.pathname.split("/");
+    for (const segment of segments) {
+      if (segment.length !== 11 && /^[\w-]{13,64}$/.test(segment)) {
+        return segment;
+      }
+    }
+  } catch {
+    /* not a URL */
+  }
+  const match = String(input)
+    .replace(/content-id-/gi, "")
+    .match(PLAYLIST_ID_PATTERN);
+  if (!match) {
+    return "";
+  }
+  const candidate = match[0];
+  return candidate.length === 11 ? "" : candidate;
+}
+
 export const logMessages = [];
+
+function safeStringify(value) {
+  try {
+    return JSON.stringify(value);
+  } catch (err) {
+    return `[unserializable: ${err.message}]`;
+  }
+}
+
 export function setupLogCapture() {
   const originalLog = console.log.bind(console);
   console.log = (...args) => {
-    logMessages.push(
-      args
-        .map((a) => (typeof a === "object" ? JSON.stringify(a) : String(a)))
-        .join(" ")
-    );
-    if (logMessages.length > 100) logMessages.shift();
+    const entry = args
+      .map((arg) =>
+        typeof arg === "object" && arg !== null ? safeStringify(arg) : String(arg)
+      )
+      .join(" ");
+    logMessages.push(entry);
+    if (logMessages.length > MAX_CAPTURED_LOGS) {
+      logMessages.shift();
+    }
     originalLog(...args);
   };
 }
+

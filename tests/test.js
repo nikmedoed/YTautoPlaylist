@@ -27,6 +27,41 @@ assert.deepStrictEqual(calls, ['playlistItems', 'search']);
 console.log('getNewVideos falls back to search');
 
 {
+  const startDate = new Date('2024-01-01T03:00:00+03:00');
+  const captured = [];
+  __setCallApi(async (path) => {
+    captured.push(path);
+    if (path === 'playlistItems') {
+      return {
+        items: [
+          {
+            contentDetails: {
+              videoId: 'equal',
+              videoPublishedAt: '2024-01-01T00:00:00Z',
+            },
+          },
+          {
+            contentDetails: {
+              videoId: 'after',
+              videoPublishedAt: '2024-01-01T00:00:01Z',
+            },
+          },
+        ],
+      };
+    }
+    return { items: [] };
+  });
+  const { videos } = await getNewVideos('PLtz', startDate);
+  assert.deepStrictEqual(captured, ['playlistItems']);
+  assert.deepStrictEqual(
+    videos.map((video) => video.id),
+    ['after']
+  );
+  assert.strictEqual(videos[0].publishedAt.toISOString(), '2024-01-01T00:00:01.000Z');
+  console.log('getNewVideos respects timezone boundaries');
+}
+
+{
   const examples = [
     'https://youtu.be/HxdM7D8rnpw?si=YCLpPQ9ncgQuHKqu',
     'https://www.youtube.com/watch?v=HxdM7D8rnpw&list=PLAYLIST&index=91',

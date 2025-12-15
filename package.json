@@ -1,8 +1,33 @@
 {
   "name": "ytautoplaylist",
-  "version": "1.0.0",
+  "version": "0.1.0",
+  "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/test.js"
+    "build": "node ./scripts/package-extension.mjs",
+    "lint": "eslint .",
+    "lint:report": "eslint . --format json --output-file eslint-report.json",
+    "test": "node tests/test.js",
+    "check:files": "node scripts/check-file-length.mjs --all --limit=400 --baseline=config/file-length-baseline.json",
+    "prepare": "husky install"
+  },
+  "lint-staged": {
+    "*.{js,mjs,cjs,ts,tsx,jsx}": [
+      "eslint --max-warnings=0",
+      "node scripts/check-file-length.mjs --limit=400"
+    ],
+    "*.{svelte,css,md,json,yml,yaml}": [
+      "node scripts/check-file-length.mjs --limit=400"
+    ]
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.9.0",
+    "eslint": "^9.9.0",
+    "husky": "^9.0.11",
+    "lint-staged": "^15.2.7",
+    "globals": "^15.8.0"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }

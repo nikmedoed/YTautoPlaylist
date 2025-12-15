@@ -1,0 +1,347 @@
+:root {
+  color-scheme: dark light;
+  font-family: "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: #111;
+  color: #f3f3f3;
+  min-width: 540px;
+  max-width: 620px;
+  line-height: 1.4;
+}
+
+body.full-page {
+  min-width: 100%;
+  max-width: none;
+  min-height: 100vh;
+}
+
+#app {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.full-page #app {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.page-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #f5f5f5;
+}
+
+.page-header .page-actions {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.full-page .page-header {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.full-page .page-header > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.page-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.page-header p {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.control-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.control-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.control-row--playback {
+  --control-button-height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.playback-block {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.playback-block > * {
+  flex: 0 0 auto;
+}
+
+.control-group--management {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.management-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  min-height: var(--control-button-height);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.management-button .control-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.management-button .control-text {
+  line-height: 1;
+}
+
+.control-row--add {
+  align-items: center;
+  gap: 12px;
+}
+
+.control-row--add .control-label {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.control-group--add {
+  flex: 1 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.control-group--add > button {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.playback-toggle {
+  --playback-toggle-size: var(--control-button-height, 36px);
+
+  width: var(--playback-toggle-size);
+  height: var(--playback-toggle-size);
+  padding: 0;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.playback-toggle .icon {
+  width: auto;
+  height: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+  transform: translateY(0);
+}
+
+.playback-toggle[data-state="paused"] .icon {
+  transform: translateX(2.25px);
+}
+
+.playback-toggle[data-state="playing"] .icon {
+  transform: translateY(-1px);
+}
+
+.playback-toggle:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+
+.playback-toggle:focus-visible {
+  outline: 2px solid rgba(244, 67, 54, 0.6);
+  outline-offset: 2px;
+}
+
+.playback-toggle:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.playback-controls {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: var(--control-button-height, 36px);
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.playback-controls > button {
+  margin: 0;
+}
+
+.playback-controls .playback-toggle {
+  --playback-toggle-size: 36px;
+}
+
+.playback-controls .playback-toggle:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.22);
+  box-shadow: none;
+}
+
+.playback-controls .playback-toggle .icon {
+  font-size: 16px;
+}
+
+.playback-controls .icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1em;
+  line-height: 1;
+}
+
+button {
+  border: none;
+  background: #d32f2f;
+  color: #fff;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.2s ease, transform 0.15s ease;
+}
+
+button:hover:not(:disabled) {
+  background: #f44336;
+  transform: translateY(-1px);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+button.secondary {
+  background: #2f2f2f;
+}
+
+button.icon-button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: #aaa;
+}
+
+button.icon-button--lg {
+  width: 36px;
+  height: 36px;
+  font-size: 16px;
+  color: #f5f5f5;
+}
+
+.playback-controls button.icon-button--lg:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+
+button.icon-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+button.icon-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+button.playback-control {
+  min-width: 112px;
+  min-height: var(--control-button-height, 36px);
+  white-space: nowrap;
+}
+button.playback-start {
+  font-weight: 600;
+}
+
+.hidden {
+  display: none !important;
+}
+
+h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.empty {
+  font-size: 12px;
+  opacity: 0.5;
+  margin: 6px 0 0;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.full-page .video-list {
+  max-height: none;
+}

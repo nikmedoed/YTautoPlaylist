@@ -1,0 +1,33 @@
+name: Quality checks
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run tests
+        run: npm test
+
+      - name: Run ESLint and capture warnings
+        run: |
+          npx eslint . --format json > eslint-report.json || true
+          node scripts/emit-eslint-warnings.mjs eslint-report.json
+
+      - name: Report oversized files
+        run: node scripts/check-file-length.mjs --all --limit=500 --github --no-fail
