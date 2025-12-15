@@ -279,16 +279,17 @@ export async function applyFilters(video, rules) {
 }
 
 async function determineFilterReason(video, filters) {
+  const rules = getRules(filters.global, filters.channels[video.channelId]);
   const durationSeconds = parseDuration(video.duration);
   if (
-    !video.duration ||
-    typeof durationSeconds !== "number" ||
-    !Number.isFinite(durationSeconds) ||
-    durationSeconds <= 0
+    rules.duration.length &&
+    (!video.duration ||
+      typeof durationSeconds !== "number" ||
+      !Number.isFinite(durationSeconds) ||
+      durationSeconds <= 0)
   ) {
     return "missingDuration";
   }
-  const rules = getRules(filters.global, filters.channels[video.channelId]);
   let reason = await applyFilters(video, rules);
   if (!reason && rules.playlists?.length) {
     if (await isInPlaylists(video.id, rules.playlists)) {
