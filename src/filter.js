@@ -11,38 +11,25 @@ const DEFAULT_FILTERS = Object.freeze({
   channels: {},
 });
 
+const hasChromeStorage = typeof chrome !== "undefined" && chrome?.storage?.local;
+
 let filtersCache = null;
 let autoCollectLastRun = null;
 
-function toDate(value) {
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : value;
-  }
-  if (typeof value === "number") {
-    if (!Number.isFinite(value) || value <= 0) {
-      return null;
-    }
-    const dt = new Date(value);
-    return Number.isNaN(dt.getTime()) ? null : dt;
-  }
-  if (typeof value === "string") {
-    const dt = new Date(value);
-    return Number.isNaN(dt.getTime()) ? null : dt;
-  }
-  return null;
-}
-
-function cloneDate(value) {
-  return value instanceof Date ? new Date(value.getTime()) : null;
+function asValidDate(value) {
+  const candidate =
+    value instanceof Date
+      ? new Date(value.getTime())
+      : typeof value === "number" || typeof value === "string"
+        ? new Date(value)
+        : null;
+  return candidate && !Number.isNaN(candidate.getTime()) ? candidate : null;
 }
 
 function updateAutoCollectLastRun(meta) {
-  if (meta && typeof meta === "object") {
-    const parsed = toDate(meta.lastRunAt);
-    autoCollectLastRun = parsed ? cloneDate(parsed) : null;
-    return;
-  }
-  autoCollectLastRun = null;
+  const candidate =
+    meta && typeof meta === "object" ? meta.lastRunAt ?? meta : meta;
+  autoCollectLastRun = asValidDate(candidate);
 }
 
 function cloneDefaultFilters() {
@@ -66,19 +53,26 @@ function normalizeFilters(raw) {
   return normalized;
 }
 
-const hasChromeStorage =
-  typeof chrome !== "undefined" && chrome?.storage?.local;
+function parseStoredFilters(raw) {
+  if (!raw) return cloneDefaultFilters();
+  try {
+    return normalizeFilters(typeof raw === "string" ? JSON.parse(raw) : raw);
+  } catch {
+    return cloneDefaultFilters();
+  }
+}
+
+const chromeGet = (keys) =>
+  new Promise((resolve) => chrome.storage.local.get(keys, (data) => resolve(data || {})));
+
+const chromeSet = (payload) =>
+  new Promise((resolve) => chrome.storage.local.set(payload, resolve));
 
 if (hasChromeStorage && chrome.storage?.onChanged) {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
     if (changes[STORAGE_KEYS.filters]) {
-      try {
-        const parsed = JSON.parse(changes[STORAGE_KEYS.filters].newValue);
-        filtersCache = normalizeFilters(parsed);
-      } catch {
-        filtersCache = cloneDefaultFilters();
-      }
+      filtersCache = parseStoredFilters(changes[STORAGE_KEYS.filters].newValue);
     }
     if (changes[STORAGE_KEYS.autoCollect]) {
       updateAutoCollectLastRun(changes[STORAGE_KEYS.autoCollect].newValue);
@@ -87,64 +81,45 @@ if (hasChromeStorage && chrome.storage?.onChanged) {
 }
 
 export function getFiltersLastSaved() {
-  return cloneDate(autoCollectLastRun);
+  return asValidDate(autoCollectLastRun);
 }
 
-export function getFilters() {
+export async function getFilters() {
   if (filtersCache) {
-    return Promise.resolve(filtersCache);
+    return filtersCache;
   }
   if (!hasChromeStorage) {
     filtersCache = cloneDefaultFilters();
-    return Promise.resolve(filtersCache);
+    return filtersCache;
   }
-  return new Promise((resolve) => {
-    chrome.storage.local.get(
-      [STORAGE_KEYS.filters, STORAGE_KEYS.autoCollect],
-      (data) => {
-        if (data && data[STORAGE_KEYS.filters]) {
-          try {
-            const parsed = JSON.parse(data[STORAGE_KEYS.filters]);
-            filtersCache = normalizeFilters(parsed);
-          } catch {
-            filtersCache = cloneDefaultFilters();
-          }
-        } else {
-          filtersCache = cloneDefaultFilters();
-          chrome.storage.local.set({
-            [STORAGE_KEYS.filters]: JSON.stringify(filtersCache),
-          });
-        }
-        updateAutoCollectLastRun(data?.[STORAGE_KEYS.autoCollect]);
-        resolve(filtersCache);
-      }
-    );
-  });
+  const data = await chromeGet([STORAGE_KEYS.filters, STORAGE_KEYS.autoCollect]);
+  filtersCache = parseStoredFilters(data?.[STORAGE_KEYS.filters]);
+  if (!data?.[STORAGE_KEYS.filters]) {
+    await chromeSet({ [STORAGE_KEYS.filters]: JSON.stringify(filtersCache) });
+  }
+  updateAutoCollectLastRun(data?.[STORAGE_KEYS.autoCollect]);
+  return filtersCache;
 }
 
-export function saveFilters(filters) {
-  const normalized = normalizeFilters(filters);
-  filtersCache = normalized;
+export async function saveFilters(filters) {
+  filtersCache = normalizeFilters(filters);
   if (!hasChromeStorage) {
-    return Promise.resolve();
+    return;
   }
-  return new Promise((resolve) => {
-    chrome.storage.local.set(
-      {
-        [STORAGE_KEYS.filters]: JSON.stringify(normalized),
-      },
-      resolve
-    );
-  });
+  await chromeSet({ [STORAGE_KEYS.filters]: JSON.stringify(filtersCache) });
 }
 
 async function fetchInfo(list) {
-  const needInfo = list.filter(
-    (video) =>
-      !video.duration || !video.title || !video.channelId || !video.tags
-  );
   const ids = Array.from(
-    new Set(needInfo.map((video) => video.id).filter(Boolean))
+    new Set(
+      list
+        .filter(
+          (video) =>
+            !video.duration || !video.title || !video.channelId || !video.tags
+        )
+        .map((video) => video.id)
+        .filter(Boolean)
+    )
   );
   if (!ids.length) {
     return list;
@@ -199,34 +174,90 @@ function buildStats(videos) {
   return stats;
 }
 
-function getRules(global, local = {}) {
-  return {
-    noShorts: local.noShorts ?? global.noShorts,
-    noBroadcasts: local.noBroadcasts ?? global.noBroadcasts,
-    title: [...(global.title || []), ...(local.title || [])].map((text) =>
-      String(text).toLowerCase()
-    ),
-    tags: [...(global.tags || []), ...(local.tags || [])].map((tag) =>
-      String(tag).toLowerCase().replace(/\s+/g, "")
-    ),
-    duration: [...(global.duration || []), ...(local.duration || [])].map(
-      ({ min = 0, max = Infinity }) => ({
-        min: Number.isFinite(min) ? min : 0,
-        max: Number.isFinite(max) ? max : Infinity,
-      })
-    ),
-    playlists: [...(global.playlists || []), ...(local.playlists || [])].filter(
-      Boolean
-    ),
+function normalizeNeedles(values, normalize, keyFn = (v) => v) {
+  if (!Array.isArray(values)) return [];
+  const seen = new Set();
+  const result = [];
+  values.forEach((value) => {
+    const normalized = normalize(value);
+    if (normalized == null) return;
+    const key = keyFn(normalized);
+    if (seen.has(key)) return;
+    seen.add(key);
+    result.push(normalized);
+  });
+  return result;
+}
+
+function normalizeDurationRange(range = {}) {
+  const min = Number.isFinite(range.min) ? range.min : 0;
+  const max = Number.isFinite(range.max) ? range.max : Infinity;
+  return { min, max };
+}
+
+function createRulesResolver(filters) {
+  const normalized = normalizeFilters(filters);
+  const cache = new Map();
+
+  return (channelId) => {
+    const key = channelId || "unknown";
+    if (cache.has(key)) return cache.get(key);
+    const local = normalized.channels[key] || {};
+    const rules = {
+      noShorts: local.noShorts ?? normalized.global.noShorts,
+      noBroadcasts: local.noBroadcasts ?? normalized.global.noBroadcasts,
+      title: normalizeNeedles(
+        [...(normalized.global.title || []), ...(local.title || [])],
+        (text) => {
+          const str = String(text || "").trim().toLowerCase();
+          return str || null;
+        }
+      ),
+      tags: normalizeNeedles(
+        [...(normalized.global.tags || []), ...(local.tags || [])],
+        (tag) => {
+          const str = String(tag || "").toLowerCase().replace(/\s+/g, "");
+          return str || null;
+        }
+      ),
+      duration: normalizeNeedles(
+        [...(normalized.global.duration || []), ...(local.duration || [])],
+        normalizeDurationRange,
+        ({ min, max }) => `${min}-${max}`
+      ),
+      playlists: normalizeNeedles(
+        [...(normalized.global.playlists || []), ...(local.playlists || [])],
+        (pl) => pl || null
+      ),
+    };
+    cache.set(key, rules);
+    return rules;
   };
 }
 
-export async function applyFilters(video, rules) {
-  if (
-    rules.noBroadcasts &&
+function normalizeVideoTags(video) {
+  const tags = (video.tags || []).map((tag) =>
+    String(tag || "").toLowerCase().replace(/\s+/g, "")
+  );
+  const titleTags =
+    (video.title || "")
+      .match(/#[^\s#]+/g)
+      ?.map((tag) => tag.slice(1).toLowerCase().replace(/\s+/g, "")) || [];
+  return Array.from(new Set([...tags, ...titleTags]));
+}
+
+function isBroadcast(video) {
+  return (
     video.liveStreamingDetails &&
     video.liveStreamingDetails.actualStartTime !==
       video.liveStreamingDetails.scheduledStartTime
+  );
+}
+
+export async function applyFilters(video, rules, durationSeconds) {
+  if (
+    rules.noBroadcasts &&
+    isBroadcast(video)
   ) {
     return "broadcast";
   }
@@ -239,26 +270,22 @@ export async function applyFilters(video, rules) {
   }
 
   if (rules.tags.length) {
-    const tags = (video.tags || []).map((tag) =>
-      String(tag).toLowerCase().replace(/\s+/g, "")
-    );
-    const titleTags =
-      (video.title || "")
-        .match(/#[^\s#]+/g)
-        ?.map((tag) => tag.slice(1).toLowerCase().replace(/\s+/g, "")) || [];
-    const allTags = tags.concat(titleTags);
+    const allTags = normalizeVideoTags(video);
     if (rules.tags.some((needle) => allTags.includes(needle))) {
       return "tag";
     }
   }
 
   if (rules.duration.length) {
-    const durationSeconds = parseDuration(video.duration);
+    const parsedDuration =
+      typeof durationSeconds === "number"
+        ? durationSeconds
+        : parseDuration(video.duration);
     if (
-      typeof durationSeconds === "number" &&
+      typeof parsedDuration === "number" &&
       !rules.duration.some(
         ({ min = 0, max = Infinity }) =>
-          durationSeconds >= min && durationSeconds <= max
+          parsedDuration >= min && parsedDuration <= max
       )
     ) {
       return "duration";
@@ -278,8 +305,7 @@ export async function applyFilters(video, rules) {
   return undefined;
 }
 
-async function determineFilterReason(video, filters) {
-  const rules = getRules(filters.global, filters.channels[video.channelId]);
+async function determineFilterReason(video, rules) {
   const durationSeconds = parseDuration(video.duration);
   if (
     rules.duration.length &&
@@ -290,7 +316,7 @@ async function determineFilterReason(video, filters) {
   ) {
     return "missingDuration";
   }
-  let reason = await applyFilters(video, rules);
+  let reason = await applyFilters(video, rules, durationSeconds);
   if (!reason && rules.playlists?.length) {
     if (await isInPlaylists(video.id, rules.playlists)) {
       reason = "playlist";
@@ -301,12 +327,14 @@ async function determineFilterReason(video, filters) {
 
 export async function getVideoFilterReason(video) {
   const filters = await getFilters();
-  return determineFilterReason(video, filters);
+  const rulesForChannel = createRulesResolver(filters);
+  return determineFilterReason(video, rulesForChannel(video.channelId));
 }
 
 export async function filterVideos(list, progress) {
   console.log("Fetching info for", list.length, "videos");
   const filters = await getFilters();
+  const rulesForChannel = createRulesResolver(filters);
   const videos = await fetchInfo(list);
   const stats = buildStats(videos);
   const result = [];
@@ -322,8 +350,11 @@ export async function filterVideos(list, progress) {
         const current = index++;
         if (current >= videos.length) break;
         const video = videos[current];
-        const reason = await determineFilterReason(video, filters);
         const channelId = video.channelId || "unknown";
+        const reason = await determineFilterReason(
+          video,
+          rulesForChannel(channelId)
+        );
         const channelStats = stats.get(channelId);
         if (reason) {
           switch (reason) {
