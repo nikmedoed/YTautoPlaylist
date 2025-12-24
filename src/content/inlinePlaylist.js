@@ -4,6 +4,7 @@ const inlineQueueUI = {
   container: null,
   brand: null,
   title: null,
+  nowPlaying: null,
   progress: null,
   freeze: null,
   list: null,
@@ -343,6 +344,7 @@ function teardownInlineQueue() {
   inlineQueueUI.container = null;
   inlineQueueUI.brand = null;
   inlineQueueUI.title = null;
+  inlineQueueUI.nowPlaying = null;
   inlineQueueUI.progress = null;
   inlineQueueUI.freeze = null;
   inlineQueueUI.list = null;
@@ -390,6 +392,11 @@ function ensureInlineQueueElements() {
     title.addEventListener("keydown", handleInlineQueueTitleKeyDown);
     headerLine.appendChild(title);
 
+    const nowPlaying = document.createElement("span");
+    nowPlaying.className = "yta-inline-queue__now-playing";
+    nowPlaying.hidden = true;
+    headerLine.appendChild(nowPlaying);
+
     const progress = document.createElement("span");
     progress.className = "yta-inline-queue__progress";
     progress.hidden = true;
@@ -423,6 +430,7 @@ function ensureInlineQueueElements() {
     inlineQueueUI.container = container;
     inlineQueueUI.brand = brand;
     inlineQueueUI.title = title;
+    inlineQueueUI.nowPlaying = nowPlaying;
     inlineQueueUI.progress = progress;
     inlineQueueUI.freeze = freeze;
     inlineQueueUI.list = list;
@@ -1801,6 +1809,20 @@ function showInlineMoveMenu(videoId, listId, anchor) {
   window.addEventListener("resize", handleInlineMoveMenuScroll, true);
 }
 
+function resolveInlineQueueCurrentEntry(entries, currentIndex, currentVideoId) {
+  if (
+    currentIndex !== null &&
+    currentIndex >= 0 &&
+    currentIndex < entries.length
+  ) {
+    return entries[currentIndex];
+  }
+  if (currentVideoId && inlinePlaylistState.entriesById instanceof Map) {
+    return inlinePlaylistState.entriesById.get(currentVideoId) || null;
+  }
+  return null;
+}
+
 function updateInlineQueueUI() {
   const context =
     typeof determinePageContext === "function" ? determinePageContext() : "other";
@@ -1844,6 +1866,11 @@ function updateInlineQueueUI() {
       : null;
   const currentVideoId = inlinePlaylistState.currentVideoId;
   const allowPostpone = !inlinePlaylistState.freeze && entries.length > 1;
+  const currentEntry = resolveInlineQueueCurrentEntry(
+    entries,
+    currentIndex,
+    currentVideoId
+  );
 
   ui.container.hidden = false;
   ui.container.dataset.visible = "1";
@@ -1863,6 +1890,22 @@ function updateInlineQueueUI() {
         ? `Открыть управление списком "${listName}"`
         : "Открыть управление списком"
     );
+  }
+  if (ui.nowPlaying) {
+    const channelTitle = (currentEntry?.channelTitle || "").trim();
+    const videoTitle = (currentEntry?.title || "").trim();
+    const nowPlayingText = [channelTitle, videoTitle]
+      .filter(Boolean)
+      .join(" — ");
+    if (nowPlayingText) {
+      ui.nowPlaying.title = nowPlayingText;
+      ui.nowPlaying.hidden = false;
+      ui.nowPlaying.textContent = nowPlayingText;
+    } else {
+      ui.nowPlaying.textContent = "";
+      ui.nowPlaying.removeAttribute("title");
+      ui.nowPlaying.hidden = true;
+    }
   }
   if (ui.progress) {
     let progressText = "";

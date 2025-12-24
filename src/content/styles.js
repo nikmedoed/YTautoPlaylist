@@ -294,11 +294,11 @@ function injectStyles() {
   }
   .yta-inline-queue__header-line {
     display: flex;
-    align-items: baseline;
+    align-items: center;
+    flex-wrap: nowrap;
     gap: 8px;
     flex: 1 1 auto;
     min-width: 0;
-    white-space: nowrap;
   }
   .yta-inline-queue__brand {
     font-size: 11px;
@@ -309,23 +309,39 @@ function injectStyles() {
     flex: 0 0 auto;
   }
   .yta-inline-queue__title {
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
     font-size: 15px;
     font-weight: 700;
     letter-spacing: 0.01em;
     color: var(--yt-spec-text-primary, #fff);
     line-height: 1.3;
-    word-break: break-word;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    word-break: normal;
     white-space: nowrap;
-    min-width: 0;
-    flex: 1 1 auto;
+    min-width: auto;
+    flex: 0 0 auto;
     cursor: pointer;
   }
   .yta-inline-queue__title:hover,
   .yta-inline-queue__title:focus-visible {
     text-decoration: underline;
     outline: none;
+  }
+  .yta-inline-queue__now-playing {
+    display: block;
+    align-self: center;
+    font-size: 13px;
+    color: var(--yt-spec-text-secondary, rgba(255, 255, 255, 0.72));
+    line-height: 1.35;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
+    flex: 1 1 auto;
+    text-align: center;
   }
   .yta-inline-queue__progress {
     font-size: 12.5px;
