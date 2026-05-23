@@ -1,3 +1,5 @@
+<!-- Project overview for the YouTube auto-playlist extension. Documents the extension purpose and high-level usage context. -->
+
 # YTautoPlaylist
 
 Automatic playlist collector from YouTube subscriptions.
@@ -6,11 +8,95 @@ Browser extension for managing personal YouTube watch queues without relying on 
 
 ## Build
 
-Run `npm run build` to prepare a clean `dist/extension` directory with only the files required for packaging the browser extension. The script copies `manifest.json`, the `src/` tree, and the icons, then writes a production-ready `config.js` with `DEV_MODE = false` so branch-specific configuration files (docs, tests, `config.branch.js`, etc.) stay out of the published zip.
+The repository root is the unpacked extension folder. `manifest.json` stays in the root so the project can be loaded directly in `chrome://extensions`.
+
+Only JavaScript bundles are generated locally:
+
+- `build/content.js` from the module graph rooted at `src/content/index.js`
+- `build/background.js` from `src/background.js`
+- `build/popup.js`, `build/lists.js`, `build/settings.js` from their page entry points
+
+Edit these by hand:
+
+- `src/` for JavaScript source modules, HTML pages, settings sprite, and page CSS
+- `manifest.json` for the extension manifest
+- `icon/icon.png` for the runtime extension icon
+- `assets/icon/` for non-runtime icon source assets, if needed
+- project config/docs/scripts in the repository root
+
+Install dependencies once:
+
+```sh
+npm install
+```
+
+Development workflow:
+
+```sh
+npm run dev
+```
+
+Load this repository root in `chrome://extensions` as the unpacked extension. Keep the watcher running while editing JavaScript in `src/`; after content/background changes, reload the extension card and fully refresh the YouTube tab.
+
+Static extension files (`manifest.json`, `src/**/*.html`, `src/**/*.css`, icons) are edited in place. They are not copied or bundled for local development; reload the extension after changing them.
+
+Local build:
+
+```sh
+npm run build:local
+```
+
+This updates only the committed JavaScript bundles in `build/`.
+
+Release build:
+
+```sh
+npm run build
+```
+
+This creates a clean, minified package in `../YTautoPlaylist-release` by default. You can override the destination with `RELEASE_DIR=./some-folder`.
+
+The Git hook in `.githooks/pre-commit` runs `npm run build:local` and stages `build/` before each commit. `npm install` activates it through `git config core.hooksPath .githooks`.
+
+Do not edit files in `build/` directly. Change JavaScript sources in `src/`, then run `npm run build:local` or keep `npm run dev` running.
+
+### Content script structure
+
+`src/content/index.js` is the content-script entrypoint used by esbuild. The rest of the content script is grouped by responsibility:
+
+- `src/content/core/` - lifecycle wiring, navigation, runtime messages, diagnostics, and shared content state.
+- `src/content/playback/` - player controls, playback actions, progress watchdogs, and playback notifications.
+- `src/content/inline-queue/` - the watch-page inline queue UI and its drag/drop, scrolling, state sync, and item actions.
+- `src/content/page-actions/` - floating add-current/add-visible/add-all controls and their DOM/view helpers.
+- `src/content/video-cards/` - YouTube card detection, overlays, preview controls, and progress decoration.
+- `src/content/collection/` - content-side collection helpers and auto-collect progress notifications.
+- `src/content/styles/` - injected CSS fragments composed by `styles/index.js`.
+
+Keep related files inside their domain folder. A feature should not have one sibling stranded at `src/content/` root.
+
+### Popup And Settings Structure
+
+Popup entrypoints stay at `src/popup/popup.js` and `src/popup/lists.js`. Shared popup modules live under `src/popup/modules/` by domain:
+
+- `collection/` - collection progress UI, cooldown, stage logs, and formatting.
+- `manager/` - list manager detail, modal, drag, selection, and list-switching helpers.
+- `queue/` - queue rendering and drag/drop.
+- `history/`, `playback/`, `shared/` - focused helpers for those surfaces.
+
+Settings builds from `src/settings/index.js`; `settings.html` and `icons.svg` remain static runtime files. Settings implementation is split into `filters/`, `quick-filter/`, `shared/`, and `video-check/`.
+
+### Store structure
+
+`src/store/index.js` is the public store entrypoint. Implementation is split by responsibility:
+
+- `src/store/actions/` - queue, list, playback, history, presentation, and auto-collect mutations.
+- `src/store/state/` - storage keys, schema sanitizing, serialization, Chrome storage access, video progress, and small state utilities.
+
+Do not add new root-level `store*.js` or `state*.js` files under `src/store/`.
 
 ### Styling structure
 
-Popup styles now live under `src/popup/styles/` split into smaller, page-focused files (`base.css`, `collection.css`, `queue.css`, `manager.css`). Each HTML entry point links only the slices it needs, which keeps styles reusable without forcing contributors to scroll through a single 1,000-line sheet.
+Popup styles live under `src/popup/styles/` split into smaller, page-focused files (`base.css`, `collection.css`, `queue.css`, `manager.css`). They are regular hand-edited runtime files, not build output.
 
 ## Key concepts
 

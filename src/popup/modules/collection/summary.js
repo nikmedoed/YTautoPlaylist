@@ -1,41 +1,10 @@
-const EMPTY_FILTER_TOTALS = Object.freeze({
-  filtered: 0,
-  broadcasts: 0,
-  shorts: 0,
-  stoplists: 0,
-  passed: 0,
-});
-
-const numberFormatter =
-  typeof Intl !== "undefined" ? new Intl.NumberFormat("ru-RU") : null;
-
-function formatCount(value) {
-  const numeric = Number.isFinite(Number(value)) ? Number(value) : 0;
-  if (!numberFormatter) {
-    return String(Math.max(0, Math.round(numeric)));
-  }
-  return numberFormatter.format(Math.max(0, Math.round(numeric)));
-}
-
-function formatRatio(value, total) {
-  const safeTotal = Number(total) || 0;
-  const safeValue = Number(value) || 0;
-  if (safeTotal > 0) {
-    const clamped = Math.min(Math.max(0, safeValue), safeTotal);
-    return `${formatCount(clamped)} / ${formatCount(safeTotal)}`;
-  }
-  return formatCount(safeValue);
-}
-
-function resolveFilterTotals(raw) {
-  return {
-    filtered: Number(raw?.filtered) || 0,
-    broadcasts: Number(raw?.broadcasts) || 0,
-    shorts: Number(raw?.shorts) || 0,
-    stoplists: Number(raw?.stoplists) || 0,
-    passed: Number(raw?.passed) || 0,
-  };
-}
+// Collection summary accumulator. Tracks fetched, filtered, skipped, and added counts across collection events.
+import {
+  EMPTY_FILTER_TOTALS,
+  formatCount,
+  formatRatio,
+  resolveFilterTotals,
+} from "./metrics.js";
 
 const INITIAL_STATE = {
   startDate: null,
@@ -69,6 +38,7 @@ function createInitialSummary() {
   };
 }
 
+// Aggregates raw collection progress events into stable counters for the popup status and stage log.
 export function createCollectionSummary() {
   const data = createInitialSummary();
 
@@ -79,6 +49,8 @@ export function createCollectionSummary() {
     }
   }
 
+  // Applies one background collection event to the accumulated summary used by
+  // the popup header, progress bars, and stage log.
   function update(event = {}) {
     switch (event.phase) {
       case "start":

@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, for example v1.2.3"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "value=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Require tag on main
+        if: github.event_name == 'push'
+        run: |
+          git fetch origin main
+          tag_commit="$(git rev-list -n 1 "$GITHUB_REF_NAME")"
+          git merge-base --is-ancestor "$tag_commit" origin/main
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build checked-out extension
+        run: npm run build:local
+
+      - name: Build release package
+        run: npm run build
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.value }}
+          RELEASE_DIR: ./YTautoPlaylist-release
+
+      - name: Zip release package
+        run: zip -r ../YTautoPlaylist-release.zip .
+        working-directory: ./YTautoPlaylist-release
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: YTautoPlaylist-release
+          path: |
+            YTautoPlaylist-release
+            YTautoPlaylist-release.zip
+
+      - name: Publish GitHub release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" YTautoPlaylist-release.zip --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" YTautoPlaylist-release.zip --title "$GITHUB_REF_NAME" --notes "Built from $GITHUB_SHA"
+          fi

@@ -1,3 +1,4 @@
+// Collection stage constants. Defines stage ids and display labels used by progress renderers.
 export const MAX_STAGE_LOG_ITEMS = 60;
 
 export const COLLECTION_STAGE_DEFS = {

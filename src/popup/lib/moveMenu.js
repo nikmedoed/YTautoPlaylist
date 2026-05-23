@@ -1,13 +1,8 @@
+// Popup move-menu component. Builds a reusable anchored list picker for moving videos between lists.
+import { applyAttributes, applyDataset } from "./dom.js";
+
 const DEFAULT_PADDING = 12;
 const DEFAULT_OFFSET = 6;
-
-function applyDataset(target, dataset) {
-  if (!dataset) return;
-  for (const [key, value] of Object.entries(dataset)) {
-    if (value == null) continue;
-    target.dataset[key] = String(value);
-  }
-}
 
 function positionMenu(root, anchor, { offset, padding }) {
   if (!anchor || !root) return;
@@ -42,6 +37,8 @@ function positionMenu(root, anchor, { offset, padding }) {
   root.style.left = `${Math.round(left)}px`;
 }
 
+// Builds one anchored menu instance and keeps its open/close listeners in one
+// place so queue, history, and manager move actions share identical behavior.
 export function createMoveMenu({
   document: doc = globalThis.document,
   headerText = "Перенести в:",
@@ -211,15 +208,12 @@ export function createMoveMenu({
     }
   };
 
-  return { show, hide, destroy, get element() {
-    return root;
-  } };
-}
-
-function applyAttributes(target, attrs) {
-  if (!attrs) return;
-  for (const [key, value] of Object.entries(attrs)) {
-    if (value == null) continue;
-    target.setAttribute(key, String(value));
-  }
+  return {
+    show,
+    hide,
+    destroy,
+    get element() {
+      return root;
+    },
+  };
 }

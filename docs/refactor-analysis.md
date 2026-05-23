@@ -1,24 +1,49 @@
+<!-- Refactor map for the repository. Records oversized files, responsibility boundaries, and follow-up cleanup areas. -->
+
 # Large File Refactor Analysis
 
 This document highlights every file in the repository that currently exceeds 400 lines and outlines why each one is a candidate for refactoring. The goal is to make future changes to the queue controls and related features safer by splitting responsibilities into smaller, testable units and removing redundant logic.
+
+## Content Script Layout
+
+The content script now builds from `src/content/index.js`; this is the only file that should remain at the content root. Feature families are grouped by domain:
+
+| Folder | Responsibility |
+| --- | --- |
+| `src/content/core/` | Content lifecycle, diagnostics, navigation hooks, runtime message wiring, and shared content state |
+| `src/content/playback/` | YouTube player controls, playback actions, watchdogs, player error handling, and playback notifications |
+| `src/content/inline-queue/` | Watch-page inline queue shell, items, drag/drop, move menu, scroll focus, navigation, and state sync |
+| `src/content/page-actions/` | Floating add-current/add-visible/add-all actions, result formatting, host selection, and view helpers |
+| `src/content/video-cards/` | Video card discovery, target parsing, overlays, preview controls, progress badges, and add flow |
+| `src/content/collection/` | Content-side collection helpers and auto-collect progress notifications |
+| `src/content/styles/` | CSS template fragments injected by `src/content/styles/index.js` |
+
+New content-script code should go into one of these folders. If a feature needs several files, keep the whole set together instead of leaving one file at the content root.
+
+## Popup And Settings Layout
+
+Popup page entrypoints stay at `src/popup/popup.js` and `src/popup/lists.js`. Shared modules are grouped by domain:
+
+| Folder | Responsibility |
+| --- | --- |
+| `src/popup/modules/collection/` | Collection progress, cooldown, stage log, summary, and formatting |
+| `src/popup/modules/manager/` | List manager rendering, detail actions, modal flows, drag/drop, selection, and list switching |
+| `src/popup/modules/queue/` | Queue rendering and queue drag/drop |
+| `src/popup/modules/history/` | History rendering and restore actions |
+| `src/popup/modules/playback/` | Popup playback metadata helpers |
+| `src/popup/modules/shared/` | Status and add-result message helpers |
+
+Settings builds from `src/settings/index.js`. Static runtime files stay at `src/settings/settings.html` and `src/settings/icons.svg`; implementation is grouped into `filters/`, `quick-filter/`, `shared/`, and `video-check/`.
 
 ## Summary of Oversized Files
 
 | File | Lines | Primary Concerns |
 | --- | --- | --- |
-| `src/popup/popup.js` | 1159 | UI wiring, messaging, playback logic, and collection state mixed together |
-| `src/popup/lists.js` | 957 | Popup manager UI, selection logic, modal orchestration, and network calls in a single script |
-| `src/store/store.js` | 861 | Playlist mutations, history management, and playback state intertwined |
-| `src/content/pageActions.js` | 829 | Inline action UI, throttling, analytics, and background requests combined |
-| `src/background/messageHandlers.js` | 678 | Heterogeneous message handlers without routing layers |
-| `src/content/playerControls.js` | 577 | Notification UI, auto-collect updates, and player coordination handled together |
-| `src/store/state.js` | 544 | Persistence, migration, sanitization, and state access bundled |
-| `src/youTubeApiConnectors.js` | 513 | Authentication, API retries, collection helpers, and data shaping combined |
-| `src/content/videoCards.js` | 494 | DOM scraping, heuristics, retry management, and inline control updates |
-| `src/settings/settings.js` | 477 | Settings UI rendering, filter persistence, API calls, and validation mixed |
-| `src/content/styles.js` | 461 | 450+ lines of template literal CSS in JS |
-| `src/popup/styles/collection.css` | 447 | Monolithic stylesheet covering unrelated popup areas |
-| `src/settings/settings.html` | 445 | Bulky inline styles and markup without partials |
+| `src/popup/popup.js` | 928 | Popup player entrypoint still coordinates many controllers and DOM nodes |
+| `src/popup/lists.js` | 848 | Popup manager entrypoint still owns high-level page orchestration |
+| `src/settings/settings.html` | 643 | Bulky inline styles and markup without partials |
+| `src/content/inline-queue/index.js` | 601 | Inline queue shell still owns rendering orchestration |
+| `src/content/video-cards/index.js` | 519 | Card discovery and decoration coordinator still has broad DOM heuristics |
 
 ## Detailed Notes
 
@@ -46,74 +71,41 @@ This document highlights every file in the repository that currently exceeds 400
 - Move modal orchestration into separate modules (`createListModal`, `importModal`, `editModal`) that expose init/dispose hooks.
 - Introduce view components (e.g., functions returning DOM nodes) for list cards and video rows to remove inline DOM construction.
 
-### `src/store/store.js` (861 lines)
-**Role:** Central mutation layer for playlists, history, playback state, and notifications, built on top of the lower-level state module.【F:src/store/store.js†L1-L83】
+### `src/store/` (completed split)
+**Role:** Central store API for queue/list/playback state and Chrome storage persistence.
 
-**Pain points:**
-- Single file mixes queue mutations, history compaction, and playback pointer management, so seemingly simple changes (like removing videos) impact multiple areas.【F:src/store/store.js†L334-L395】【F:src/store/store.js†L446-L479】
-- Many helpers perform similar sanitisation or state lookups, suggesting they belong in distinct modules (`queueMutations`, `history`, `autoCollectMeta`).
+**Current structure:**
+- `src/store/index.js` is the only public store entrypoint.
+- `src/store/actions/` contains domain mutations: `queue.js`, `lists.js`, `playback.js`, `history.js`, `presentation.js`, and `autoCollect.js`, with shared mutation helpers in `core.js`.
+- `src/store/state/` contains persistence and schema code: `constants.js`, `sanitizers.js`, `serialization.js`, `storage.js`, `videoProgress.js`, `autoCollectTimestamp.js`, and `utils.js`.
 
-**Refactor ideas:**
-- Split into domain-specific modules (`lists`, `history`, `autoCollect`, `playback`) that share a common `withState` helper.
-- Promote notification-queue manipulation to its own module so message handlers can depend on a minimal API.
+**Follow-up ideas:**
+- Keep new store modules inside `actions/` or `state/`; do not reintroduce root-level `store*` or `state*` files.
+- The old `src/playlistStore.js` compatibility entrypoint was removed after callers switched to `src/store/index.js`.
 
-### `src/content/pageActions.js` (829 lines)
-**Role:** Drives inline page actions (add current, add visible, add all) including UI controls, tooltips, analytics, throttled status messages, and communication with the background script.【F:src/content/pageActions.js†L6-L158】
+### `src/background/` (completed handler split)
+**Role:** Background service worker orchestration.
 
-**Pain points:**
-- UI construction and behaviour logic share functions, making it hard to reuse the same buttons on other page layouts or tests.【F:src/content/pageActions.js†L58-L110】
-- Add-result formatting duplicates popup logic and mixes status string building with DOM updates, leading to inconsistent messaging between surfaces.【F:src/content/pageActions.js†L141-L158】
+**Current structure:**
+- `messages.js` is only the runtime message registry.
+- `handlers/collection.js`, `handlers/lists.js`, `handlers/options.js`, `handlers/playback.js`, and `handlers/queue.js` own domain handlers.
+- `services.js`, `collector.js`, `tabs.js`, `channel.js`, `playback.js`, and `collectionSync.js` provide shared background services.
 
-**Refactor ideas:**
-- Separate DOM creation (toggle, action list, stop button) from behaviour controllers that manage timers and background messages.
-- Share queue feedback utilities with the popup to avoid drift.
-- Split long handler functions (`handleAddVisibleFromPage`, etc.) into pipeline helpers (discover cards → fetch metadata → add entries) with clear responsibilities.
+### `src/youtube-api/` (completed split)
+**Role:** Owns YouTube Data API integration through domain modules instead of a single root-level connector file.
 
-### `src/background/messageHandlers.js` (678 lines)
-**Role:** Single registry handling every runtime message, from queue mutations and collection triggers to playlist exports.【F:src/background/messageHandlers.js†L1-L45】
+**Current structure:**
+- `transport.js` handles authenticated API calls, token refresh, and test injection via `__setCallApi`.
+- `channels.js` handles subscriptions, upload playlist lookup, and channel metadata cache.
+- `videos.js` handles upload/search traversal, video metadata, Shorts detection, and collection fetch windows.
+- `playlists.js` handles playlist item reads, playlist creation, playlist membership checks, and batch playlist insertion.
 
-**Pain points:**
-- No routing structure—handler functions directly implement business logic, call store mutations, trigger notifications, and gather responses, so edge cases leak between message types.【F:src/background/messageHandlers.js†L51-L143】
-- Manual deduplication and validation repeated across handlers (e.g., `handleAddByIds`, `handleRemoveVideos`, `handleMoveVideos`).
+**Follow-up ideas:**
+- Keep future API helpers in this folder and import exact domain modules directly.
+- Avoid adding a root barrel that hides which API surface a caller depends on.
 
-**Refactor ideas:**
-- Introduce a message router that maps message types to smaller handler modules (queue, lists, playback, collection).
-- Centralise ID parsing/deduplication utilities shared by handlers.
-- Move presentation-state shaping into a separate service to keep message handlers thin.
-
-### `src/content/playerControls.js` (577 lines)
-**Role:** Controls the in-player overlay, including toast notifications, auto-collect progress, and playback button state on the YouTube page.【F:src/content/playerControls.js†L1-L160】
-
-**Pain points:**
-- Notification rendering, auto-collect status translation, and control-state management live together, complicating unit testing and reuse between popup and inline UI.
-- Auto-collect messaging duplicates logic in the popup collection controller, increasing maintenance risk.【F:src/content/playerControls.js†L96-L160】
-
-**Refactor ideas:**
-- Extract notification presentation into a shared module consumed by both the player and popup.
-- Introduce a controller class that receives state updates from the background script and manipulates DOM via smaller view helpers.
-
-### `src/store/state.js` (544 lines)
-**Role:** Low-level persistence layer handling Chrome storage access, migrations, sanitisation, and default-state composition.【F:src/store/state.js†L1-L152】
-
-**Pain points:**
-- Storage migration logic, schema sanitisation, and runtime mutation helpers coexist, making the file difficult to navigate and increasing regression risk during storage changes.【F:src/store/state.js†L320-L430】
-
-**Refactor ideas:**
-- Separate migration and sanitisation into dedicated files; keep this module focused on state getters/setters.
-- Extract persistence adapters (Chrome storage vs. in-memory fallback) for easier testing.
-
-### `src/youTubeApiConnectors.js` (513 lines)
-**Role:** Abstraction for YouTube Data API, covering authentication, retries, playlist/channel lookups, and helper utilities for subscription collection.【F:src/youTubeApiConnectors.js†L7-L160】
-
-**Pain points:**
-- Authentication retry logic, channel caching, and collection helpers are tightly coupled, making it hard to reuse API pieces independently.【F:src/youTubeApiConnectors.js†L7-L127】
-
-**Refactor ideas:**
-- Split HTTP transport (`callApi`), channel/subscription services, and playlist creation helpers into separate modules.
-- Wrap API calls in typed service functions with explicit inputs/outputs, reducing reliance on implicit object shapes.
-
-### `src/content/videoCards.js` (494 lines)
-**Role:** Detects video/playlist cards on the page, extracts IDs, and applies inline controls with fallback heuristics.【F:src/content/videoCards.js†L17-L160】
+### `src/content/video-cards/index.js` (494 lines)
+**Role:** Detects video/playlist cards on the page, extracts IDs, and applies inline controls with fallback heuristics.【F:src/content/video-cards/index.js†L17-L160】
 
 **Pain points:**
 - Complex heuristics, DOM traversal, and dataset parsing are embedded together, making it hard to add new card types without risking regressions.
@@ -123,24 +115,15 @@ This document highlights every file in the repository that currently exceeds 400
 - Introduce dedicated parsers for playlist vs. video cards and a registry of heuristics.
 - Share dataset parsing helpers with other controllers to avoid duplicated logic.
 
-### `src/settings/settings.js` (477 lines)
-**Role:** Handles settings page bootstrapping, filter row rendering, toast display, and YouTube API-backed dropdowns in one file.【F:src/settings/settings.js†L37-L139】
+### `src/settings/` (completed module split)
+**Role:** Settings page entrypoint and helpers.
 
-**Pain points:**
-- DOM template cloning, persistence, and validation logic is interwoven, making the settings page brittle and hard to extend (e.g., toast, import/export, API calls in the same scope).【F:src/settings/settings.js†L113-L139】
-
-**Refactor ideas:**
-- Split into modules for filter group rendering, persistence/service calls, and UI feedback (toasts, validation messages).
-- Convert repeated template usage into reusable helper classes/functions living under a `settings` namespace.
-
-### `src/content/styles.js` (461 lines)
-**Role:** Injects an enormous template literal containing all inline CSS used by the content scripts.【F:src/content/styles.js†L1-L320】
-
-**Pain points:**
-- Hard to maintain and diff because the CSS lives inside JavaScript; constants must stay in sync with other modules (`THUMB_HOST_CLASS`, etc.).
-
-**Refactor ideas:**
-- Move CSS into static files (e.g., imported stylesheets) or split template strings per feature (player controls, page actions, card badges).
+**Current structure:**
+- `index.js` is the settings page entrypoint.
+- `filters/` owns rows, sections, persistence, and mutation helpers.
+- `quick-filter/` owns quick-filter builder, DOM, renderers, and apply logic.
+- `shared/` owns formatting, runtime calls, and save UI helpers.
+- `video-check/` owns check-video result rendering.
 
 ### `src/popup/styles/collection.css` (447 lines)
 **Role:** Styles the popup UI, including status toasts, collection widgets, list manager, and playback controls in a single stylesheet.【F:src/popup/styles/collection.css†L1-L160】

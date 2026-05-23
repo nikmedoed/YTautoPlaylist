@@ -24,6 +24,9 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Build extension artifacts
+        run: npm run build:local
+
       - name: Run ESLint and capture warnings
         run: |
           npx eslint . --format json > eslint-report.json || true

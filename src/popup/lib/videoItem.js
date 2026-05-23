@@ -1,4 +1,7 @@
+// Popup video item renderer. Builds compact video rows shared by queue and history views.
 import { formatDuration } from "../../time.js";
+import { clampProgressPercent } from "../../progress.js";
+import { applyAttributes, applyDataset } from "./dom.js";
 
 const DEFAULT_TITLE = "Без названия";
 const DEFAULT_ALT = "Видео";
@@ -6,39 +9,6 @@ const DEFAULT_ALT = "Видео";
 function sanitizeText(value) {
   if (!value) return "";
   return String(value).replace(/\s+/g, " ").trim();
-}
-
-function applyDataset(target, dataset) {
-  if (!dataset) return;
-  for (const [key, value] of Object.entries(dataset)) {
-    if (value == null) continue;
-    target.dataset[key] = String(value);
-  }
-}
-
-function applyAttributes(target, attrs) {
-  if (!attrs) return;
-  for (const [key, value] of Object.entries(attrs)) {
-    if (value == null) continue;
-    target.setAttribute(key, String(value));
-  }
-}
-
-function clampProgress(value) {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return null;
-  }
-  const rounded = Math.round(value);
-  if (!Number.isFinite(rounded)) {
-    return null;
-  }
-  if (rounded <= 0) {
-    return 0;
-  }
-  if (rounded >= 100) {
-    return 100;
-  }
-  return rounded;
 }
 
 function createHandle(doc, options = {}) {
@@ -196,6 +166,8 @@ function resolveThumbnailDuration(video, thumbnailOptions = {}) {
   return typeof formatted === "string" ? formatted.trim() : "";
 }
 
+// Renders the common popup/manager video row shape: optional drag handle,
+// thumbnail metadata, title/details, action buttons, and progress marker.
 export function createVideoItem(video, options = {}) {
   const {
     document: doc = globalThis.document,
@@ -287,7 +259,7 @@ export function createVideoItem(video, options = {}) {
         rawProgress = progressOption.value;
       }
     }
-    const resolvedProgress = clampProgress(rawProgress);
+    const resolvedProgress = clampProgressPercent(rawProgress);
     if (resolvedProgress && resolvedProgress > 0) {
       const progressContainer = doc.createElement("div");
       progressContainer.className = progressClassName;

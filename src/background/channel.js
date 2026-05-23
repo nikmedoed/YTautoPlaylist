@@ -1,4 +1,5 @@
-import { getPresentationState } from "../playlistStore.js";
+// Broadcasts background state and collection progress to extension pages. Contains safe runtime send wrappers for popup/listeners that may not be open.
+import { getPresentationState } from "../store/index.js";
 import { MESSAGE_SOURCE } from "./constants.js";
 
 async function safeSendMessage(payload) {

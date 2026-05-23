@@ -1,3 +1,4 @@
+// Background playback coordinator. Contains tab selection, YouTube navigation, queue advancement, history playback, and postpone behavior.
 import {
   getPresentationState,
   getState,
@@ -6,10 +7,11 @@ import {
   playHistoryEntry,
   setCurrentTab,
   setCurrentVideo,
-} from "../playlistStore.js";
-import { resolvePreferredTab } from "./chromeTabs.js";
+} from "../store/index.js";
+import { parseVideoId } from "../utils.js";
+import { resolvePreferredTab } from "./tabs.js";
 import { notifyState } from "./channel.js";
-import { dispatchNotifications, ensureDefaultQueueFilled } from "./stateSync.js";
+import { dispatchNotifications, ensureDefaultQueueFilled } from "./collectionSync.js";
 
 function buildWatchUrl(videoId) {
   return `https://www.youtube.com/watch?v=${videoId}`;
@@ -44,6 +46,25 @@ function isYouTubeUrl(url) {
   }
 }
 
+function isSameVideoInTab(tab, videoId) {
+  const currentId = parseVideoId(extractTabUrl(tab));
+  return Boolean(currentId && currentId === videoId);
+}
+
+function findVideoLocation(state, videoId) {
+  if (!state || !videoId || !state.lists) {
+    return null;
+  }
+  for (const [listId, list] of Object.entries(state.lists)) {
+    const queue = Array.isArray(list?.queue) ? list.queue : [];
+    const index = queue.findIndex((entry) => entry?.id === videoId);
+    if (index !== -1) {
+      return { listId, index };
+    }
+  }
+  return null;
+}
+
 async function openVideo(videoId, options = {}) {
   const stateHint = options.stateHint || null;
   const forceNewTab = Boolean(options.forceNewTab);
@@ -63,10 +84,16 @@ async function openVideo(videoId, options = {}) {
     const resolved = await resolvePreferredTab(preferred);
     if (resolved) {
       try {
-        targetTab = await chrome.tabs.update(resolved.id, {
-          url,
-          active: true,
-        });
+        if (isSameVideoInTab(resolved, videoId)) {
+          targetTab = activate
+            ? await chrome.tabs.update(resolved.id, { active: true })
+            : resolved;
+        } else {
+          targetTab = await chrome.tabs.update(resolved.id, {
+            url,
+            active: activate,
+          });
+        }
       } catch (err) {
         console.warn("Failed to reuse tab, opening new one", err);
         targetTab = null;
@@ -81,10 +108,16 @@ async function openVideo(videoId, options = {}) {
       });
       if (activeTab && isYouTubeUrl(extractTabUrl(activeTab))) {
         try {
-          targetTab = await chrome.tabs.update(activeTab.id, {
-            url,
-            active: true,
-          });
+          if (isSameVideoInTab(activeTab, videoId)) {
+            targetTab = activate
+              ? await chrome.tabs.update(activeTab.id, { active: true })
+              : activeTab;
+          } else {
+            targetTab = await chrome.tabs.update(activeTab.id, {
+              url,
+              active: activate,
+            });
+          }
         } catch (err) {
           console.warn("Failed to reuse active YouTube tab", err);
           targetTab = null;
@@ -174,17 +207,54 @@ export async function playVideo(videoId, options = {}) {
 
 export async function advanceToNext(options = {}) {
   const before = await getState();
-  const targetId = options.videoId || before.currentVideoId;
-  const listId = before.currentListId;
+  const requestedId = options.videoId || null;
+  const currentId = before.currentVideoId || null;
+  let targetId = currentId || requestedId;
+  let listId = before.currentListId || null;
+  const senderTabMatchesCurrent =
+    typeof options.tabId === "number" &&
+    Number.isInteger(options.tabId) &&
+    options.tabId === before.currentTabId;
+
+  if (requestedId && requestedId !== currentId) {
+    const requestedLocation = findVideoLocation(before, requestedId);
+    if (!requestedLocation) {
+      if (!currentId || !senderTabMatchesCurrent) {
+        return {
+          handled: false,
+          reason: "VIDEO_MISMATCH",
+          state: await getPresentationState(),
+        };
+      }
+    } else {
+      await setCurrentVideo(requestedId, requestedLocation.listId);
+      targetId = requestedId;
+      listId = requestedLocation.listId;
+    }
+  }
+
   if (!targetId) {
     const presentation = await getPresentationState();
     return { handled: false, state: presentation };
   }
+
+  const currentLocation = findVideoLocation(before, targetId);
+  if (!currentLocation) {
+    return {
+      handled: false,
+      reason: "TARGET_NOT_IN_QUEUE",
+      state: await getPresentationState(),
+    };
+  }
+  if (!listId) {
+    listId = currentLocation.listId;
+  }
+
   await markVideoWatched(targetId, { listId });
   await notifyState();
   await dispatchNotifications();
   const afterPresentation = await getPresentationState();
-  if (!afterPresentation.currentVideoId) {
+  if (!afterPresentation.currentVideoId || afterPresentation.currentVideoId === targetId) {
     return { handled: false, state: afterPresentation };
   }
   ensureDefaultQueueFilled().catch((err) => {

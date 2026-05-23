@@ -1,3 +1,4 @@
+// Popup quick-filter helpers. Applies quick text filtering to popup and manager list views.
 const settingsPath = "src/settings/settings.html";
 const settingsUrl = chrome.runtime.getURL(settingsPath);
 

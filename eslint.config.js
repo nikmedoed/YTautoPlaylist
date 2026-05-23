@@ -1,9 +1,17 @@
+// ESLint configuration for the whole repository. Defines browser, Node, and test globals plus lint rules.
 import js from '@eslint/js';
 import globals from 'globals';
 
 export default [
   {
-    ignores: ['dist/', 'node_modules/', 'coverage/', '.husky/_/'],
+    ignores: [
+      'dist/',
+      'build/',
+      'node_modules/',
+      'coverage/',
+      '.husky/_/',
+      '*.js.map',
+    ],
   },
   {
     ...js.configs.recommended,
@@ -24,6 +32,12 @@ export default [
       'no-undef': 'off',
       'no-func-assign': 'off',
       'no-empty': ['error', { allowEmptyCatch: true }],
+    },
+  },
+  {
+    files: ['src/content/**/*.js'],
+    rules: {
+      'no-undef': 'error',
     },
   },
   {

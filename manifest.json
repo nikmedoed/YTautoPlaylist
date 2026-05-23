@@ -3,8 +3,8 @@
   "name": "Subscriptions to Watch Later Autoplaylist",
   "short_name": "YT AutoWL",
   "description": "Automatic playlist collector from YouTube subscriptions",
-  "version": "0.1.0",
-  "version_name": "0.1.0",
+  "version": "0.2.0",
+  "version_name": "0.2.0",
   "icons": {
     "128": "icon/icon.png"
   },
@@ -16,24 +16,12 @@
   "content_scripts": [
     {
       "matches": ["https://www.youtube.com/*"],
-      "js": [
-        "src/content/base.js",
-        "src/content/styles.js",
-        "src/content/inlinePlaylist.js",
-        "src/content/videoCards.js",
-        "src/content/collectors.js",
-        "src/content/playerControls.js",
-        "src/content/pageActions.js",
-        "src/content/interceptors.js",
-        "src/content/navigation.js",
-        "src/content/messages.js",
-        "src/content/init.js"
-      ],
+      "js": ["build/content.js"],
       "run_at": "document_idle"
     }
   ],
   "background": {
-    "service_worker": "src/background.js",
+    "service_worker": "build/background.js",
     "type": "module"
   },
   "web_accessible_resources": [

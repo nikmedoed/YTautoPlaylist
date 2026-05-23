@@ -1,150 +1,26 @@
-import { getVideoInfo, isShort, isVideoInPlaylist } from "./youTubeApiConnectors.js";
+// Video filtering engine. Applies saved title, tag, hashtag, and duration rules to YouTube video metadata.
+import { isVideoInPlaylist } from "./youtube-api/playlists.js";
+import { getVideoInfo, isShort } from "./youtube-api/videos.js";
 import { parseDuration } from "./time.js";
-
-const STORAGE_KEYS = {
-  filters: "filters",
-  autoCollect: "subscriptionsCollect",
-};
-
-const DEFAULT_FILTERS = Object.freeze({
-  global: { noShorts: true },
-  channels: {},
-});
-
-let filtersCache = null;
-let autoCollectLastRun = null;
-
-function toDate(value) {
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : value;
-  }
-  if (typeof value === "number") {
-    if (!Number.isFinite(value) || value <= 0) {
-      return null;
-    }
-    const dt = new Date(value);
-    return Number.isNaN(dt.getTime()) ? null : dt;
-  }
-  if (typeof value === "string") {
-    const dt = new Date(value);
-    return Number.isNaN(dt.getTime()) ? null : dt;
-  }
-  return null;
-}
-
-function cloneDate(value) {
-  return value instanceof Date ? new Date(value.getTime()) : null;
-}
-
-function updateAutoCollectLastRun(meta) {
-  if (meta && typeof meta === "object") {
-    const parsed = toDate(meta.lastRunAt);
-    autoCollectLastRun = parsed ? cloneDate(parsed) : null;
-    return;
-  }
-  autoCollectLastRun = null;
-}
-
-function cloneDefaultFilters() {
-  return {
-    global: { ...DEFAULT_FILTERS.global },
-    channels: {},
-  };
-}
-
-function normalizeFilters(raw) {
-  if (!raw || typeof raw !== "object") {
-    return cloneDefaultFilters();
-  }
-  const normalized = cloneDefaultFilters();
-  if (raw.global && typeof raw.global === "object") {
-    normalized.global = { ...normalized.global, ...raw.global };
-  }
-  if (raw.channels && typeof raw.channels === "object") {
-    normalized.channels = { ...raw.channels };
-  }
-  return normalized;
-}
-
-const hasChromeStorage =
-  typeof chrome !== "undefined" && chrome?.storage?.local;
-
-if (hasChromeStorage && chrome.storage?.onChanged) {
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== "local") return;
-    if (changes[STORAGE_KEYS.filters]) {
-      try {
-        const parsed = JSON.parse(changes[STORAGE_KEYS.filters].newValue);
-        filtersCache = normalizeFilters(parsed);
-      } catch {
-        filtersCache = cloneDefaultFilters();
-      }
-    }
-    if (changes[STORAGE_KEYS.autoCollect]) {
-      updateAutoCollectLastRun(changes[STORAGE_KEYS.autoCollect].newValue);
-    }
-  });
-}
-
-export function getFiltersLastSaved() {
-  return cloneDate(autoCollectLastRun);
-}
-
-export function getFilters() {
-  if (filtersCache) {
-    return Promise.resolve(filtersCache);
-  }
-  if (!hasChromeStorage) {
-    filtersCache = cloneDefaultFilters();
-    return Promise.resolve(filtersCache);
-  }
-  return new Promise((resolve) => {
-    chrome.storage.local.get(
-      [STORAGE_KEYS.filters, STORAGE_KEYS.autoCollect],
-      (data) => {
-        if (data && data[STORAGE_KEYS.filters]) {
-          try {
-            const parsed = JSON.parse(data[STORAGE_KEYS.filters]);
-            filtersCache = normalizeFilters(parsed);
-          } catch {
-            filtersCache = cloneDefaultFilters();
-          }
-        } else {
-          filtersCache = cloneDefaultFilters();
-          chrome.storage.local.set({
-            [STORAGE_KEYS.filters]: JSON.stringify(filtersCache),
-          });
-        }
-        updateAutoCollectLastRun(data?.[STORAGE_KEYS.autoCollect]);
-        resolve(filtersCache);
-      }
-    );
-  });
-}
-
-export function saveFilters(filters) {
-  const normalized = normalizeFilters(filters);
-  filtersCache = normalized;
-  if (!hasChromeStorage) {
-    return Promise.resolve();
-  }
-  return new Promise((resolve) => {
-    chrome.storage.local.set(
-      {
-        [STORAGE_KEYS.filters]: JSON.stringify(normalized),
-      },
-      resolve
-    );
-  });
-}
+export {
+  getFilters,
+  getFiltersLastSaved,
+  normalizeFilters,
+  saveFilters,
+} from "./filterStorage.js";
+import { getFilters, normalizeFilters } from "./filterStorage.js";
 
 async function fetchInfo(list) {
-  const needInfo = list.filter(
-    (video) =>
-      !video.duration || !video.title || !video.channelId || !video.tags
-  );
   const ids = Array.from(
-    new Set(needInfo.map((video) => video.id).filter(Boolean))
+    new Set(
+      list
+        .filter(
+          (video) =>
+            !video.duration || !video.title || !video.channelId || !video.tags
+        )
+        .map((video) => video.id)
+        .filter(Boolean)
+    )
   );
   if (!ids.length) {
     return list;
@@ -199,34 +75,90 @@ function buildStats(videos) {
   return stats;
 }
 
-function getRules(global, local = {}) {
-  return {
-    noShorts: local.noShorts ?? global.noShorts,
-    noBroadcasts: local.noBroadcasts ?? global.noBroadcasts,
-    title: [...(global.title || []), ...(local.title || [])].map((text) =>
-      String(text).toLowerCase()
-    ),
-    tags: [...(global.tags || []), ...(local.tags || [])].map((tag) =>
-      String(tag).toLowerCase().replace(/\s+/g, "")
-    ),
-    duration: [...(global.duration || []), ...(local.duration || [])].map(
-      ({ min = 0, max = Infinity }) => ({
-        min: Number.isFinite(min) ? min : 0,
-        max: Number.isFinite(max) ? max : Infinity,
-      })
-    ),
-    playlists: [...(global.playlists || []), ...(local.playlists || [])].filter(
-      Boolean
-    ),
+function normalizeNeedles(values, normalize, keyFn = (v) => v) {
+  if (!Array.isArray(values)) return [];
+  const seen = new Set();
+  const result = [];
+  values.forEach((value) => {
+    const normalized = normalize(value);
+    if (normalized == null) return;
+    const key = keyFn(normalized);
+    if (seen.has(key)) return;
+    seen.add(key);
+    result.push(normalized);
+  });
+  return result;
+}
+
+function normalizeDurationRange(range = {}) {
+  const min = Number.isFinite(range.min) ? range.min : 0;
+  const max = Number.isFinite(range.max) ? range.max : Infinity;
+  return { min, max };
+}
+
+function createRulesResolver(filters) {
+  const normalized = normalizeFilters(filters);
+  const cache = new Map();
+
+  return (channelId) => {
+    const key = channelId || "unknown";
+    if (cache.has(key)) return cache.get(key);
+    const local = normalized.channels[key] || {};
+    const rules = {
+      noShorts: local.noShorts ?? normalized.global.noShorts,
+      noBroadcasts: local.noBroadcasts ?? normalized.global.noBroadcasts,
+      title: normalizeNeedles(
+        [...(normalized.global.title || []), ...(local.title || [])],
+        (text) => {
+          const str = String(text || "").trim().toLowerCase();
+          return str || null;
+        }
+      ),
+      tags: normalizeNeedles(
+        [...(normalized.global.tags || []), ...(local.tags || [])],
+        (tag) => {
+          const str = String(tag || "").toLowerCase().replace(/\s+/g, "");
+          return str || null;
+        }
+      ),
+      duration: normalizeNeedles(
+        [...(normalized.global.duration || []), ...(local.duration || [])],
+        normalizeDurationRange,
+        ({ min, max }) => `${min}-${max}`
+      ),
+      playlists: normalizeNeedles(
+        [...(normalized.global.playlists || []), ...(local.playlists || [])],
+        (pl) => pl || null
+      ),
+    };
+    cache.set(key, rules);
+    return rules;
   };
 }
 
-export async function applyFilters(video, rules) {
-  if (
-    rules.noBroadcasts &&
+function normalizeVideoTags(video) {
+  const tags = (video.tags || []).map((tag) =>
+    String(tag || "").toLowerCase().replace(/\s+/g, "")
+  );
+  const titleTags =
+    (video.title || "")
+      .match(/#[^\s#]+/g)
+      ?.map((tag) => tag.slice(1).toLowerCase().replace(/\s+/g, "")) || [];
+  return Array.from(new Set([...tags, ...titleTags]));
+}
+
+function isBroadcast(video) {
+  return (
     video.liveStreamingDetails &&
     video.liveStreamingDetails.actualStartTime !==
       video.liveStreamingDetails.scheduledStartTime
+  );
+}
+
+export async function applyFilters(video, rules, durationSeconds) {
+  if (
+    rules.noBroadcasts &&
+    isBroadcast(video)
   ) {
     return "broadcast";
   }
@@ -239,26 +171,22 @@ export async function applyFilters(video, rules) {
   }
 
   if (rules.tags.length) {
-    const tags = (video.tags || []).map((tag) =>
-      String(tag).toLowerCase().replace(/\s+/g, "")
-    );
-    const titleTags =
-      (video.title || "")
-        .match(/#[^\s#]+/g)
-        ?.map((tag) => tag.slice(1).toLowerCase().replace(/\s+/g, "")) || [];
-    const allTags = tags.concat(titleTags);
+    const allTags = normalizeVideoTags(video);
     if (rules.tags.some((needle) => allTags.includes(needle))) {
       return "tag";
     }
   }
 
   if (rules.duration.length) {
-    const durationSeconds = parseDuration(video.duration);
+    const parsedDuration =
+      typeof durationSeconds === "number"
+        ? durationSeconds
+        : parseDuration(video.duration);
     if (
-      typeof durationSeconds === "number" &&
+      typeof parsedDuration === "number" &&
       !rules.duration.some(
         ({ min = 0, max = Infinity }) =>
-          durationSeconds >= min && durationSeconds <= max
+          parsedDuration >= min && parsedDuration <= max
       )
     ) {
       return "duration";
@@ -278,19 +206,17 @@ export async function applyFilters(video, rules) {
   return undefined;
 }
 
-async function determineFilterReason(video, filters) {
-  const rules = getRules(filters.global, filters.channels[video.channelId]);
+async function determineFilterReason(video, rules) {
   const durationSeconds = parseDuration(video.duration);
   if (
-    rules.duration.length &&
-    (!video.duration ||
-      typeof durationSeconds !== "number" ||
-      !Number.isFinite(durationSeconds) ||
-      durationSeconds <= 0)
+    !video.duration ||
+    typeof durationSeconds !== "number" ||
+    !Number.isFinite(durationSeconds) ||
+    durationSeconds <= 0
   ) {
     return "missingDuration";
   }
-  let reason = await applyFilters(video, rules);
+  let reason = await applyFilters(video, rules, durationSeconds);
   if (!reason && rules.playlists?.length) {
     if (await isInPlaylists(video.id, rules.playlists)) {
       reason = "playlist";
@@ -301,12 +227,15 @@ async function determineFilterReason(video, filters) {
 
 export async function getVideoFilterReason(video) {
   const filters = await getFilters();
-  return determineFilterReason(video, filters);
+  const rulesForChannel = createRulesResolver(filters);
+  return determineFilterReason(video, rulesForChannel(video.channelId));
 }
 
+// Applies every configured filter to collected videos and reports accepted/skipped totals for collection progress UI.
 export async function filterVideos(list, progress) {
   console.log("Fetching info for", list.length, "videos");
   const filters = await getFilters();
+  const rulesForChannel = createRulesResolver(filters);
   const videos = await fetchInfo(list);
   const stats = buildStats(videos);
   const result = [];
@@ -317,13 +246,15 @@ export async function filterVideos(list, progress) {
 
   await Promise.all(
     Array.from({ length: concurrency }, async () => {
-      // eslint-disable-next-line no-constant-condition
       while (true) {
         const current = index++;
         if (current >= videos.length) break;
         const video = videos[current];
-        const reason = await determineFilterReason(video, filters);
         const channelId = video.channelId || "unknown";
+        const reason = await determineFilterReason(
+          video,
+          rulesForChannel(channelId)
+        );
         const channelStats = stats.get(channelId);
         if (reason) {
           switch (reason) {

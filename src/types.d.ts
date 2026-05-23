@@ -1,3 +1,4 @@
+// Project-wide type declarations for this JavaScript codebase. Documents globals and shared shapes used by editors.
 export interface Video {
   id: string;
   publishedAt: Date;

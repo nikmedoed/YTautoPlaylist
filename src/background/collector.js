@@ -1,4 +1,6 @@
-import { getVideoInfo, getPlaylistVideoIds } from "../youTubeApiConnectors.js";
+// Fetches video entries and playlist ids for background add flows. Contains YouTube metadata conversion and active-tab collection requests.
+import { getPlaylistVideoIds } from "../youtube-api/playlists.js";
+import { getVideoInfo } from "../youtube-api/videos.js";
 import { parseVideoId, parsePlaylistId } from "../utils.js";
 import { MAX_API_BATCH } from "./constants.js";
 

@@ -1,0 +1,85 @@
+/* Popup status stylesheet. Contains CSS for the corresponding popup or manager UI area. */
+#status {
+  position: fixed;
+  left: 50%;
+  top: 16px;
+  transform: translate(-50%, -12px);
+  z-index: 1000;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(229, 45, 39, 0.85);
+  color: #ffd7d7;
+  font-size: 12px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  max-width: calc(100% - 32px);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+#status[data-position="bottom"] {
+  top: auto;
+  bottom: 16px;
+  transform: translate(-50%, 12px);
+}
+
+#status[data-visible="1"] {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, 0);
+}
+
+#status[data-kind="success"] {
+  background: rgba(56, 142, 60, 0.85);
+  color: #e6ffe9;
+}
+
+#status[data-kind="info"] {
+  background: rgba(25, 118, 210, 0.85);
+  color: #e3efff;
+}
+
+#status .status-progress {
+  position: relative;
+  width: 100%;
+  min-width: 180px;
+  max-width: 320px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.25);
+  overflow: hidden;
+  align-self: center;
+}
+
+#status .status-progress-bar {
+  position: relative;
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, 0.85);
+  transition: width 0.25s ease;
+}
+
+#status .status-progress[data-indeterminate="1"] .status-progress-bar {
+  width: 40%;
+  animation: status-progress-indeterminate 1.4s ease-in-out infinite;
+}
+
+@keyframes status-progress-indeterminate {
+  0% {
+    transform: translateX(-120%);
+  }
+  50% {
+    transform: translateX(-10%);
+  }
+  100% {
+    transform: translateX(120%);
+  }
+}

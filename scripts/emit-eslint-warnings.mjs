@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// ESLint report formatter. Reads a JSON report and prints warnings in a CI-friendly text format.
 import { readFileSync } from 'node:fs';
 
 const [reportPath] = process.argv.slice(2);

@@ -1,4 +1,4 @@
-// Manage OAuth token using chrome.identity without gapi
+// Chrome and YouTube authentication helper. Contains token retrieval and auth retry behavior for API calls.
 if (typeof chrome !== "undefined") {
   chrome.storage.local.set({ authStatus: false });
 }

@@ -1,11 +1,21 @@
-import { getChannelMap, getNewVideos } from "./youTubeApiConnectors.js";
+// Collects recent uploads from subscribed channels, de-dupes by video id, then applies filters before returning entries in chronological order.
+import { getChannelMap } from "./youtube-api/channels.js";
+import { getNewVideos } from "./youtube-api/videos.js";
 import { parseDuration, formatStorageTimestamp } from "./time.js";
 import { filterVideos } from "./filter.js";
 
 export async function collectVideos(
   startDate = new Date(Date.now() - 604800000),
-  progress = () => {}
+  progress = () => {},
+  options = {}
 ) {
+  const excludeIds = new Set(
+    Array.isArray(options?.excludeIds)
+      ? options.excludeIds.filter(Boolean)
+      : options?.excludeIds instanceof Set
+        ? Array.from(options.excludeIds).filter(Boolean)
+        : []
+  );
   const channels = await getChannelMap();
   const sources = Object.entries(channels)
     .map(([channelId, info]) => ({
@@ -63,7 +73,7 @@ export async function collectVideos(
   const videoMap = new Map();
   for (const r of results) {
     for (const v of r.videos) {
-      if (!videoMap.has(v.id)) {
+      if (!excludeIds.has(v.id) && !videoMap.has(v.id)) {
         videoMap.set(v.id, v);
       }
     }

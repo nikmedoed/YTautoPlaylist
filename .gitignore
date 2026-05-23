@@ -1,11 +1,13 @@
 # Ignore node_modules directory if you're using Node.js for development
 node_modules/
 
-# Ignore build output directories
+# Ignore temporary build output directories
 /dist/
-/build/
 /out/
 /.tmp/
+/YTautoPlaylist-release/
+/YTautoPlaylist-release.zip
+*.map
 
 # Ignore any Chrome-specific build directories
 *.crx
@@ -65,3 +67,5 @@ dist-ssr
 *.sln
 *.sw?
 YTfix.txt
+# Added by code-review-graph
+.code-review-graph/

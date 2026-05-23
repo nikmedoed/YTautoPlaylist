@@ -1,13 +1,11 @@
+// Collection progress formatters. Converts raw collection events and counters into stage text, logs, and status metadata.
 import { formatDateTime } from "../../../time.js";
 import { COLLECTION_STAGE_DEFS } from "./constants.js";
-
-const EMPTY_TOTALS = Object.freeze({
-  filtered: 0,
-  broadcasts: 0,
-  shorts: 0,
-  stoplists: 0,
-  passed: 0,
-});
+import {
+  EMPTY_FILTER_TOTALS,
+  formatCount,
+  resolveFilterTotals,
+} from "./metrics.js";
 
 function shortenId(value, length = 8) {
   if (!value) return "";
@@ -17,33 +15,12 @@ function shortenId(value, length = 8) {
   return `${str.slice(0, half)}…${str.slice(-half)}`;
 }
 
-function formatCount(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return "0";
-  }
-  return numeric.toLocaleString("ru-RU");
-}
-
 function formatPlaylistLabel(event = {}) {
   const title = (event.channelTitle || event.playlistTitle || "").trim();
   if (title) {
     return title;
   }
   return shortenId(event.playlistId);
-}
-
-function resolveFilterTotals(totals) {
-  if (!totals) {
-    return { ...EMPTY_TOTALS };
-  }
-  return {
-    filtered: Number(totals.filtered) || 0,
-    broadcasts: Number(totals.broadcasts) || 0,
-    shorts: Number(totals.shorts) || 0,
-    stoplists: Number(totals.stoplists) || 0,
-    passed: Number(totals.passed) || 0,
-  };
 }
 
 function formatFilterBreakdown(totals) {
@@ -57,6 +34,8 @@ function formatFilterBreakdown(totals) {
   ].join(" · ");
 }
 
+// Builds compact text for the current stage card from the accumulated summary
+// plus the newest raw event.
 export function formatStageMeta(stageId, summary, event = {}) {
   switch (stageId) {
     case "intake": {
@@ -97,7 +76,7 @@ export function formatStageMeta(stageId, summary, event = {}) {
       return "Загрузка плейлистов";
     }
     case "videos": {
-      const totals = summary.filterTotals || EMPTY_TOTALS;
+      const totals = summary.filterTotals || EMPTY_FILTER_TOTALS;
       const total =
         summary.filterTotal ||
         event.total ||
@@ -177,6 +156,7 @@ export function formatStageMeta(stageId, summary, event = {}) {
   }
 }
 
+// Converts noisy background progress events into human-readable log rows.
 export function formatStageLog(event = {}, summary) {
   switch (event.phase) {
     case "start":
@@ -242,6 +222,7 @@ export function formatStageLog(event = {}, summary) {
   }
 }
 
+// Chooses the transient status-toast text for collection progress events.
 export function getStatusInfo(event = {}, summary) {
   if (!event.phase) return null;
   switch (event.phase) {

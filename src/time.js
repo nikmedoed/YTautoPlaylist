@@ -1,3 +1,4 @@
+// Time utility module. Contains timestamp normalization and display formatting used by collection and playlist naming.
 const ISO_DURATION_PATTERN = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/;
 
 const DISPLAY_DATE_FORMATTER = new Intl.DateTimeFormat("ru-RU", {

@@ -1,3 +1,4 @@
+// Popup detail DOM helpers. Builds reusable thumbnail, metadata, progress, and action fragments for video rows.
 import { formatDateTime, formatDuration } from "../../time.js";
 
 function normalizeKey(key) {

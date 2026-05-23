@@ -1,3 +1,4 @@
+/* Popup manager stylesheet. Contains CSS for the corresponding popup or manager UI area. */
 .modal-backdrop {
   position: fixed;
   inset: 0;

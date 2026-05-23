@@ -1,12 +1,35 @@
+// Test runner for the repository. Imports each focused test file so npm test can execute the full lightweight suite.
 import assert from 'assert';
 import {
+  getCollectionFetchStartDate,
   getNewVideos,
+} from '../src/youtube-api/videos.js';
+import {
   __setCallApi,
+} from '../src/youtube-api/transport.js';
+import {
   isVideoInPlaylist,
   listChannelPlaylists,
-} from '../src/youTubeApiConnectors.js';
+} from '../src/youtube-api/playlists.js';
+import {
+  addVideos,
+  getAutoCollectMeta,
+  getState,
+  markVideoWatched,
+  removeVideos,
+  recordDefaultAutoCollect,
+  replaceState,
+  shouldAutoRefreshDefault,
+} from '../src/store/index.js';
+import {
+  collectAutoCollectSeenIds,
+} from '../src/background/collectionSync.js';
 import { parseVideoId } from '../src/utils.js';
 import { applyFilters, getVideoFilterReason, saveFilters } from '../src/filter.js';
+import './popupHelpers.test.js';
+import './inlineQueueHelpers.test.js';
+import './videoCards.test.js';
+import './playbackHandlers.test.js';
 
 const calls = [];
 __setCallApi(async (path) => {
@@ -25,6 +48,15 @@ const res = await getNewVideos('UUstub');
 assert.deepStrictEqual(res, { videos: [], pages: 1 });
 assert.deepStrictEqual(calls, ['playlistItems', 'search']);
 console.log('getNewVideos falls back to search');
+
+{
+  const startDate = new Date('2024-01-03T00:00:00Z');
+  assert.strictEqual(
+    getCollectionFetchStartDate(startDate).toISOString(),
+    '2024-01-01T00:00:00.000Z'
+  );
+  console.log('collection fetch window keeps a 48h safety overlap');
+}
 
 {
   const startDate = new Date('2024-01-01T03:00:00+03:00');
@@ -59,6 +91,31 @@ console.log('getNewVideos falls back to search');
   );
   assert.strictEqual(videos[0].publishedAt.toISOString(), '2024-01-01T00:00:01.000Z');
   console.log('getNewVideos respects timezone boundaries');
+}
+
+{
+  const startDate = new Date('2024-01-03T00:00:00Z');
+  __setCallApi(async (path) => {
+    if (path === 'playlistItems') {
+      return {
+        items: [
+          {
+            contentDetails: {
+              videoId: 'late',
+              videoPublishedAt: '2024-01-02T12:00:00Z',
+            },
+          },
+        ],
+      };
+    }
+    return { items: [] };
+  });
+  const { videos } = await getNewVideos('PLlate', startDate);
+  assert.deepStrictEqual(
+    videos.map((video) => video.id),
+    []
+  );
+  console.log('getNewVideos keeps overlap for fetch traversal without widening the logical date cursor');
 }
 
 {
@@ -164,7 +221,153 @@ console.log('getNewVideos falls back to search');
     global: { noShorts: false, title: ['foo'] },
     channels: {},
   });
-  const reason = await getVideoFilterReason({ id: '1', title: 'foo bar' });
+  const reason = await getVideoFilterReason({
+    id: '1',
+    title: 'foo bar',
+    duration: 'PT1M',
+  });
   assert.strictEqual(reason, 'title');
   console.log('getVideoFilterReason uses saved filters');
 }
+
+{
+  await saveFilters({
+    global: { noShorts: false },
+    channels: {},
+  });
+  const reason = await getVideoFilterReason({ id: '1', title: 'foo bar' });
+  assert.strictEqual(reason, 'missingDuration');
+  console.log('getVideoFilterReason skips videos without duration');
+}
+
+{
+  await replaceState({});
+  await addVideos(
+    [
+      { id: 'queueVid001', title: 'Queue one' },
+      { id: 'queueVid002', title: 'Queue two' },
+    ],
+    'default'
+  );
+  const stored = await getState();
+  assert.deepStrictEqual(
+    stored.autoCollect.seenIds,
+    ['queueVid001', 'queueVid002']
+  );
+  console.log('default-list additions are remembered for future auto-collect dedupe');
+}
+
+{
+  await replaceState({
+    lists: {
+      default: {
+        id: 'default',
+        name: 'Основной',
+        freeze: false,
+        queue: [{ id: 'watchVid001', title: 'Watch me' }],
+        currentIndex: 0,
+        revision: 0,
+      },
+    },
+    listOrder: ['default'],
+    currentListId: 'default',
+    currentVideoId: 'watchVid001',
+    autoCollect: {
+      lastRunAt: 0,
+      lastAdded: 0,
+      lastFetched: 0,
+      nextAutoCollectAt: 0,
+      seenIds: [],
+    },
+  });
+  await markVideoWatched('watchVid001', { listId: 'default' });
+  const stateAfterWatch = await getState();
+  assert.ok(stateAfterWatch.autoCollect.seenIds.includes('watchVid001'));
+  console.log('watched default videos are persisted in auto-collect dedupe memory');
+}
+
+{
+  await replaceState({
+    lists: {
+      default: {
+        id: 'default',
+        name: 'Основной',
+        freeze: false,
+        queue: [{ id: 'removeVid00', title: 'Remove me' }],
+        currentIndex: 0,
+        revision: 0,
+      },
+    },
+    listOrder: ['default'],
+    currentListId: 'default',
+    currentVideoId: 'removeVid00',
+    autoCollect: {
+      lastRunAt: 0,
+      lastAdded: 0,
+      lastFetched: 0,
+      nextAutoCollectAt: 0,
+      seenIds: [],
+    },
+  });
+  await removeVideos(['removeVid00'], { listId: 'default' });
+  const stateAfterRemoval = await getState();
+  assert.ok(stateAfterRemoval.autoCollect.seenIds.includes('removeVid00'));
+  console.log('removed default videos are persisted in auto-collect dedupe memory');
+}
+
+{
+  const seenIds = collectAutoCollectSeenIds({
+    autoCollect: {
+      seenIds: ['storedSee01', 'storedSee02'],
+    },
+    lists: {
+      default: {
+        queue: [
+          { id: 'queueVid001' },
+          { id: 'queueVid002' },
+        ],
+      },
+    },
+    history: [
+      { id: 'historyOne1', listId: 'default' },
+      { id: 'queueVid002' },
+    ],
+    deletedHistory: [
+      { id: 'deletedOne1', listId: 'default' },
+      { id: 'otherList01', listId: 'listother01' },
+    ],
+  });
+  assert.deepStrictEqual(
+    Array.from(seenIds).sort(),
+    [
+      'deletedOne1',
+      'historyOne1',
+      'queueVid001',
+      'queueVid002',
+      'storedSee01',
+      'storedSee02',
+    ]
+  );
+  console.log('auto-collect dedupe uses default-list seen ids, queue and default history');
+}
+
+{
+  await replaceState({});
+  const startedAt = Date.now() - 20_000;
+  const completedAt = Date.now() - 5_000;
+  await recordDefaultAutoCollect({
+    added: 0,
+    fetched: 0,
+    startedAt,
+    completedAt,
+  });
+  const meta = await getAutoCollectMeta();
+  const status = await shouldAutoRefreshDefault();
+  assert.strictEqual(meta.lastRunAt, startedAt);
+  assert.strictEqual(status.queueLength, 0);
+  assert.strictEqual(status.onCooldown, true);
+  assert.strictEqual(status.shouldCollect, false);
+  console.log('auto-collect lastRunAt records successful run start time');
+}
+
+await import('./autoCollect.test.js');

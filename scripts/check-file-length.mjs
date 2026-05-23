@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// File length guard. Checks tracked source files against the configured line limit and baseline exceptions.
 import { execSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import { extname } from 'node:path';
@@ -57,7 +58,16 @@ const textExtensions = new Set([
   '.txt',
 ]);
 
-const skipDirs = ['node_modules/', '.git/', 'dist/', 'coverage/'];
+const skipDirs = ['node_modules/', '.git/', 'dist/', 'build/', 'coverage/'];
+
+function shouldSkipFile(file) {
+  const normalized = file.replaceAll('\\', '/');
+  return (
+    normalized === 'LICENSE' ||
+    normalized.endsWith('.js.map') ||
+    skipDirs.some((dir) => normalized.startsWith(dir))
+  );
+}
 
 function collectAllFiles() {
   const tracked = execSync('git ls-files', { encoding: 'utf8' })
@@ -65,7 +75,7 @@ function collectAllFiles() {
     .map((line) => line.trim())
     .filter(Boolean);
   return tracked.filter((file) => {
-    if (skipDirs.some((dir) => file.startsWith(dir))) {
+    if (shouldSkipFile(file)) {
       return false;
     }
     try {
@@ -107,6 +117,9 @@ if (baselinePath) {
 const offenders = [];
 
 for (const file of targetFiles) {
+  if (shouldSkipFile(file)) {
+    continue;
+  }
   if (!isTextFile(file)) {
     continue;
   }

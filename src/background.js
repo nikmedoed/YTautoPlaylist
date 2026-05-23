@@ -1,8 +1,8 @@
+// Background service worker entrypoint. Routes runtime messages to background handlers and clears playback tab ownership when tabs close.
 import { MESSAGE_SOURCE } from "./background/constants.js";
-import { getHandler } from "./background/messageHandlers.js";
+import { messageHandlers } from "./background/messages.js";
 import { notifyState } from "./background/channel.js";
-import { clearCurrentTab } from "./playlistStore.js";
-
+import { clearCurrentTab } from "./store/index.js";
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message.type !== "string") {
     return false;
@@ -10,7 +10,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.source === MESSAGE_SOURCE) {
     return false;
   }
-  const handler = getHandler(message.type);
+  const handler = messageHandlers[message.type];
   if (!handler) {
     return false;
   }

@@ -1,3 +1,4 @@
+// Shared parsing utilities. Contains YouTube video and playlist id extraction used by content, popup, and background code.
 const MAX_CAPTURED_LOGS = 100;
 const YOUTUBE_ID_PATTERN = /[\w-]{11}/;
 const PLAYLIST_ID_PATTERN = /[\w-]{13,64}/;
