@@ -3,22 +3,22 @@ import { parseTime } from "../shared/format.js";
 
 // Merges the checked video's selected quick-filter rules into the saved filter configuration.
 export async function applyQuickFilters({
-addDurationFilterToSection,
-addPlaylistFilterToSection,
-addTextFilterToSection,
-ensureFilterSection,
-filtersContainer,
-getGlobalSection,
-info,
-markUnsaved,
-maxInput,
-minInput,
-selectedPlaylists,
-selectedTags,
-setMessage,
-showToast,
-scope,
-titleInput,
+  addDurationFilterToSection,
+  addPlaylistFilterToSection,
+  addTextFilterToSection,
+  ensureFilterSection,
+  filtersContainer,
+  getGlobalSection,
+  info,
+  markUnsaved,
+  maxInput,
+  minInput,
+  selectedPlaylists,
+  selectedTags,
+  setMessage,
+  showToast,
+  scope,
+  titleInput,
 }) {
   const titleValue = titleInput.value.trim();
   const tagsValues = Array.from(selectedTags);
@@ -34,12 +34,13 @@ titleInput,
     setMessage("Добавьте значение фильтра перед созданием.", true);
     return;
   }
-          let targetSection =
-            scope === "channel"
-              ? filtersContainer?.querySelector(
-                  `.filter-card[data-channel="${info.channelId}"]`
-                )
-              : getGlobalSection?.();
+
+  let targetSection =
+    scope === "channel"
+      ? filtersContainer?.querySelector(
+          `.filter-card[data-channel="${info.channelId}"]`
+        )
+      : getGlobalSection?.();
   if (!targetSection) {
     targetSection = ensureFilterSection(
       scope === "channel" ? info.channelId : null,
@@ -96,5 +97,5 @@ titleInput,
   );
   showToast("Фильтры обновлены, не забудьте сохранить изменения");
   markUnsaved();
-};
+}
 

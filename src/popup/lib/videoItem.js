@@ -240,5 +240,3 @@ export function createVideoItem(video, options = {}) {
 
   return element;
 }
-
-export { sanitizeText };

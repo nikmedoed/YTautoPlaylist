@@ -161,10 +161,3 @@ export function applyVideoProgress(state, videoId, percent, options = {}) {
   enforceVideoProgressLimit(state);
   return !existing || existing.percent !== clamped || timestamp !== existing.updatedAt;
 }
-
-export function cloneVideoProgress(state) {
-  if (!state || typeof state !== "object") {
-    return {};
-  }
-  return sanitizeVideoProgressMap(state.videoProgress);
-}

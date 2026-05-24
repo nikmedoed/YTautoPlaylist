@@ -69,8 +69,4 @@ export const collectionHandlers = {
     if (info.error) return info;
     return { info };
   },
-
-  async getLogs() {
-    return { logs: [] };
-  },
 };

@@ -3625,10 +3625,6 @@
     if (percent <= 0) return 0;
     return percent >= 100 ? 100 : percent;
   }
-  function normalizeProgressPercent(entry) {
-    const percent = clampProgressPercent(entry?.percent);
-    return percent && percent > 0 ? percent : null;
-  }
   function getProgressPercent(progressById, videoId) {
     if (!videoId || !progressById) {
       return null;
@@ -3636,7 +3632,8 @@
     if (typeof progressById !== "object") {
       return null;
     }
-    return normalizeProgressPercent(progressById[videoId]);
+    const percent = clampProgressPercent(progressById[videoId]?.percent);
+    return percent && percent > 0 ? percent : null;
   }
 
   // src/content/playback/progressWatchdog.js
@@ -7456,7 +7453,6 @@
       enhanceVideoCards(document);
     });
     updatePageActions();
-    ensurePlayerControls2();
     scanForVideo();
     observer.observe(document.documentElement || document.body, {
       childList: true,

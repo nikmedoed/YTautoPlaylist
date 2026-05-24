@@ -205,12 +205,6 @@ function applyVideoProgress(state, videoId, percent, options = {}) {
   enforceVideoProgressLimit(state);
   return !existing || existing.percent !== clamped || timestamp !== existing.updatedAt;
 }
-function cloneVideoProgress(state) {
-  if (!state || typeof state !== "object") {
-    return {};
-  }
-  return sanitizeVideoProgressMap(state.videoProgress);
-}
 
 // src/store/state/sanitizers.js
 var SECOND_TS_MIN = 1e9;
@@ -1714,7 +1708,7 @@ async function getPresentationState() {
     activeListId: state.currentListId,
     currentVideoId: state.currentVideoId,
     currentTabId: state.currentTabId,
-    videoProgress: cloneVideoProgress(state),
+    videoProgress: sanitizeVideoProgressMap(state.videoProgress),
     currentQueue: currentList ? {
       id: currentList.id,
       name: currentList.name,
@@ -1893,12 +1887,8 @@ async function addListToWL(playlistId, list, options = {}) {
     }
   };
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  async function step(count) {
-    if (count === total) {
-      console.log("OK, added: " + count);
-      notifyProgress({ added: count, status: "complete" });
-      return count;
-    }
+  let count = 0;
+  while (count < total) {
     const targetVideo = list[count];
     if (!targetVideo) {
       notifyProgress({ added: count, status: "complete" });
@@ -1909,20 +1899,20 @@ async function addListToWL(playlistId, list, options = {}) {
       console.log(`OK: ${targetVideo.id}, count ${count}/${list.length}`);
       const next = count + 1;
       notifyProgress({ added: next, status: "added", videoId: targetVideo.id });
-      return step(next);
+      count = next;
     } catch (err) {
       const reason = err.error?.errors?.[0]?.reason || "";
       const status = err.status;
       switch (reason) {
         case "videoAlreadyInPlaylist": {
           logMessage("warn", targetVideo.id, count, err.error.message);
-          const next = count + 1;
+          count += 1;
           notifyProgress({
-            added: next,
+            added: count,
             status: "skipped",
             videoId: targetVideo.id
           });
-          return step(next);
+          break;
         }
         case "backendError":
         case "internalError": {
@@ -1940,7 +1930,7 @@ async function addListToWL(playlistId, list, options = {}) {
             delayMs: 60 * 1e3
           });
           await wait(60 * 1e3);
-          return step(count);
+          break;
         }
         case "rateLimitExceeded": {
           logMessage(
@@ -1957,7 +1947,7 @@ async function addListToWL(playlistId, list, options = {}) {
             delayMs: 8 * 60 * 1e3 + 500
           });
           await wait(8 * 60 * 1e3 + 500);
-          return step(count);
+          break;
         }
         case "quotaExceeded": {
           logMessage("error", targetVideo.id, count, "Quota exceeded");
@@ -1984,7 +1974,7 @@ async function addListToWL(playlistId, list, options = {}) {
             delayMs: 60 * 1e3
           });
           await wait(60 * 1e3);
-          return step(count);
+          break;
         }
         default: {
           if (status >= 500) {
@@ -2002,7 +1992,7 @@ async function addListToWL(playlistId, list, options = {}) {
               delayMs: 60 * 1e3
             });
             await wait(60 * 1e3);
-            return step(count);
+            break;
           }
           logMessage(
             "error",
@@ -2021,7 +2011,9 @@ async function addListToWL(playlistId, list, options = {}) {
       }
     }
   }
-  return step(0);
+  console.log("OK, added: " + count);
+  notifyProgress({ added: count, status: "complete" });
+  return count;
 }
 async function createPlayList(title) {
   return callApi("playlists", { part: "snippet,status" }, "POST", {
@@ -3073,9 +3065,7 @@ async function ensureDefaultQueueFilled(options = {}) {
 function normalizeVideoIdList(values) {
   const source = Array.isArray(values) ? values : [];
   return Array.from(
-    new Set(
-      source.map((value) => parseVideoId(value)).filter((id) => typeof id === "string" && id.length === 11)
-    )
+    new Set(source.map((value) => parseVideoId(value)).filter(Boolean))
   );
 }
 function normalizeStringIdList(values) {
@@ -3087,7 +3077,7 @@ function normalizeStringIdList(values) {
   );
 }
 function resolveAddTargetListId(state, requestedListId) {
-  const lists = state && typeof state === "object" && state.lists && typeof state.lists === "object" ? state.lists : {};
+  const lists = state?.lists || {};
   if (requestedListId && lists[requestedListId]) {
     return requestedListId;
   }
@@ -3102,18 +3092,10 @@ function resolveAddTargetListId(state, requestedListId) {
 }
 function countAddedEntriesInQueue(nextState, listId, beforeState) {
   const previousIds = new Set(
-    (beforeState?.lists?.[listId]?.queue || []).map((entry) => entry && typeof entry === "object" ? entry.id : null).filter((id) => typeof id === "string" && id.length > 0)
+    (beforeState?.lists?.[listId]?.queue || []).map((entry) => entry.id)
   );
   const list = nextState?.lists?.[listId];
-  const queue = Array.isArray(list?.queue) ? list.queue : [];
-  let added = 0;
-  for (const entry of queue) {
-    const id = entry && typeof entry === "object" && typeof entry.id === "string" ? entry.id : null;
-    if (id && !previousIds.has(id)) {
-      added += 1;
-    }
-  }
-  return added;
+  return (list?.queue || []).filter((entry) => !previousIds.has(entry.id)).length;
 }
 async function applyMutation(mutator, options = {}) {
   const {
@@ -3165,10 +3147,12 @@ async function handleAddByIds(message, sender = null) {
   const entries = await fetchVideoEntries(uniqueIds);
   const fetchedIds = new Set(entries.map((entry) => entry?.id).filter(Boolean));
   const missing = uniqueIds.filter((id) => !fetchedIds.has(id)).length;
-  const state = await addEntries(entries, targetListId, {
+  const afterState = await applyMutation(() => addVideos(entries, targetListId), {
+    dispatch: true,
     ensureDefault: Boolean(message?.ensureDefault)
   });
-  const added = countAddedEntriesInQueue(state, targetListId, beforeState);
+  const state = await getPresentationState();
+  const added = countAddedEntriesInQueue(afterState, targetListId, beforeState);
   return {
     state,
     requested: uniqueIds.length,
@@ -3365,9 +3349,6 @@ var collectionHandlers = {
     const info = await handleVideoMetadata(message);
     if (info.error) return info;
     return { info };
-  },
-  async getLogs() {
-    return { logs: [] };
   }
 };
 

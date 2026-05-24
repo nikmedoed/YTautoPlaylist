@@ -17,11 +17,7 @@ import { fetchVideoEntries } from "./collector.js";
 function normalizeVideoIdList(values) {
   const source = Array.isArray(values) ? values : [];
   return Array.from(
-    new Set(
-      source
-        .map((value) => parseVideoId(value))
-        .filter((id) => typeof id === "string" && id.length === 11)
-    )
+    new Set(source.map((value) => parseVideoId(value)).filter(Boolean))
   );
 }
 
@@ -37,10 +33,7 @@ function normalizeStringIdList(values) {
 }
 
 function resolveAddTargetListId(state, requestedListId) {
-  const lists =
-    state && typeof state === "object" && state.lists && typeof state.lists === "object"
-      ? state.lists
-      : {};
+  const lists = state?.lists || {};
   if (requestedListId && lists[requestedListId]) {
     return requestedListId;
   }
@@ -56,23 +49,11 @@ function resolveAddTargetListId(state, requestedListId) {
 
 function countAddedEntriesInQueue(nextState, listId, beforeState) {
   const previousIds = new Set(
-    (beforeState?.lists?.[listId]?.queue || [])
-      .map((entry) => (entry && typeof entry === "object" ? entry.id : null))
-      .filter((id) => typeof id === "string" && id.length > 0)
+    (beforeState?.lists?.[listId]?.queue || []).map((entry) => entry.id)
   );
   const list = nextState?.lists?.[listId];
-  const queue = Array.isArray(list?.queue) ? list.queue : [];
-  let added = 0;
-  for (const entry of queue) {
-    const id =
-      entry && typeof entry === "object" && typeof entry.id === "string"
-        ? entry.id
-        : null;
-    if (id && !previousIds.has(id)) {
-      added += 1;
-    }
-  }
-  return added;
+  return (list?.queue || []).filter((entry) => !previousIds.has(entry.id))
+    .length;
 }
 
 export async function applyMutation(mutator, options = {}) {
@@ -112,8 +93,8 @@ export async function addEntries(entries, listId = null, options = {}) {
   });
 }
 
-// Adds fetched YouTube metadata to the active list. Content scripts are not
-// allowed to choose a list; popup/manager calls may pass an explicit listId.
+// Fetches YouTube metadata, writes the entries, and returns UI state plus
+// counters for popup/content status messages.
 export async function handleAddByIds(message, sender = null) {
   const uniqueIds = normalizeVideoIdList(message?.videoIds);
   if (!uniqueIds.length) {
@@ -133,10 +114,12 @@ export async function handleAddByIds(message, sender = null) {
   const entries = await fetchVideoEntries(uniqueIds);
   const fetchedIds = new Set(entries.map((entry) => entry?.id).filter(Boolean));
   const missing = uniqueIds.filter((id) => !fetchedIds.has(id)).length;
-  const state = await addEntries(entries, targetListId, {
+  const afterState = await applyMutation(() => addVideos(entries, targetListId), {
+    dispatch: true,
     ensureDefault: Boolean(message?.ensureDefault),
   });
-  const added = countAddedEntriesInQueue(state, targetListId, beforeState);
+  const state = await getPresentationState();
+  const added = countAddedEntriesInQueue(afterState, targetListId, beforeState);
   return {
     state,
     requested: uniqueIds.length,

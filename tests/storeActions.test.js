@@ -123,6 +123,63 @@ import { __setCallApi } from '../src/youtube-api/transport.js';
         id: 'default',
         name: 'Основной',
         freeze: false,
+        queue: [],
+        currentIndex: null,
+        revision: 0,
+      },
+      target: {
+        id: 'target',
+        name: 'Target',
+        freeze: false,
+        queue: [],
+        currentIndex: null,
+        revision: 0,
+      },
+    },
+    listOrder: ['default', 'target'],
+    currentListId: 'default',
+  });
+  __setCallApi(async (path) => {
+    if (path === 'videos') {
+      return {
+        items: [
+          {
+            id: 'videoAdd002',
+            snippet: {
+              title: 'Added by manager',
+              channelId: 'channel001',
+              channelTitle: 'Channel',
+              publishedAt: '2024-01-01T00:00:00Z',
+            },
+            contentDetails: {
+              duration: 'PT2M',
+            },
+          },
+        ],
+      };
+    }
+    return { items: [] };
+  });
+  const response = await queueHandlers['playlist:addByIds'](
+    { videoIds: ['videoAdd002'], listId: 'target' },
+    {}
+  );
+  const stored = await getState();
+  assert.strictEqual(response.added, 1);
+  assert.deepStrictEqual(
+    stored.lists.target.queue.map((entry) => entry.id),
+    ['videoAdd002']
+  );
+  console.log('manual add responses count videos added to non-current lists');
+}
+
+{
+  await replaceState({
+    lists: {
+      default: {
+        id: 'default',
+        name: 'Основной',
+        freeze: false,
         queue: [{ id: 'watchVid001', title: 'Watch me' }],
         currentIndex: 0,
         revision: 0,

@@ -23,7 +23,6 @@ function init() {
     enhanceVideoCards(document);
   });
   updatePageActions();
-  ensurePlayerControls();
   scanForVideo();
   observer.observe(document.documentElement || document.body, {
     childList: true,
