@@ -60,7 +60,7 @@ function readPlayerResponseCandidates() {
         if (parsed && typeof parsed === "object") {
           candidates.push(parsed);
         }
-      } catch (_) {
+      } catch {
         /* ignore malformed player_response */
       }
     }
@@ -216,7 +216,7 @@ function teardownPlayerErrorObserver() {
   if (playerErrorObserverState.observer) {
     try {
       playerErrorObserverState.observer.disconnect();
-    } catch (_) {
+    } catch {
       /* ignore */
     }
   }

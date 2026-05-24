@@ -4,7 +4,6 @@ import {
   cardRetryState,
   CARD_MARK,
   CARD_OVERLAY_HOST_CLASS,
-  inlinePlaylistState,
   THUMB_HOST_CLASS,
   VIDEO_CARD_SELECTOR,
   ytaDiagMeasure,
@@ -143,7 +142,7 @@ export function createVideoCardDecorationController({
         videoId,
       });
       addMetrics = await applyInlineAddResponse(response);
-    } catch (err) {
+    } catch {
       delete button.dataset.ytaStatus;
       button.disabled = false;
       syncInlineButtonState(button);

@@ -1,6 +1,5 @@
 // Shared parsing utilities. Extracts YouTube ids/thumbnail URLs from raw ids,
 // URLs, API records, and YouTube DOM attributes across extension contexts.
-const MAX_CAPTURED_LOGS = 100;
 const YOUTUBE_ID_PATTERN = /[\w-]{11}/;
 const PLAYLIST_ID_PATTERN = /[\w-]{13,64}/;
 const THUMBNAIL_PRIORITY = ["maxres", "standard", "high", "medium", "default"];
@@ -116,31 +115,5 @@ export function resolveThumbnailUrl(entry, fallback = "") {
     fallback ||
     ""
   );
-}
-
-export const logMessages = [];
-
-function safeStringify(value) {
-  try {
-    return JSON.stringify(value);
-  } catch (err) {
-    return `[unserializable: ${err.message}]`;
-  }
-}
-
-export function setupLogCapture() {
-  const originalLog = console.log.bind(console);
-  console.log = (...args) => {
-    const entry = args
-      .map((arg) =>
-        typeof arg === "object" && arg !== null ? safeStringify(arg) : String(arg)
-      )
-      .join(" ");
-    logMessages.push(entry);
-    if (logMessages.length > MAX_CAPTURED_LOGS) {
-      logMessages.shift();
-    }
-    originalLog(...args);
-  };
 }
 

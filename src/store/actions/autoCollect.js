@@ -14,7 +14,7 @@ import {
   withState,
 } from "./core.js";
 
-export async function markAutoCollectRunStarted(startTime = Date.now()) {
+async function markAutoCollectRunStarted(startTime = Date.now()) {
   const ts = toTimestamp(startTime);
   const effective = ts === null ? Date.now() : ts;
   const state = await withState((state) => {

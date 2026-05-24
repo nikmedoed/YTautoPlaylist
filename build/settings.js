@@ -151,7 +151,7 @@ async function defaultCallApi(path, params = {}, method = "GET", body = null, re
     err.body = text;
     try {
       err.error = JSON.parse(text);
-    } catch (_) {
+    } catch {
       err.error = text;
     }
     throw err;
@@ -1149,7 +1149,7 @@ function bindFilterPersistence({
       try {
         const obj = JSON.parse(reader.result);
         saveFilters(obj).then(() => window.location.reload());
-      } catch (e) {
+      } catch {
         alert("Invalid JSON");
       }
     };

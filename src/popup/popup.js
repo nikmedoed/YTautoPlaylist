@@ -54,7 +54,7 @@ const fallbackThumbnail = chrome.runtime.getURL("icon/icon.png");
 const DEFAULT_LIST_ID = "default";
 
 let playlistState = null;
-const { setStatus, hideStatus } = createStatusController({ statusBox, statusText });
+const { setStatus } = createStatusController({ statusBox, statusText });
 
 const moveMenu = createMoveMenu({
   getOptions: ({ sourceListId }) => {

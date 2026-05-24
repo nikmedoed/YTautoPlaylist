@@ -9,7 +9,7 @@ export const COLLECTION_STAGE_DEFS = {
   error: { title: "Ошибка" },
 };
 
-export const PHASE_TO_STAGE = {
+const PHASE_TO_STAGE = {
   start: "intake",
   channelsLoaded: "intake",
   playlistFetch: "playlists",

@@ -132,7 +132,7 @@ function ytaDiagStopInternal() {
   if (ytaDiag.observers.longTask) {
     try {
       ytaDiag.observers.longTask.disconnect();
-    } catch (_) {
+    } catch {
       /* ignore */
     }
     ytaDiag.observers.longTask = null;
@@ -174,7 +174,7 @@ function ytaDiagStartInternal() {
       });
       observer.observe({ entryTypes: ["longtask"] });
       ytaDiag.observers.longTask = observer;
-    } catch (_) {
+    } catch {
       /* ignore unsupported longtask observer */
     }
   }
@@ -184,7 +184,7 @@ function ytaDiagStartInternal() {
 function ytaDiagStart() {
   try {
     localStorage.setItem(YTA_DIAG_FLAG_KEY, "1");
-  } catch (_) {
+  } catch {
     /* ignore */
   }
   ytaDiagStartInternal();
@@ -195,7 +195,7 @@ function ytaDiagStop() {
   ytaDiagStopInternal();
   try {
     localStorage.removeItem(YTA_DIAG_FLAG_KEY);
-  } catch (_) {
+  } catch {
     /* ignore */
   }
   console.info("[YTA] diagnostics disabled");
@@ -204,7 +204,7 @@ function ytaDiagStop() {
 function shouldEnableYtaDiagFromStorage() {
   try {
     return localStorage.getItem(YTA_DIAG_FLAG_KEY) === "1";
-  } catch (_) {
+  } catch {
     return false;
   }
 }

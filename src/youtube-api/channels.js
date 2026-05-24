@@ -3,7 +3,7 @@ import { callApi } from "./transport.js";
 
 let channelCache;
 
-export async function getSubscriptionsId(pageToken) {
+async function getSubscriptionsId(pageToken) {
   const data = await callApi("subscriptions", {
     part: "snippet,contentDetails",
     maxResults: 50,
@@ -20,15 +20,6 @@ export async function getSubscriptionsId(pageToken) {
     return subs.concat(next);
   }
   return subs;
-}
-
-export async function getUploadsLists(userids) {
-  const data = await callApi("channels", {
-    part: "contentDetails",
-    id: userids.join(","),
-    maxResults: 50,
-  });
-  return data.items.map((el) => el.contentDetails.relatedPlaylists.uploads);
 }
 
 async function getChannelInfos(ids) {

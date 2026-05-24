@@ -15,7 +15,7 @@ export function delay(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-export function getErrorMessage(err) {
+function getErrorMessage(err) {
   if (!err) return "";
   if (typeof err === "string") return err;
   if (typeof err.message === "string") return err.message;

@@ -15,7 +15,7 @@ export function getCollectionFetchStartDate(startDate) {
   );
 }
 
-export async function getRecentVideosBySearch(
+async function getRecentVideosBySearch(
   channelId,
   startDate,
   nextPage,

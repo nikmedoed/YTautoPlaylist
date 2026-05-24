@@ -1,7 +1,6 @@
 // Collects recent uploads from subscribed channels, de-dupes by video id, then applies filters before returning entries in chronological order.
 import { getChannelMap } from "./youtube-api/channels.js";
 import { getNewVideos } from "./youtube-api/videos.js";
-import { parseDuration, formatStorageTimestamp } from "./time.js";
 import { filterVideos } from "./filter.js";
 
 export async function collectVideos(
@@ -85,23 +84,5 @@ export async function collectVideos(
   videos = await filterVideos(videos, progress);
   progress({ phase: "filtered", videoCount: videos.length });
   videos.sort((a, b) => a.publishedAt - b.publishedAt);
-  return videos;
-}
-
-export async function main(startDate = new Date(Date.now() - 604800000)) {
-  const videos = await collectVideos(startDate);
-  console.log(
-    videos
-      .map((v) =>
-        [
-          formatStorageTimestamp(v.publishedAt),
-          (v.channelTitle || "").padEnd(15).slice(0, 15),
-          (v.title || "").padEnd(50).slice(0, 50),
-          `https://youtu.be/${v.id}`,
-          parseDuration(v.duration),
-        ].join(" ")
-      )
-      .join("\n")
-  );
   return videos;
 }

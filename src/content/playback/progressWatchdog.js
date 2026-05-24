@@ -162,7 +162,7 @@ export function resetVideoEndState(videoId = null) {
   videoEndFallbackState.matchedAt = 0;
 }
 
-export function markVideoEndHandled(videoId) {
+function markVideoEndHandled(videoId) {
   videoEndState.videoId = videoId;
   videoEndState.handled = true;
   videoEndFallbackState.videoId = videoId;

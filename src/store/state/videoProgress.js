@@ -46,7 +46,7 @@ export function sanitizeVideoProgressMap(raw) {
   return map;
 }
 
-export function ensureVideoProgress(state) {
+function ensureVideoProgress(state) {
   if (!state || typeof state !== "object") {
     throw new TypeError("State is required to ensure video progress");
   }

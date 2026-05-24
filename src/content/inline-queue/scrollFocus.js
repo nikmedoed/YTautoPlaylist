@@ -285,7 +285,7 @@ export function applyInlineQueuePendingFocus() {
     if (typeof target.focus === "function") {
       try {
         target.focus({ preventScroll: true });
-      } catch (_) {
+      } catch {
         target.focus();
       }
     }

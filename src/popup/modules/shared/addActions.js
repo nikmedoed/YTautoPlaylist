@@ -173,7 +173,7 @@ export function createAddActionsController({
           context: "unknown",
         });
       }
-    } catch (err) {
+    } catch {
       applyControlCapabilities({
         canAddCurrent: false,
         canAddVisible: false,

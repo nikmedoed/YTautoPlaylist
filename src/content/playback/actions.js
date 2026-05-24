@@ -66,7 +66,7 @@ export function requestStartPlayback(context = {}) {
   });
 }
 
-export function navigateToVideoId(videoId) {
+function navigateToVideoId(videoId) {
   const targetId = parseVideoId(videoId);
   if (!targetId) {
     return false;
@@ -77,7 +77,7 @@ export function navigateToVideoId(videoId) {
     const url = new URL("/watch", base);
     url.searchParams.set("v", targetId);
     targetUrl = url.toString();
-  } catch (err) {
+  } catch {
     targetUrl = `https://www.youtube.com/watch?v=${targetId}`;
   }
   if (!targetUrl) {
@@ -92,7 +92,7 @@ export function navigateToVideoId(videoId) {
   try {
     window.location.assign(targetUrl);
     return true;
-  } catch (assignError) {
+  } catch {
     try {
       window.location.href = targetUrl;
       return true;

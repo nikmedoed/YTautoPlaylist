@@ -125,7 +125,7 @@ export function ensureDefaultList(state) {
   return state;
 }
 
-export function sanitizeList(rawList, id) {
+function sanitizeList(rawList, id) {
   if (!rawList || typeof rawList !== "object") {
     return {
       id,

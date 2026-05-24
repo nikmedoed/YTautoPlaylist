@@ -60,11 +60,6 @@ export async function addVideos(entries = [], listId = null) {
   });
 }
 
-export async function removeVideo(videoId, { listId = null } = {}) {
-  if (!videoId) return getState();
-  return removeVideos([videoId], { listId });
-}
-
 export async function removeVideos(videoIds, { listId = null } = {}) {
   const ids = Array.isArray(videoIds) ? videoIds : [videoIds];
   const uniqueIds = Array.from(

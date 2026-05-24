@@ -171,7 +171,7 @@
     if (ytaDiag.observers.longTask) {
       try {
         ytaDiag.observers.longTask.disconnect();
-      } catch (_) {
+      } catch {
       }
       ytaDiag.observers.longTask = null;
     }
@@ -208,7 +208,7 @@
         });
         observer2.observe({ entryTypes: ["longtask"] });
         ytaDiag.observers.longTask = observer2;
-      } catch (_) {
+      } catch {
       }
     }
     console.info("[YTA] diagnostics enabled");
@@ -216,7 +216,7 @@
   function ytaDiagStart() {
     try {
       localStorage.setItem(YTA_DIAG_FLAG_KEY, "1");
-    } catch (_) {
+    } catch {
     }
     ytaDiagStartInternal();
   }
@@ -225,14 +225,14 @@
     ytaDiagStopInternal();
     try {
       localStorage.removeItem(YTA_DIAG_FLAG_KEY);
-    } catch (_) {
+    } catch {
     }
     console.info("[YTA] diagnostics disabled");
   }
   function shouldEnableYtaDiagFromStorage() {
     try {
       return localStorage.getItem(YTA_DIAG_FLAG_KEY) === "1";
-    } catch (_) {
+    } catch {
       return false;
     }
   }
@@ -1783,7 +1783,7 @@
         return false;
       }
       return Number.parseFloat(style.opacity || "1") > 0.01;
-    } catch (_) {
+    } catch {
       return true;
     }
   }
@@ -1887,7 +1887,7 @@
             behavior: "smooth",
             block: scrollIndex < cards.length - 1 ? "center" : "end"
           });
-        } catch (_) {
+        } catch {
           target.scrollIntoView();
         }
       }
@@ -1897,7 +1897,7 @@
           top: document.documentElement.scrollHeight,
           behavior: "smooth"
         });
-      } catch (_) {
+      } catch {
         window.scrollTo(0, document.documentElement.scrollHeight);
       }
       const loadTriggered = attemptLoadMoreContinuations();
@@ -1924,7 +1924,7 @@
     }
     try {
       window.scrollTo({ top: initialScroll || 0 });
-    } catch (_) {
+    } catch {
       window.scrollTo(0, initialScroll || 0);
     }
     return {
@@ -2813,7 +2813,7 @@
         } else {
           finalize();
         }
-      } catch (_) {
+      } catch {
         finalize();
       }
     });
@@ -2909,9 +2909,9 @@
       createPlayerControls(host, context);
     }
     observePlayerHost(host);
-    updatePlayerControlsUI2(context);
+    updatePlayerControlsUI2();
   }
-  function updatePlayerControlsUI2(context = {}) {
+  function updatePlayerControlsUI2() {
     const queueIds = inlinePlaylistState.orderedVideoIds || [];
     const queueLength = queueIds.length;
     const currentId = getCurrentVideoId();
@@ -2922,7 +2922,6 @@
     const historyAvailable = typeof inlinePlaylistState.historyLength === "number" && inlinePlaylistState.historyLength > 0;
     const queueHasPrevious = typeof inlinePlaylistState.currentIndex === "number" && inlinePlaylistState.currentIndex > 0;
     const hasPrev = videoInQueue && (historyAvailable || queueHasPrevious);
-    const hasNext = videoInQueue && queueLength > 1;
     const shouldShowStart = hasQueue && !videoInQueue;
     const controlsAvailable = canHandlePlaybackActions();
     if (playerControls.addCurrent) {
@@ -3096,7 +3095,7 @@
           if (parsed && typeof parsed === "object") {
             candidates.push(parsed);
           }
-        } catch (_) {
+        } catch {
         }
       }
     }
@@ -3229,7 +3228,7 @@
     if (playerErrorObserverState.observer) {
       try {
         playerErrorObserverState.observer.disconnect();
-      } catch (_) {
+      } catch {
       }
     }
     playerErrorObserverState.observer = null;
@@ -3508,7 +3507,7 @@
       const url = new URL("/watch", base);
       url.searchParams.set("v", targetId);
       targetUrl = url.toString();
-    } catch (err) {
+    } catch {
       targetUrl = `https://www.youtube.com/watch?v=${targetId}`;
     }
     if (!targetUrl) {
@@ -3523,7 +3522,7 @@
     try {
       window.location.assign(targetUrl);
       return true;
-    } catch (assignError) {
+    } catch {
       try {
         window.location.href = targetUrl;
         return true;
@@ -5350,7 +5349,7 @@
       if (typeof target.focus === "function") {
         try {
           target.focus({ preventScroll: true });
-        } catch (_) {
+        } catch {
           target.focus();
         }
       }
@@ -5433,7 +5432,7 @@
       event.dataTransfer.effectAllowed = "move";
       try {
         event.dataTransfer.setData("text/plain", videoId);
-      } catch (_) {
+      } catch {
       }
       if (item !== targetItem && item instanceof HTMLElement) {
         setInlineQueueDragImage(event, item);
@@ -5446,10 +5445,10 @@
       const offsetX = typeof event.clientX === "number" ? event.clientX - rect.left : rect.width / 2;
       const offsetY = typeof event.clientY === "number" ? event.clientY - rect.top : rect.height / 2;
       event.dataTransfer.setDragImage(item, offsetX, offsetY);
-    } catch (_) {
+    } catch {
       try {
         event.dataTransfer.setDragImage(item, 0, 0);
-      } catch (__) {
+      } catch {
       }
     }
   }
@@ -5909,7 +5908,7 @@
     if (typeof currentItem.focus === "function") {
       try {
         currentItem.focus({ preventScroll: true });
-      } catch (_) {
+      } catch {
         currentItem.focus();
       }
     }
@@ -6998,7 +6997,7 @@
           videoId
         });
         addMetrics = await applyInlineAddResponse(response);
-      } catch (err) {
+      } catch {
         delete button.dataset.ytaStatus;
         button.disabled = false;
         syncInlineButtonState(button);

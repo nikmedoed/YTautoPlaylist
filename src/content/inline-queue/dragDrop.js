@@ -91,7 +91,7 @@ export function handleInlineQueueDragStart(event) {
     event.dataTransfer.effectAllowed = "move";
     try {
       event.dataTransfer.setData("text/plain", videoId);
-    } catch (_) {
+    } catch {
       /* ignore */
     }
     if (item !== targetItem && item instanceof HTMLElement) {
@@ -112,10 +112,10 @@ function setInlineQueueDragImage(event, item) {
         ? event.clientY - rect.top
         : rect.height / 2;
     event.dataTransfer.setDragImage(item, offsetX, offsetY);
-  } catch (_) {
+  } catch {
     try {
       event.dataTransfer.setDragImage(item, 0, 0);
-    } catch (__) {
+    } catch {
       /* ignore */
     }
   }

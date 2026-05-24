@@ -197,7 +197,7 @@ export async function createPlayList(title) {
   });
 }
 
-export async function addVideoToWL(videoId, playlistId) {
+async function addVideoToWL(videoId, playlistId) {
   return callApi("playlistItems", { part: "snippet" }, "POST", {
     snippet: {
       playlistId,

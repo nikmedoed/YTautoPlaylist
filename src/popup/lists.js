@@ -55,7 +55,7 @@ const dragController = createDragReorderController({
   onReorder: reorderVideo,
 });
 
-const { setStatus, hideStatus } = createStatusController({
+const { setStatus } = createStatusController({
   statusBox: elements.statusBox,
   statusText: elements.statusText,
   progressEl: elements.statusProgress,

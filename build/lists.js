@@ -444,7 +444,7 @@ function createDragReorderController({
     }
     try {
       handle.setPointerCapture?.(event.pointerId);
-    } catch (_) {
+    } catch {
     }
     updateDropIndicatorAt(event.clientY);
     doc.addEventListener("pointermove", manualMove, { capture: true });
@@ -471,7 +471,7 @@ function createDragReorderController({
   function endManualDrag() {
     try {
       state.manualHandleEl?.releasePointerCapture?.(state.manualPointerId);
-    } catch (_) {
+    } catch {
     }
     doc.removeEventListener("pointermove", manualMove, { capture: true });
     doc.removeEventListener("pointerup", manualUp, { capture: true });
@@ -556,16 +556,6 @@ function createStatusController({
   }
   let timeoutHandle = null;
   let hideTimer = null;
-  const clearTimers = () => {
-    if (timeoutHandle) {
-      clearTimeout(timeoutHandle);
-      timeoutHandle = null;
-    }
-    if (hideTimer) {
-      clearTimeout(hideTimer);
-      hideTimer = null;
-    }
-  };
   const finalizeHide = () => {
     hideTimer = null;
     applyStatusProgress(progressEl, progressBarEl, null);
@@ -573,7 +563,7 @@ function createStatusController({
     statusBox.removeAttribute("data-kind");
     statusText.textContent = "";
   };
-  const hideStatus2 = (immediate = false) => {
+  const hideStatus = (immediate = false) => {
     clearTimeout(hideTimer);
     statusBox.dataset.visible = "0";
     if (immediate) {
@@ -588,7 +578,7 @@ function createStatusController({
   };
   const setStatus2 = (text, kind = "info", timeout = DEFAULT_TIMEOUT, options = {}) => {
     if (!text) {
-      hideStatus2(true);
+      hideStatus(true);
       return;
     }
     clearTimeout(hideTimer);
@@ -603,7 +593,7 @@ function createStatusController({
     }
     if (timeout && timeout > 0) {
       timeoutHandle = window.setTimeout(() => {
-        hideStatus2();
+        hideStatus();
       }, timeout);
     } else {
       timeoutHandle = null;
@@ -614,9 +604,9 @@ function createStatusController({
     progressEl.hidden = true;
   }
   statusBox.addEventListener("click", () => {
-    hideStatus2(true);
+    hideStatus(true);
   });
-  return { setStatus: setStatus2, hideStatus: hideStatus2 };
+  return { setStatus: setStatus2, hideStatus };
 }
 
 // src/popup/modules/manager/selection.js
@@ -2466,9 +2456,7 @@ function positionMenu(root, anchor, { offset, padding }) {
 function createMoveMenu({
   document: doc = globalThis.document,
   headerText = "\u041F\u0435\u0440\u0435\u043D\u0435\u0441\u0442\u0438 \u0432:",
-  emptyMessage = "\u041D\u0435\u0442 \u0434\u0440\u0443\u0433\u0438\u0445 \u0441\u043F\u0438\u0441\u043A\u043E\u0432",
   cancelLabel = "\u041E\u0442\u043C\u0435\u043D\u0430",
-  emptyCancelLabel = "\u0417\u0430\u043A\u0440\u044B\u0442\u044C",
   className = "move-menu",
   messageClass = "move-menu__message",
   buttonsClass = "move-menu__buttons",
@@ -4228,7 +4216,7 @@ var dragController = createDragReorderController({
   getActiveListId: () => selectedListDetails?.id || null,
   onReorder: reorderVideo
 });
-var { setStatus, hideStatus } = createStatusController({
+var { setStatus } = createStatusController({
   statusBox: elements.statusBox,
   statusText: elements.statusText,
   progressEl: elements.statusProgress,

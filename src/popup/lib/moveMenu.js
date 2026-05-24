@@ -42,9 +42,7 @@ function positionMenu(root, anchor, { offset, padding }) {
 export function createMoveMenu({
   document: doc = globalThis.document,
   headerText = "Перенести в:",
-  emptyMessage = "Нет других списков",
   cancelLabel = "Отмена",
-  emptyCancelLabel = "Закрыть",
   className = "move-menu",
   messageClass = "move-menu__message",
   buttonsClass = "move-menu__buttons",
