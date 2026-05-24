@@ -3,9 +3,9 @@ import {
   canHandlePlaybackActions,
   getCurrentVideoId,
   inlinePlaylistState,
-  parseVideoId,
   sendMessage,
 } from "../core/base.js";
+import { parseVideoId } from "../../utils.js";
 import {
   clearQueueEndAnnouncement,
   queueQueueEndAnnouncement,

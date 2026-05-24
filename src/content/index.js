@@ -19,13 +19,9 @@ function init() {
   injectStyles();
   void refreshInlinePlaylistState();
   ensurePlayerControls();
-  if (typeof ytaDiagMeasure === "function") {
-    ytaDiagMeasure("init.enhanceVideoCards.document", () => {
-      enhanceVideoCards(document);
-    });
-  } else {
+  ytaDiagMeasure("init.enhanceVideoCards.document", () => {
     enhanceVideoCards(document);
-  }
+  });
   updatePageActions();
   ensurePlayerControls();
   scanForVideo();
@@ -43,13 +39,9 @@ function init() {
       return;
     }
     setTimeout(() => {
-      if (typeof ytaDiagMeasure === "function") {
-        ytaDiagMeasure("init.ytPageDataUpdated.enhanceDocument", () => {
-          enhanceVideoCards(document);
-        });
-      } else {
+      ytaDiagMeasure("init.ytPageDataUpdated.enhanceDocument", () => {
         enhanceVideoCards(document);
-      }
+      });
     }, 0);
   });
 }

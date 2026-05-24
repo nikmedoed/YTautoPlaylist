@@ -3,10 +3,10 @@ import {
   canHandlePlaybackActions,
   getCurrentVideoId,
   inlinePlaylistState,
-  parseVideoId,
   sendMessage,
   state,
 } from "../core/base.js";
+import { parseVideoId } from "../../utils.js";
 import {
   updateInlinePlaylistState,
   updateInlineQueueUI,
@@ -39,11 +39,9 @@ import {
   markPlaybackStarted,
   maybeFinalizeVideoEndedBeforeNavigation as maybeFinalizeVideoEndedBeforeNavigationBase,
   maybeSendVideoProgress,
-  resetPlaybackWatchdog,
   resetProgressTracker,
   resetVideoEndFallbackMatch,
   resetVideoEndState,
-  stopPlaybackWatchdog,
 } from "./progressWatchdog.js";
 import {
   clearQueueEndAnnouncement,
@@ -52,12 +50,6 @@ import {
   maybeShowQueueEndAnnouncement,
   queueQueueEndAnnouncement,
 } from "./queueEnd.js";
-
-export { hidePlaybackNotification } from "./notification.js";
-export {
-  handleCollectionProgressEvent,
-} from "../collection/progressNotification.js";
-export { resetPlaybackWatchdog, stopPlaybackWatchdog };
 
 const playerErrorContext = {
   handlePlaybackAdvanceResponse,

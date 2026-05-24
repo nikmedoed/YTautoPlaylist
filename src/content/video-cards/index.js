@@ -3,8 +3,6 @@ import { createVideoCardOverlayController } from "./overlays.js";
 import { createPreviewOverlayController } from "./previewOverlay.js";
 import { createVideoCardDecorationController } from "./decorations.js";
 
-export { findVideoIdInCard } from "./targets.js";
-
 const playlistSuccessTimers = new WeakMap();
 const inlineOverlayObservers = new WeakMap();
 const inlineOverlayHosts = new WeakMap();

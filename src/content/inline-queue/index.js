@@ -107,8 +107,6 @@ export function updateInlinePlaylistState(rawPresentation) {
   updateInlinePlaylistStateBase(rawPresentation, inlinePlaylistStateSyncContext);
 }
 
-export { isVideoInCurrentList, syncInlineButtonState } from "./state.js";
-
 export async function refreshInlinePlaylistState() {
   await refreshInlinePlaylistStateBase(inlinePlaylistStateSyncContext);
 }

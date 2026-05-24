@@ -245,42 +245,62 @@ export async function reorderQueue(videoId, targetIndex, listId = null) {
   });
 }
 
+function moveVideoInState(state, videoId, targetListId) {
+  ensureListExists(state, targetListId);
+  const located = findVideo(state, videoId);
+  if (!located) return false;
+  const { list, index } = located;
+  if (list.id === targetListId) return false;
+  const [entry] = list.queue.splice(index, 1);
+  adjustIndexAfterRemoval(list, index);
+  bumpListRevision(list);
+  if (list.id === DEFAULT_LIST_ID) {
+    ensureDefaultRefreshFlag(state);
+  } else if (!list.queue.length) {
+    markListEmpty(state, list);
+  }
+  const target = state.lists[targetListId];
+  const existingIdx = target.queue.findIndex((item) => item.id === videoId);
+  if (existingIdx !== -1) {
+    target.queue.splice(existingIdx, 1);
+    adjustIndexAfterRemoval(target, existingIdx);
+    bumpListRevision(target);
+  }
+  if (list.id === DEFAULT_LIST_ID || target.id === DEFAULT_LIST_ID) {
+    rememberAutoCollectSeenIds(state, [entry.id]);
+  }
+  target.queue.push(entry);
+  bumpListRevision(target);
+  if (target.currentIndex === null) {
+    target.currentIndex = 0;
+  }
+  if (target.id === DEFAULT_LIST_ID) {
+    ensureDefaultRefreshFlag(state);
+  }
+  if (state.currentListId === list.id && state.currentVideoId === videoId) {
+    state.currentVideoId = null;
+  }
+  return true;
+}
+
 export async function moveVideoToList(videoId, targetListId) {
   if (!videoId || !targetListId) return getState();
   return withState((state) => {
-    ensureListExists(state, targetListId);
-    const located = findVideo(state, videoId);
-    if (!located) return state;
-    const { list, index } = located;
-    if (list.id === targetListId) return state;
-    const [entry] = list.queue.splice(index, 1);
-    adjustIndexAfterRemoval(list, index);
-    bumpListRevision(list);
-    if (list.id === DEFAULT_LIST_ID) {
-      ensureDefaultRefreshFlag(state);
-    } else if (!list.queue.length) {
-      markListEmpty(state, list);
-    }
-    const target = state.lists[targetListId];
-    const existingIdx = target.queue.findIndex((item) => item.id === videoId);
-    if (existingIdx !== -1) {
-      target.queue.splice(existingIdx, 1);
-      adjustIndexAfterRemoval(target, existingIdx);
-      bumpListRevision(target);
-    }
-    if (list.id === DEFAULT_LIST_ID || target.id === DEFAULT_LIST_ID) {
-      rememberAutoCollectSeenIds(state, [entry.id]);
-    }
-    target.queue.push(entry);
-    bumpListRevision(target);
-    if (target.currentIndex === null) {
-      target.currentIndex = 0;
-    }
-    if (target.id === DEFAULT_LIST_ID) {
-      ensureDefaultRefreshFlag(state);
-    }
-    if (state.currentListId === list.id && state.currentVideoId === videoId) {
-      state.currentVideoId = null;
+    moveVideoInState(state, videoId, targetListId);
+    return state;
+  });
+}
+
+// Moves several videos in one state transaction instead of reloading and
+// persisting chrome.storage once per id.
+export async function moveVideosToList(videoIds, targetListId) {
+  const ids = Array.isArray(videoIds) ? videoIds : [videoIds];
+  if (!ids.length || !targetListId) return getState();
+  return withState((state) => {
+    for (const videoId of ids) {
+      if (typeof videoId === "string" && videoId) {
+        moveVideoInState(state, videoId, targetListId);
+      }
     }
     return state;
   });

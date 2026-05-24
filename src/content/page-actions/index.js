@@ -29,8 +29,6 @@ import {
   createPageActionViewController,
 } from "./view.js";
 
-export { formatAddResultMessage } from "../../addResultMessages.js";
-
 const ACTION_DEFINITIONS = [
   { key: "addCurrent", label: "Добавить в плейлист", handler: handleAddCurrentFromPage },
   { key: "addVisible", label: "Добавить видимые", handler: handleAddVisibleFromPage },

@@ -100,11 +100,7 @@ export function createVideoCardCleanup({
         }
       });
     };
-    if (typeof ytaDiagMeasure === "function") {
-      ytaDiagMeasure("videoCards.resetVideoCardDecorations", run);
-      return;
-    }
-    run();
+    ytaDiagMeasure("videoCards.resetVideoCardDecorations", run);
   }
 
   return {

@@ -1,7 +1,5 @@
 // Video-card preview overlay. Adds hover/preview affordances around enhanced card targets.
-import {
-  parseVideoId,
-} from "../core/base.js";
+import { parseVideoId } from "../../utils.js";
 
 // Tracks hover previews so add buttons can follow YouTube's mini-player preview DOM when cards are recycled.
 export function createPreviewOverlayController({

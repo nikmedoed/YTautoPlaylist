@@ -174,10 +174,7 @@ export function detectUnavailableWatchState(context = {}) {
     }
     return false;
   };
-  if (typeof ytaDiagMeasure === "function") {
-    return ytaDiagMeasure("player.detectUnavailableWatchState", run);
-  }
-  return run();
+  return ytaDiagMeasure("player.detectUnavailableWatchState", run);
 }
 
 export function handleVideoUnavailable(details = {}, context = {}) {

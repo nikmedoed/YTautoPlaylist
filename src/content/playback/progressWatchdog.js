@@ -133,11 +133,7 @@ function playbackWatchdogTick(context = {}) {
     }
     handleVideoProgressUpdate(context, { source: "watchdog" });
   };
-  if (typeof ytaDiagMeasure === "function") {
-    ytaDiagMeasure("player.playbackWatchdogTick", run);
-    return;
-  }
-  run();
+  ytaDiagMeasure("player.playbackWatchdogTick", run);
 }
 
 export function ensurePlaybackWatchdog(context = {}) {

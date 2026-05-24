@@ -11,7 +11,7 @@ import {
 import {
   isVideoInCurrentList,
   syncInlineButtonState,
-} from "../inline-queue/index.js";
+} from "../inline-queue/state.js";
 import {
   applyInlineAddResponse,
   clearPlaylistSuccessTimer,
@@ -280,7 +280,7 @@ export function createVideoCardDecorationController({
       ) {
         cleanup.clearCardDecoration(root, { retry: false });
       }
-      if (root.querySelectorAll) {
+    if (root.querySelectorAll) {
         root.querySelectorAll(VIDEO_CARD_SELECTOR).forEach((card) => {
           const shouldEnhance = shouldEnhanceVideoCardCandidate({
             insideInlineQueue: isInsideInlineQueue(card),
@@ -294,11 +294,7 @@ export function createVideoCardDecorationController({
         });
       }
     };
-    if (typeof ytaDiagMeasure === "function") {
-      ytaDiagMeasure("videoCards.enhanceVideoCards", run);
-      return;
-    }
-    run();
+    ytaDiagMeasure("videoCards.enhanceVideoCards", run);
   }
 
   return {

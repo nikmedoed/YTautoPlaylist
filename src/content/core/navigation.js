@@ -1,10 +1,9 @@
 // Content navigation coordinator. Contains YouTube URL-change tracking and delayed refresh scheduling.
 import {
-  pageActions,
-  parseVideoId,
   state,
   ytaDiagMeasure,
 } from "./base.js";
+import { parseVideoId } from "../../utils.js";
 import {
   enhanceVideoCards,
   resetVideoCardDecorations,
@@ -16,14 +15,16 @@ import {
 import {
   detachVideoListeners,
   ensurePlayerControls,
-  hidePlaybackNotification,
   maybeFinalizeVideoEndedBeforeNavigation,
-  resetPlaybackWatchdog,
   scanForVideo,
-  stopPlaybackWatchdog,
   updateMediaSessionHandlers,
   updatePlayerControlsUI,
 } from "../playback/controls.js";
+import { hidePlaybackNotification } from "../playback/notification.js";
+import {
+  resetPlaybackWatchdog,
+  stopPlaybackWatchdog,
+} from "../playback/progressWatchdog.js";
 import {
   refreshInlinePlaylistState,
   teardownInlineQueue,
@@ -33,15 +34,8 @@ let pendingUiFrame = null;
 let pendingUiFrameType = null;
 let pendingUiScan = false;
 
-function measure(name, run) {
-  if (typeof ytaDiagMeasure === "function") {
-    return ytaDiagMeasure(name, run);
-  }
-  return run();
-}
-
 function flushScheduledUiUpdate() {
-  measure("navigation.flushScheduledUiUpdate", () => {
+  ytaDiagMeasure("navigation.flushScheduledUiUpdate", () => {
     pendingUiFrame = null;
     pendingUiFrameType = null;
     const shouldScan = pendingUiScan;
@@ -93,20 +87,10 @@ function cancelScheduledUiUpdate() {
 }
 
 function cancelPageCollection(label) {
-  if (typeof cancelAddAllFromPage === "function") {
-    try {
-      cancelAddAllFromPage({ silent: true });
-    } catch (err) {
-      console.warn(`Failed to cancel page collection on ${label}`, err);
-    }
-    return;
-  }
-  if (typeof pageActions === "object" && pageActions?.collectAbort) {
-    try {
-      pageActions.collectAbort.abort();
-    } catch (err) {
-      console.warn(`Failed to abort page collection controller on ${label}`, err);
-    }
+  try {
+    cancelAddAllFromPage({ silent: true });
+  } catch (err) {
+    console.warn(`Failed to cancel page collection on ${label}`, err);
   }
 }
 
@@ -117,7 +101,7 @@ function enhanceCardsFromMutationNode(node) {
       node.nodeType === Node.DOCUMENT_FRAGMENT_NODE &&
       typeof node.querySelector === "function"
     ) {
-      measure("navigation.enhanceVideoCards.fragment", () => {
+      ytaDiagMeasure("navigation.enhanceVideoCards.fragment", () => {
         enhanceVideoCards(node);
       });
       return Boolean(node.querySelector("video"));
@@ -134,14 +118,14 @@ function enhanceCardsFromMutationNode(node) {
     return node.tagName === "VIDEO" || Boolean(node.querySelector?.("video"));
   }
 
-  measure("navigation.enhanceVideoCards.node", () => {
+  ytaDiagMeasure("navigation.enhanceVideoCards.node", () => {
     enhanceVideoCards(node);
   });
   return node.tagName === "VIDEO" || Boolean(node.querySelector?.("video"));
 }
 
 export const observer = new MutationObserver((mutations) => {
-  measure("navigation.mutationObserver", () => {
+  ytaDiagMeasure("navigation.mutationObserver", () => {
     let shouldScanVideo = false;
     for (const mutation of mutations) {
       if (mutation.type !== "childList") {
@@ -171,7 +155,7 @@ export const observer = new MutationObserver((mutations) => {
 export function resetStateForNavigation(event = null) {
   const eventType = typeof event?.type === "string" ? event.type : "";
   const isNavigateStart = eventType === "yt-navigate-start";
-  measure("navigation.resetStateForNavigation", () => {
+  ytaDiagMeasure("navigation.resetStateForNavigation", () => {
     maybeFinalizeVideoEndedBeforeNavigation();
     if (isNavigateStart) {
       // Keep inline queue visible until navigation actually completes.

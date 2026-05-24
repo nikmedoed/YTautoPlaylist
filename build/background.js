@@ -982,23 +982,17 @@ function generateListId() {
 }
 
 // src/store/actions/autoCollect.js
-async function markAutoCollectRunStarted(startTime = Date.now()) {
-  const ts = toTimestamp(startTime);
-  const effective = ts === null ? Date.now() : ts;
-  const state = await withState((state2) => {
-    const meta2 = ensureAutoCollectMeta(state2);
-    meta2.lastRunAt = effective;
-    return state2;
-  });
-  const meta = ensureAutoCollectMeta(state);
-  return cloneAutoCollectMeta(meta);
-}
 async function setAutoCollectStartDate(value) {
   const ts = toTimestamp(value);
   if (ts === null) {
     return getAutoCollectMeta();
   }
-  return markAutoCollectRunStarted(ts);
+  const state = await withState((state2) => {
+    const meta = ensureAutoCollectMeta(state2);
+    meta.lastRunAt = ts;
+    return state2;
+  });
+  return cloneAutoCollectMeta(ensureAutoCollectMeta(state));
 }
 async function shouldAutoRefreshDefault() {
   const state = await getState();
@@ -1348,42 +1342,58 @@ async function reorderQueue(videoId, targetIndex, listId = null) {
     return state;
   });
 }
+function moveVideoInState(state, videoId, targetListId) {
+  ensureListExists(state, targetListId);
+  const located = findVideo(state, videoId);
+  if (!located) return false;
+  const { list, index } = located;
+  if (list.id === targetListId) return false;
+  const [entry] = list.queue.splice(index, 1);
+  adjustIndexAfterRemoval(list, index);
+  bumpListRevision(list);
+  if (list.id === DEFAULT_LIST_ID) {
+    ensureDefaultRefreshFlag(state);
+  } else if (!list.queue.length) {
+    markListEmpty(state, list);
+  }
+  const target = state.lists[targetListId];
+  const existingIdx = target.queue.findIndex((item) => item.id === videoId);
+  if (existingIdx !== -1) {
+    target.queue.splice(existingIdx, 1);
+    adjustIndexAfterRemoval(target, existingIdx);
+    bumpListRevision(target);
+  }
+  if (list.id === DEFAULT_LIST_ID || target.id === DEFAULT_LIST_ID) {
+    rememberAutoCollectSeenIds(state, [entry.id]);
+  }
+  target.queue.push(entry);
+  bumpListRevision(target);
+  if (target.currentIndex === null) {
+    target.currentIndex = 0;
+  }
+  if (target.id === DEFAULT_LIST_ID) {
+    ensureDefaultRefreshFlag(state);
+  }
+  if (state.currentListId === list.id && state.currentVideoId === videoId) {
+    state.currentVideoId = null;
+  }
+  return true;
+}
 async function moveVideoToList(videoId, targetListId) {
   if (!videoId || !targetListId) return getState();
   return withState((state) => {
-    ensureListExists(state, targetListId);
-    const located = findVideo(state, videoId);
-    if (!located) return state;
-    const { list, index } = located;
-    if (list.id === targetListId) return state;
-    const [entry] = list.queue.splice(index, 1);
-    adjustIndexAfterRemoval(list, index);
-    bumpListRevision(list);
-    if (list.id === DEFAULT_LIST_ID) {
-      ensureDefaultRefreshFlag(state);
-    } else if (!list.queue.length) {
-      markListEmpty(state, list);
-    }
-    const target = state.lists[targetListId];
-    const existingIdx = target.queue.findIndex((item) => item.id === videoId);
-    if (existingIdx !== -1) {
-      target.queue.splice(existingIdx, 1);
-      adjustIndexAfterRemoval(target, existingIdx);
-      bumpListRevision(target);
-    }
-    if (list.id === DEFAULT_LIST_ID || target.id === DEFAULT_LIST_ID) {
-      rememberAutoCollectSeenIds(state, [entry.id]);
-    }
-    target.queue.push(entry);
-    bumpListRevision(target);
-    if (target.currentIndex === null) {
-      target.currentIndex = 0;
-    }
-    if (target.id === DEFAULT_LIST_ID) {
-      ensureDefaultRefreshFlag(state);
-    }
-    if (state.currentListId === list.id && state.currentVideoId === videoId) {
-      state.currentVideoId = null;
+    moveVideoInState(state, videoId, targetListId);
+    return state;
+  });
+}
+async function moveVideosToList(videoIds, targetListId) {
+  const ids = Array.isArray(videoIds) ? videoIds : [videoIds];
+  if (!ids.length || !targetListId) return getState();
+  return withState((state) => {
+    for (const videoId of ids) {
+      if (typeof videoId === "string" && videoId) {
+        moveVideoInState(state, videoId, targetListId);
+      }
     }
     return state;
   });
@@ -2913,7 +2923,7 @@ async function dispatchNotifications() {
 }
 async function resolveCollectionStartDate() {
   const meta = await getAutoCollectMeta();
-  const cursorTs = normalizeAutoCollectTimestamp(meta?.lastRunAt);
+  const cursorTs = meta?.lastRunAt || 0;
   if (cursorTs > 0) {
     const dt = new Date(cursorTs);
     if (!Number.isNaN(dt.getTime())) {
@@ -3186,11 +3196,7 @@ async function handleMoveVideos(videoIds, targetListId) {
     return getPresentationState();
   }
   return mutateAndPresent(
-    async () => {
-      for (const id of ids) {
-        await moveVideoToList(id, targetListId);
-      }
-    },
+    () => moveVideosToList(ids, targetListId),
     { dispatch: true, ensureDefault: true }
   );
 }

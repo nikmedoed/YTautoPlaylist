@@ -1,7 +1,5 @@
 // Video-card target parser. Extracts video and playlist ids from YouTube card links, datasets, and DOM structure.
-import {
-  parseVideoId,
-} from "../core/base.js";
+import { parseVideoId } from "../../utils.js";
 
 const PLAYLIST_CARD_SELECTOR = [
   "ytd-playlist-renderer",

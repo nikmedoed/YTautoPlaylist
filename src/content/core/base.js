@@ -3,7 +3,6 @@ import { parseVideoId } from "../../utils.js";
 import { initYtaDiagnostics, ytaDiagMeasure } from "./diagnostics.js";
 
 export { ytaDiagMeasure };
-export { parseVideoId };
 
 export const DEFAULT_LIST_ID = "default";
 

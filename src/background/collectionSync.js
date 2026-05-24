@@ -7,7 +7,6 @@ import {
   getPresentationState,
   getState,
   getAutoCollectMeta,
-  normalizeAutoCollectTimestamp,
   queueListEmptyNotification,
   recordDefaultAutoCollect,
   shouldAutoRefreshDefault,
@@ -91,7 +90,7 @@ export async function dispatchNotifications() {
 
 async function resolveCollectionStartDate() {
   const meta = await getAutoCollectMeta();
-  const cursorTs = normalizeAutoCollectTimestamp(meta?.lastRunAt);
+  const cursorTs = meta?.lastRunAt || 0;
 
   if (cursorTs > 0) {
     const dt = new Date(cursorTs);

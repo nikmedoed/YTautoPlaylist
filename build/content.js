@@ -3190,10 +3190,7 @@
       }
       return false;
     };
-    if (typeof ytaDiagMeasure === "function") {
-      return ytaDiagMeasure("player.detectUnavailableWatchState", run);
-    }
-    return run();
+    return ytaDiagMeasure("player.detectUnavailableWatchState", run);
   }
   function handleVideoUnavailable(details = {}, context = {}) {
     const videoId = getCurrentVideoId();
@@ -3751,11 +3748,7 @@
       }
       handleVideoProgressUpdate(context, { source: "watchdog" });
     };
-    if (typeof ytaDiagMeasure === "function") {
-      ytaDiagMeasure("player.playbackWatchdogTick", run);
-      return;
-    }
-    run();
+    ytaDiagMeasure("player.playbackWatchdogTick", run);
   }
   function ensurePlaybackWatchdog(context = {}) {
     if (!shouldMonitorPlayback()) {
@@ -3942,96 +3935,6 @@
   }
   function resetVideoEndFallbackMatch() {
     videoEndFallbackState.matchedAt = 0;
-  }
-
-  // src/content/collection/progressNotification.js
-  var autoCollectDisplay = {
-    active: false
-  };
-  function formatAutoCollectProgress(event = {}) {
-    switch (event.phase) {
-      case "start":
-        return "\u0418\u0449\u0443 \u043D\u043E\u0432\u044B\u0435 \u0432\u0438\u0434\u0435\u043E...";
-      case "channelsLoaded":
-        return `\u041F\u043E\u0434\u043F\u0438\u0441\u043E\u043A: ${event.channelCount || 0}, \u043F\u043B\u0435\u0439\u043B\u0438\u0441\u0442\u043E\u0432: ${event.playlistCount || 0}`;
-      case "playlistFetch":
-        return `\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043C \u043F\u043B\u0435\u0439\u043B\u0438\u0441\u0442 ${event.index || 0}/${event.total || 0}`;
-      case "playlistFetched":
-        return `\u041F\u043B\u0435\u0439\u043B\u0438\u0441\u0442 ${event.index || 0}/${event.total || 0}: +${event.videoCount || 0}`;
-      case "aggregate":
-        return `\u0421\u043E\u0431\u0440\u0430\u043D\u043E ${event.videoCount || 0} \u0432\u0438\u0434\u0435\u043E`;
-      case "filtering":
-        return `\u0424\u0438\u043B\u044C\u0442\u0440\u0443\u044E ${event.videoCount || 0} \u0432\u0438\u0434\u0435\u043E`;
-      case "filterProgress": {
-        const processed = Number(event.processed) || 0;
-        const total = Number(event.total) || processed;
-        return `\u0424\u0438\u043B\u044C\u0442\u0440\u0443\u044E ${processed}/${total}`;
-      }
-      case "filterStats": {
-        const totals = event.totals || {};
-        const total = Number(event.total) || Number(event.initialCount) || 0;
-        const passed = totals.passed || event.videoCount || 0;
-        return total ? `\u041F\u043E\u0441\u043B\u0435 \u0444\u0438\u043B\u044C\u0442\u0440\u0430 ${passed}/${total}` : `\u041F\u043E\u0441\u043B\u0435 \u0444\u0438\u043B\u044C\u0442\u0440\u0430 ${passed}`;
-      }
-      case "filtered":
-        return `\u041F\u043E\u0441\u043B\u0435 \u0444\u0438\u043B\u044C\u0442\u0440\u0430 \u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C ${event.videoCount || 0}`;
-      case "readyToAdd":
-        return event.skippedExisting ? `\u0413\u043E\u0442\u043E\u0432\u043E \u043A \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u0438\u044E ${event.videoCount || 0} \u0432\u0438\u0434\u0435\u043E (\u0443\u0436\u0435 \u0432 \u043E\u0447\u0435\u0440\u0435\u0434\u0438 ${event.skippedExisting})` : `\u0413\u043E\u0442\u043E\u0432\u043E \u043A \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u0438\u044E ${event.videoCount || 0} \u0432\u0438\u0434\u0435\u043E`;
-      case "adding":
-        return `\u0414\u043E\u0431\u0430\u0432\u043B\u044F\u044E ${event.addCount || 0} \u0432\u0438\u0434\u0435\u043E \u0432 \u043E\u0447\u0435\u0440\u0435\u0434\u044C`;
-      default:
-        return "";
-    }
-  }
-  function handleCollectionProgressEvent(event = {}) {
-    if (!event || event.origin !== "auto") {
-      return;
-    }
-    const phase = event.phase || "";
-    if (phase === "start") {
-      autoCollectDisplay.active = true;
-      showPlaybackNotification({
-        title: "\u0421\u0431\u043E\u0440 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A",
-        body: formatAutoCollectProgress(event) || "\u0417\u0430\u043F\u0443\u0441\u043A\u0430\u044E \u0441\u0431\u043E\u0440 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A...",
-        persist: true
-      });
-      return;
-    }
-    if (!autoCollectDisplay.active) {
-      return;
-    }
-    if (phase === "complete") {
-      autoCollectDisplay.active = false;
-      const added = Number(event.added) || 0;
-      const fetched = Number(event.fetched) || added;
-      const queueLength = Number(event.queueLength) || 0;
-      const summary = added ? `\u0414\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E ${added} \u0438\u0437 ${fetched}` : "\u041D\u043E\u0432\u044B\u0445 \u0432\u0438\u0434\u0435\u043E \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E";
-      const queueLabel = queueLength ? ` \xB7 \u0412 \u043E\u0447\u0435\u0440\u0435\u0434\u0438 ${queueLength}` : "";
-      showPlaybackNotification({
-        title: "\u0421\u0431\u043E\u0440 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A \u0437\u0430\u0432\u0435\u0440\u0448\u0451\u043D",
-        body: `${summary}${queueLabel}`,
-        duration: 6e3
-      });
-      return;
-    }
-    if (phase === "error") {
-      autoCollectDisplay.active = false;
-      const message = event.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0431\u0440\u0430\u0442\u044C \u043F\u043E\u0434\u043F\u0438\u0441\u043A\u0438";
-      showPlaybackNotification({
-        title: "\u0421\u0431\u043E\u0440 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A",
-        body: message,
-        duration: 6e3
-      });
-      return;
-    }
-    const progress = formatAutoCollectProgress(event);
-    if (progress) {
-      showPlaybackNotification({
-        title: "\u0421\u0431\u043E\u0440 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A",
-        body: progress,
-        persist: true
-      });
-    }
   }
 
   // src/content/playback/controls.js
@@ -6659,9 +6562,6 @@
     if (typeof durationMs !== "number" || durationMs < PLAYLIST_SUCCESS_NOTIFICATION_THRESHOLD) {
       return;
     }
-    if (typeof showPageActionStatus !== "function") {
-      return;
-    }
     const { added, requested, missing } = normalizeAddResponse(metrics);
     if (added || missing || requested !== null) {
       const summary = formatAddResultMessage({
@@ -6875,11 +6775,7 @@
           }
         });
       };
-      if (typeof ytaDiagMeasure === "function") {
-        ytaDiagMeasure("videoCards.resetVideoCardDecorations", run);
-        return;
-      }
-      run();
+      ytaDiagMeasure("videoCards.resetVideoCardDecorations", run);
     }
     return {
       cleanupInlineQueueAddButtons,
@@ -7114,11 +7010,7 @@
           });
         }
       };
-      if (typeof ytaDiagMeasure === "function") {
-        ytaDiagMeasure("videoCards.enhanceVideoCards", run);
-        return;
-      }
-      run();
+      ytaDiagMeasure("videoCards.enhanceVideoCards", run);
     }
     return {
       enhanceVideoCards: enhanceVideoCards2,
@@ -7154,14 +7046,8 @@
   var pendingUiFrame = null;
   var pendingUiFrameType = null;
   var pendingUiScan = false;
-  function measure(name, run) {
-    if (typeof ytaDiagMeasure === "function") {
-      return ytaDiagMeasure(name, run);
-    }
-    return run();
-  }
   function flushScheduledUiUpdate() {
-    measure("navigation.flushScheduledUiUpdate", () => {
+    ytaDiagMeasure("navigation.flushScheduledUiUpdate", () => {
       pendingUiFrame = null;
       pendingUiFrameType = null;
       const shouldScan = pendingUiScan;
@@ -7210,26 +7096,16 @@
     pendingUiScan = false;
   }
   function cancelPageCollection(label) {
-    if (typeof cancelAddAllFromPage === "function") {
-      try {
-        cancelAddAllFromPage({ silent: true });
-      } catch (err) {
-        console.warn(`Failed to cancel page collection on ${label}`, err);
-      }
-      return;
-    }
-    if (typeof pageActions === "object" && pageActions?.collectAbort) {
-      try {
-        pageActions.collectAbort.abort();
-      } catch (err) {
-        console.warn(`Failed to abort page collection controller on ${label}`, err);
-      }
+    try {
+      cancelAddAllFromPage({ silent: true });
+    } catch (err) {
+      console.warn(`Failed to cancel page collection on ${label}`, err);
     }
   }
   function enhanceCardsFromMutationNode(node) {
     if (!(node instanceof HTMLElement)) {
       if (node && node.nodeType === Node.DOCUMENT_FRAGMENT_NODE && typeof node.querySelector === "function") {
-        measure("navigation.enhanceVideoCards.fragment", () => {
+        ytaDiagMeasure("navigation.enhanceVideoCards.fragment", () => {
           enhanceVideoCards(node);
         });
         return Boolean(node.querySelector("video"));
@@ -7241,13 +7117,13 @@
     )) {
       return node.tagName === "VIDEO" || Boolean(node.querySelector?.("video"));
     }
-    measure("navigation.enhanceVideoCards.node", () => {
+    ytaDiagMeasure("navigation.enhanceVideoCards.node", () => {
       enhanceVideoCards(node);
     });
     return node.tagName === "VIDEO" || Boolean(node.querySelector?.("video"));
   }
   var observer = new MutationObserver((mutations) => {
-    measure("navigation.mutationObserver", () => {
+    ytaDiagMeasure("navigation.mutationObserver", () => {
       let shouldScanVideo = false;
       for (const mutation of mutations) {
         if (mutation.type !== "childList") {
@@ -7272,7 +7148,7 @@
   function resetStateForNavigation(event = null) {
     const eventType = typeof event?.type === "string" ? event.type : "";
     const isNavigateStart = eventType === "yt-navigate-start";
-    measure("navigation.resetStateForNavigation", () => {
+    ytaDiagMeasure("navigation.resetStateForNavigation", () => {
       maybeFinalizeVideoEndedBeforeNavigation2();
       if (isNavigateStart) {
         cancelScheduledUiUpdate();
@@ -7374,6 +7250,96 @@
     );
   }
 
+  // src/content/collection/progressNotification.js
+  var autoCollectDisplay = {
+    active: false
+  };
+  function formatAutoCollectProgress(event = {}) {
+    switch (event.phase) {
+      case "start":
+        return "\u0418\u0449\u0443 \u043D\u043E\u0432\u044B\u0435 \u0432\u0438\u0434\u0435\u043E...";
+      case "channelsLoaded":
+        return `\u041F\u043E\u0434\u043F\u0438\u0441\u043E\u043A: ${event.channelCount || 0}, \u043F\u043B\u0435\u0439\u043B\u0438\u0441\u0442\u043E\u0432: ${event.playlistCount || 0}`;
+      case "playlistFetch":
+        return `\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043C \u043F\u043B\u0435\u0439\u043B\u0438\u0441\u0442 ${event.index || 0}/${event.total || 0}`;
+      case "playlistFetched":
+        return `\u041F\u043B\u0435\u0439\u043B\u0438\u0441\u0442 ${event.index || 0}/${event.total || 0}: +${event.videoCount || 0}`;
+      case "aggregate":
+        return `\u0421\u043E\u0431\u0440\u0430\u043D\u043E ${event.videoCount || 0} \u0432\u0438\u0434\u0435\u043E`;
+      case "filtering":
+        return `\u0424\u0438\u043B\u044C\u0442\u0440\u0443\u044E ${event.videoCount || 0} \u0432\u0438\u0434\u0435\u043E`;
+      case "filterProgress": {
+        const processed = Number(event.processed) || 0;
+        const total = Number(event.total) || processed;
+        return `\u0424\u0438\u043B\u044C\u0442\u0440\u0443\u044E ${processed}/${total}`;
+      }
+      case "filterStats": {
+        const totals = event.totals || {};
+        const total = Number(event.total) || Number(event.initialCount) || 0;
+        const passed = totals.passed || event.videoCount || 0;
+        return total ? `\u041F\u043E\u0441\u043B\u0435 \u0444\u0438\u043B\u044C\u0442\u0440\u0430 ${passed}/${total}` : `\u041F\u043E\u0441\u043B\u0435 \u0444\u0438\u043B\u044C\u0442\u0440\u0430 ${passed}`;
+      }
+      case "filtered":
+        return `\u041F\u043E\u0441\u043B\u0435 \u0444\u0438\u043B\u044C\u0442\u0440\u0430 \u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C ${event.videoCount || 0}`;
+      case "readyToAdd":
+        return event.skippedExisting ? `\u0413\u043E\u0442\u043E\u0432\u043E \u043A \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u0438\u044E ${event.videoCount || 0} \u0432\u0438\u0434\u0435\u043E (\u0443\u0436\u0435 \u0432 \u043E\u0447\u0435\u0440\u0435\u0434\u0438 ${event.skippedExisting})` : `\u0413\u043E\u0442\u043E\u0432\u043E \u043A \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u0438\u044E ${event.videoCount || 0} \u0432\u0438\u0434\u0435\u043E`;
+      case "adding":
+        return `\u0414\u043E\u0431\u0430\u0432\u043B\u044F\u044E ${event.addCount || 0} \u0432\u0438\u0434\u0435\u043E \u0432 \u043E\u0447\u0435\u0440\u0435\u0434\u044C`;
+      default:
+        return "";
+    }
+  }
+  function handleCollectionProgressEvent(event = {}) {
+    if (!event || event.origin !== "auto") {
+      return;
+    }
+    const phase = event.phase || "";
+    if (phase === "start") {
+      autoCollectDisplay.active = true;
+      showPlaybackNotification({
+        title: "\u0421\u0431\u043E\u0440 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A",
+        body: formatAutoCollectProgress(event) || "\u0417\u0430\u043F\u0443\u0441\u043A\u0430\u044E \u0441\u0431\u043E\u0440 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A...",
+        persist: true
+      });
+      return;
+    }
+    if (!autoCollectDisplay.active) {
+      return;
+    }
+    if (phase === "complete") {
+      autoCollectDisplay.active = false;
+      const added = Number(event.added) || 0;
+      const fetched = Number(event.fetched) || added;
+      const queueLength = Number(event.queueLength) || 0;
+      const summary = added ? `\u0414\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E ${added} \u0438\u0437 ${fetched}` : "\u041D\u043E\u0432\u044B\u0445 \u0432\u0438\u0434\u0435\u043E \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E";
+      const queueLabel = queueLength ? ` \xB7 \u0412 \u043E\u0447\u0435\u0440\u0435\u0434\u0438 ${queueLength}` : "";
+      showPlaybackNotification({
+        title: "\u0421\u0431\u043E\u0440 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A \u0437\u0430\u0432\u0435\u0440\u0448\u0451\u043D",
+        body: `${summary}${queueLabel}`,
+        duration: 6e3
+      });
+      return;
+    }
+    if (phase === "error") {
+      autoCollectDisplay.active = false;
+      const message = event.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0431\u0440\u0430\u0442\u044C \u043F\u043E\u0434\u043F\u0438\u0441\u043A\u0438";
+      showPlaybackNotification({
+        title: "\u0421\u0431\u043E\u0440 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A",
+        body: message,
+        duration: 6e3
+      });
+      return;
+    }
+    const progress = formatAutoCollectProgress(event);
+    if (progress) {
+      showPlaybackNotification({
+        title: "\u0421\u0431\u043E\u0440 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A",
+        body: progress,
+        persist: true
+      });
+    }
+  }
+
   // src/content/core/messages.js
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (!message || typeof message.type !== "string") return;
@@ -7462,9 +7428,7 @@
       return false;
     }
     if (message.type === "playlist:collectProgress") {
-      if (typeof handleCollectionProgressEvent === "function") {
-        handleCollectionProgressEvent(message.event || message);
-      }
+      handleCollectionProgressEvent(message.event || message);
       return false;
     }
     if (message.type === "playlist:stateUpdated") {
@@ -7488,13 +7452,9 @@
     injectStyles();
     void refreshInlinePlaylistState();
     ensurePlayerControls2();
-    if (typeof ytaDiagMeasure === "function") {
-      ytaDiagMeasure("init.enhanceVideoCards.document", () => {
-        enhanceVideoCards(document);
-      });
-    } else {
+    ytaDiagMeasure("init.enhanceVideoCards.document", () => {
       enhanceVideoCards(document);
-    }
+    });
     updatePageActions();
     ensurePlayerControls2();
     scanForVideo();
@@ -7511,13 +7471,9 @@
         return;
       }
       setTimeout(() => {
-        if (typeof ytaDiagMeasure === "function") {
-          ytaDiagMeasure("init.ytPageDataUpdated.enhanceDocument", () => {
-            enhanceVideoCards(document);
-          });
-        } else {
+        ytaDiagMeasure("init.ytPageDataUpdated.enhanceDocument", () => {
           enhanceVideoCards(document);
-        }
+        });
       }, 0);
     });
   }

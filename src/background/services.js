@@ -5,7 +5,7 @@ import {
   DEFAULT_LIST_ID,
   getPresentationState,
   getState,
-  moveVideoToList,
+  moveVideosToList,
   removeVideos,
 } from "../store/index.js";
 import { parseVideoId } from "../utils.js";
@@ -166,11 +166,7 @@ export async function handleMoveVideos(videoIds, targetListId) {
     return getPresentationState();
   }
   return mutateAndPresent(
-    async () => {
-      for (const id of ids) {
-        await moveVideoToList(id, targetListId);
-      }
-    },
+    () => moveVideosToList(ids, targetListId),
     { dispatch: true, ensureDefault: true }
   );
 }
