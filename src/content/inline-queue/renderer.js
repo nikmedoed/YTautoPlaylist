@@ -1,5 +1,5 @@
 // Inline queue renderer. Converts queue state into row DOM and empty/loading states.
-import { resolveProgressPercentFromMap } from "../../progress.js";
+import { getProgressPercent } from "../../progress.js";
 import { inlinePlaylistState, state } from "../core/base.js";
 import { createInlineQueueItem } from "./item.js";
 import {
@@ -112,7 +112,7 @@ function renderItems(ui, entries, currentEntryId, options) {
       allowPostpone,
       currentListId: inlinePlaylistState.currentListId,
       onHandlePointerDown: options.handleInlineQueueHandlePointerDown,
-      progressPercent: resolveProgressPercentFromMap(
+      progressPercent: getProgressPercent(
         inlinePlaylistState.progress,
         entry.id
       ),

@@ -33,8 +33,15 @@ let pendingUiFrame = null;
 let pendingUiFrameType = null;
 let pendingUiScan = false;
 
+function measure(name, run) {
+  if (typeof ytaDiagMeasure === "function") {
+    return ytaDiagMeasure(name, run);
+  }
+  return run();
+}
+
 function flushScheduledUiUpdate() {
-  const run = () => {
+  measure("navigation.flushScheduledUiUpdate", () => {
     pendingUiFrame = null;
     pendingUiFrameType = null;
     const shouldScan = pendingUiScan;
@@ -44,12 +51,7 @@ function flushScheduledUiUpdate() {
     }
     updatePageActions();
     ensurePlayerControls();
-  };
-  if (typeof ytaDiagMeasure === "function") {
-    ytaDiagMeasure("navigation.flushScheduledUiUpdate", run);
-    return;
-  }
-  run();
+  });
 }
 
 function scheduleUiUpdate({ scan = false } = {}) {
@@ -90,54 +92,64 @@ function cancelScheduledUiUpdate() {
   pendingUiScan = false;
 }
 
-export const observer = new MutationObserver((mutations) => {
-  const run = () => {
-  let shouldScanVideo = false;
-  const maybeEnhanceCards = (node) => {
-    if (!(node instanceof HTMLElement)) {
-      return;
+function cancelPageCollection(label) {
+  if (typeof cancelAddAllFromPage === "function") {
+    try {
+      cancelAddAllFromPage({ silent: true });
+    } catch (err) {
+      console.warn(`Failed to cancel page collection on ${label}`, err);
     }
-    // Avoid expensive card scans for high-churn player internals.
+    return;
+  }
+  if (typeof pageActions === "object" && pageActions?.collectAbort) {
+    try {
+      pageActions.collectAbort.abort();
+    } catch (err) {
+      console.warn(`Failed to abort page collection controller on ${label}`, err);
+    }
+  }
+}
+
+function enhanceCardsFromMutationNode(node) {
+  if (!(node instanceof HTMLElement)) {
     if (
-      node.closest?.(
-        "#movie_player, .html5-video-player, ytd-player, #player-container-outer"
-      )
+      node &&
+      node.nodeType === Node.DOCUMENT_FRAGMENT_NODE &&
+      typeof node.querySelector === "function"
     ) {
-      return;
-    }
-    if (typeof ytaDiagMeasure === "function") {
-      ytaDiagMeasure("navigation.enhanceVideoCards.node", () => {
+      measure("navigation.enhanceVideoCards.fragment", () => {
         enhanceVideoCards(node);
       });
-    } else {
-      enhanceVideoCards(node);
+      return Boolean(node.querySelector("video"));
     }
-  };
-  for (const mutation of mutations) {
-    if (mutation.type === "childList") {
+    return false;
+  }
+
+  // Avoid expensive card scans for high-churn player internals.
+  if (
+    node.closest?.(
+      "#movie_player, .html5-video-player, ytd-player, #player-container-outer"
+    )
+  ) {
+    return node.tagName === "VIDEO" || Boolean(node.querySelector?.("video"));
+  }
+
+  measure("navigation.enhanceVideoCards.node", () => {
+    enhanceVideoCards(node);
+  });
+  return node.tagName === "VIDEO" || Boolean(node.querySelector?.("video"));
+}
+
+export const observer = new MutationObserver((mutations) => {
+  measure("navigation.mutationObserver", () => {
+    let shouldScanVideo = false;
+    for (const mutation of mutations) {
+      if (mutation.type !== "childList") {
+        continue;
+      }
       mutation.addedNodes.forEach((node) => {
-        if (node instanceof HTMLElement) {
-          maybeEnhanceCards(node);
-          if (!shouldScanVideo) {
-            if (node.tagName === "VIDEO" || node.querySelector?.("video")) {
-              shouldScanVideo = true;
-            }
-          }
-        } else if (
-          node &&
-          node.nodeType === Node.DOCUMENT_FRAGMENT_NODE &&
-          typeof node.querySelector === "function"
-        ) {
-          if (typeof ytaDiagMeasure === "function") {
-            ytaDiagMeasure("navigation.enhanceVideoCards.fragment", () => {
-              enhanceVideoCards(node);
-            });
-          } else {
-            enhanceVideoCards(node);
-          }
-          if (!shouldScanVideo && node.querySelector("video")) {
-            shouldScanVideo = true;
-          }
+        if (enhanceCardsFromMutationNode(node)) {
+          shouldScanVideo = true;
         }
       });
       mutation.removedNodes.forEach((node) => {
@@ -147,100 +159,55 @@ export const observer = new MutationObserver((mutations) => {
         }
       });
     }
-  }
-  const needsScan =
-    shouldScanVideo ||
-    !state.videoElement ||
-    (state.videoElement && !document.contains(state.videoElement));
-  scheduleUiUpdate({ scan: needsScan });
-  };
-  if (typeof ytaDiagMeasure === "function") {
-    ytaDiagMeasure("navigation.mutationObserver", run);
-    return;
-  }
-  run();
+    const needsScan =
+      shouldScanVideo ||
+      !state.videoElement ||
+      (state.videoElement && !document.contains(state.videoElement));
+    scheduleUiUpdate({ scan: needsScan });
+  });
 });
 
 // Clears transient content-script UI/playback state when YouTube performs an in-page navigation.
 export function resetStateForNavigation(event = null) {
   const eventType = typeof event?.type === "string" ? event.type : "";
   const isNavigateStart = eventType === "yt-navigate-start";
-  const run = () => {
-  if (typeof maybeFinalizeVideoEndedBeforeNavigation === "function") {
+  measure("navigation.resetStateForNavigation", () => {
     maybeFinalizeVideoEndedBeforeNavigation();
-  }
-  if (isNavigateStart) {
-    // Keep inline queue visible until navigation actually completes.
+    if (isNavigateStart) {
+      // Keep inline queue visible until navigation actually completes.
+      cancelScheduledUiUpdate();
+      cancelPageCollection("navigation start");
+      return;
+    }
+    try {
+      resetVideoCardDecorations();
+    } catch (err) {
+      console.warn("Failed to reset video card decorations", err);
+    }
     cancelScheduledUiUpdate();
-    if (typeof cancelAddAllFromPage === "function") {
-      try {
-        cancelAddAllFromPage({ silent: true });
-      } catch (err) {
-        console.warn("Failed to cancel page collection on navigation start", err);
-      }
-    } else if (typeof pageActions === "object" && pageActions?.collectAbort) {
-      try {
-        pageActions.collectAbort.abort();
-      } catch (err) {
-        console.warn("Failed to abort page collection controller on navigation start", err);
-      }
-    }
-    return;
-  }
-  try {
-    resetVideoCardDecorations();
-  } catch (err) {
-    console.warn("Failed to reset video card decorations", err);
-  }
-  cancelScheduledUiUpdate();
-  if (typeof cancelAddAllFromPage === "function") {
-    try {
-      cancelAddAllFromPage({ silent: true });
-    } catch (err) {
-      console.warn("Failed to cancel page collection on navigation", err);
-    }
-  } else if (typeof pageActions === "object" && pageActions?.collectAbort) {
-    try {
-      pageActions.collectAbort.abort();
-    } catch (err) {
-      console.warn("Failed to abort page collection controller", err);
-    }
-  }
-  detachVideoListeners();
-  state.controlsActive = false;
-  state.currentVideoId = parseVideoId(window.location.href) || null;
-  state.lastReportedVideoId = null;
-  state.lastUnavailableVideoId = null;
-  if (typeof resetPlaybackWatchdog === "function") {
+    cancelPageCollection("navigation");
+    detachVideoListeners();
+    state.controlsActive = false;
+    state.currentVideoId = parseVideoId(window.location.href) || null;
+    state.lastReportedVideoId = null;
+    state.lastUnavailableVideoId = null;
     resetPlaybackWatchdog(state.currentVideoId || null);
-  }
-  if (typeof stopPlaybackWatchdog === "function") {
     stopPlaybackWatchdog();
-  }
-  if (typeof hidePlaybackNotification === "function") {
     hidePlaybackNotification(true);
-  }
-  updateMediaSessionHandlers();
-  updatePlayerControlsUI();
-  updatePageActions();
-  if (typeof teardownInlineQueue === "function") {
+    updateMediaSessionHandlers();
+    updatePlayerControlsUI();
+    updatePageActions();
     try {
       teardownInlineQueue();
     } catch (err) {
       console.warn("Failed to reset inline queue UI", err);
     }
-  }
-  void refreshInlinePlaylistState();
-  setTimeout(() => {
-    scanForVideo();
-    enhanceVideoCards();
-    ensurePlayerControls();
-    updatePageActions();
-  }, 0);
-  };
-  if (typeof ytaDiagMeasure === "function") {
-    ytaDiagMeasure("navigation.resetStateForNavigation", run);
-    return;
-  }
-  run();
+    void refreshInlinePlaylistState();
+    setTimeout(() => {
+      scanForVideo();
+      enhanceVideoCards();
+      ensurePlayerControls();
+      updatePageActions();
+    }, 0);
+  });
 }

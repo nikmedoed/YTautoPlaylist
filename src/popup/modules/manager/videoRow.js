@@ -1,5 +1,5 @@
 // Manager video-row renderer. Builds one detailed list row with thumbnail, metadata, progress, selection, and action controls.
-import { resolveProgressPercentFromObject } from "../../../progress.js";
+import { getProgressPercent } from "../../../progress.js";
 import { buildDetailParts } from "../../lib/detailParts.js";
 import { createVideoItem } from "../../lib/videoItem.js";
 
@@ -72,7 +72,7 @@ export function createManagerVideoRow({
     });
   }
 
-  const progressPercent = resolveProgressPercentFromObject(videoProgress, video.id);
+  const progressPercent = getProgressPercent(videoProgress, video.id);
   const { element: card } = createVideoItem(video, {
     tag: "div",
     classes: [

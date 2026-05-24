@@ -1,5 +1,5 @@
 // Manager detail helpers. Contains progress lookup, watched selection, list metadata comparisons, and detail reload decisions.
-import { resolveProgressPercentFromObject } from "../../../progress.js";
+import { getProgressPercent } from "../../../progress.js";
 
 export function getWatchedVideoIds(details, videoProgress) {
   const queue = Array.isArray(details?.queue) ? details.queue : [];
@@ -7,7 +7,7 @@ export function getWatchedVideoIds(details, videoProgress) {
   for (const video of queue) {
     const id = typeof video?.id === "string" ? video.id : "";
     if (!id) continue;
-    const progress = resolveProgressPercentFromObject(videoProgress, id);
+    const progress = getProgressPercent(videoProgress, id);
     if (typeof progress === "number" && progress > 95) {
       watchedIds.push(id);
     }

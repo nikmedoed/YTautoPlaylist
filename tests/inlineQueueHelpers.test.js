@@ -1,6 +1,6 @@
 // Inline queue helper tests. Covers metadata resolution for progress and current queue entries.
 import assert from "assert";
-import { resolveProgressPercentFromMap } from "../src/progress.js";
+import { getProgressPercent } from "../src/progress.js";
 import { resolveInlineQueueCurrentEntry } from "../src/content/inline-queue/renderer.js";
 
 {
@@ -9,10 +9,14 @@ import { resolveInlineQueueCurrentEntry } from "../src/content/inline-queue/rend
     ["rounded", { percent: 49.6 }],
     ["clamped", { percent: 101 }],
   ]);
-  assert.strictEqual(resolveProgressPercentFromMap(progress, "missing"), null);
-  assert.strictEqual(resolveProgressPercentFromMap(progress, "hidden"), null);
-  assert.strictEqual(resolveProgressPercentFromMap(progress, "rounded"), 50);
-  assert.strictEqual(resolveProgressPercentFromMap(progress, "clamped"), 100);
+  assert.strictEqual(getProgressPercent(progress, "missing"), null);
+  assert.strictEqual(getProgressPercent(progress, "hidden"), null);
+  assert.strictEqual(getProgressPercent(progress, "rounded"), 50);
+  assert.strictEqual(getProgressPercent(progress, "clamped"), 100);
+  assert.strictEqual(
+    getProgressPercent({ stored: { percent: 33.2 } }, "stored"),
+    33
+  );
 
   const entries = [{ id: "first" }, { id: "second" }];
   assert.strictEqual(

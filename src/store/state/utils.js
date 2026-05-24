@@ -1,4 +1,4 @@
-// State utility helpers. Contains list creation, cloning, id cleanup, and small schema helpers used by actions.
+// State utility helpers. Contains cloning used by persistence and serialization.
 export function deepClone(value) {
   if (value === null || value === undefined) {
     return value;

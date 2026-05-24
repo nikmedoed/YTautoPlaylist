@@ -335,8 +335,14 @@ function normalizeProgressPercent(entry) {
   const percent = clampProgressPercent(entry?.percent);
   return percent && percent > 0 ? percent : null;
 }
-function resolveProgressPercentFromObject(progressById, videoId) {
-  if (!videoId || !progressById || typeof progressById !== "object") {
+function getProgressPercent(progressById, videoId) {
+  if (!videoId || !progressById) {
+    return null;
+  }
+  if (progressById instanceof Map) {
+    return normalizeProgressPercent(progressById.get(videoId));
+  }
+  if (typeof progressById !== "object") {
     return null;
   }
   return normalizeProgressPercent(progressById[videoId]);
@@ -1450,7 +1456,7 @@ function createQueueController({
         dataset.listId = listId;
       }
       const detailParts = buildDetailParts(entry);
-      const progressPercent = resolveProgressPercentFromObject(
+      const progressPercent = getProgressPercent(
         playlistState2?.videoProgress,
         entry.id
       );

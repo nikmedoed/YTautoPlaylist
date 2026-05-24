@@ -1,4 +1,29 @@
 (() => {
+  // src/utils.js
+  var YOUTUBE_ID_PATTERN = /[\w-]{11}/;
+  function parseVideoId(input) {
+    if (!input) return "";
+    const str = String(input).trim();
+    if (/^[\w-]{11}$/.test(str)) return str;
+    try {
+      const baseUrl = typeof globalThis?.location?.href === "string" ? globalThis.location.href : null;
+      const url = baseUrl ? new URL(str, baseUrl) : new URL(str);
+      if (url.hostname.includes("youtu.be")) {
+        const id = url.pathname.split("/").filter(Boolean)[0];
+        if (/^[\w-]{11}$/.test(id)) return id;
+      }
+      const candidate = url.searchParams.get("v");
+      if (candidate && /^[\w-]{11}$/.test(candidate)) return candidate;
+      const segments = url.pathname.split("/");
+      for (const segment of segments) {
+        if (/^[\w-]{11}$/.test(segment)) return segment;
+      }
+    } catch {
+    }
+    const match = str.match(YOUTUBE_ID_PATTERN);
+    return match ? match[0] : "";
+  }
+
   // src/content/core/diagnostics.js
   var YTA_DIAG_FLAG_KEY = "yta_diag_enabled";
   var ytaDiag = {
@@ -306,28 +331,6 @@
     getVideoElement: () => state.videoElement
   });
   installRuntimeInvalidationGuard();
-  function parseVideoId(input) {
-    if (!input) return "";
-    const str = String(input).trim();
-    if (/^[\w-]{11}$/.test(str)) return str;
-    try {
-      const url = new URL(str, window.location.href);
-      if (url.hostname.includes("youtu.be")) {
-        const parts = url.pathname.split("/").filter(Boolean);
-        const id = parts[0];
-        if (/^[\w-]{11}$/.test(id)) return id;
-      }
-      const v = url.searchParams.get("v");
-      if (v && /^[\w-]{11}$/.test(v)) return v;
-      const segments = url.pathname.split("/");
-      for (const part of segments) {
-        if (/^[\w-]{11}$/.test(part)) return part;
-      }
-    } catch (_) {
-    }
-    const match = str.match(/[\w-]{11}/);
-    return match ? match[0] : "";
-  }
   function determinePageContext() {
     const pathname = window.location.pathname || "";
     if (pathname.startsWith("/watch") || pathname.startsWith("/shorts/")) {
@@ -3604,11 +3607,17 @@
     const percent = clampProgressPercent(entry?.percent);
     return percent && percent > 0 ? percent : null;
   }
-  function resolveProgressPercentFromMap(progressMap, videoId) {
-    if (!videoId || !(progressMap instanceof Map)) {
+  function getProgressPercent(progressById, videoId) {
+    if (!videoId || !progressById) {
       return null;
     }
-    return normalizeProgressPercent(progressMap.get(videoId));
+    if (progressById instanceof Map) {
+      return normalizeProgressPercent(progressById.get(videoId));
+    }
+    if (typeof progressById !== "object") {
+      return null;
+    }
+    return normalizeProgressPercent(progressById[videoId]);
   }
 
   // src/content/playback/progressWatchdog.js
@@ -4367,7 +4376,7 @@
   var PROGRESS_ELEMENT_CLASS = "video-thumb__progress";
   var PROGRESS_BAR_CLASS = "video-thumb__progress-bar";
   function resolveVideoProgressPercent(videoId) {
-    return resolveProgressPercentFromMap(inlinePlaylistState?.progress, videoId);
+    return getProgressPercent(inlinePlaylistState?.progress, videoId);
   }
   function applyCardProgress(card, videoId) {
     if (!(card instanceof HTMLElement)) {
@@ -6268,7 +6277,7 @@
         allowPostpone,
         currentListId: inlinePlaylistState.currentListId,
         onHandlePointerDown: options.handleInlineQueueHandlePointerDown,
-        progressPercent: resolveProgressPercentFromMap(
+        progressPercent: getProgressPercent(
           inlinePlaylistState.progress,
           entry.id
         )
@@ -6704,72 +6713,6 @@
     return playlistId ? sendMessage("playlist:addPlaylist", payload) : sendMessage("playlist:addByIds", payload);
   }
 
-  // src/content/video-cards/addButton.js
-  function createAddButtonController({
-    bindButtonTarget,
-    overlays: overlays2,
-    playlistSuccessTimers: playlistSuccessTimers2,
-    resolveFreshTargetForButton
-  }) {
-    async function handleAddButtonClick(event, button) {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      const freshTarget = resolveFreshTargetForButton(button);
-      if (!freshTarget) return;
-      bindButtonTarget(button, freshTarget);
-      const videoId = button.dataset.videoId;
-      const playlistId = button.dataset.playlistId;
-      if (!videoId && !playlistId) return;
-      if (button.dataset.ytaStatus === "pending") return;
-      if (videoId && (button.dataset.ytaStatus === "present" || isVideoInCurrentList(videoId))) {
-        return;
-      }
-      clearPlaylistSuccessTimer(button, playlistSuccessTimers2);
-      const startedAt = playlistId ? Date.now() : 0;
-      let addMetrics = { added: 0, requested: null, missing: 0 };
-      button.dataset.ytaStatus = "pending";
-      button.disabled = true;
-      syncInlineButtonState(button);
-      try {
-        const response = await sendInlineAddRequest({
-          playlistId,
-          videoId,
-          listId: inlinePlaylistState.currentListId || void 0
-        });
-        addMetrics = await applyInlineAddResponse(response);
-      } catch (err) {
-        delete button.dataset.ytaStatus;
-        button.disabled = false;
-        syncInlineButtonState(button);
-        return;
-      }
-      if (playlistId) {
-        showPlaylistSuccess(
-          button,
-          addMetrics,
-          startedAt ? Date.now() - startedAt : 0,
-          playlistSuccessTimers2
-        );
-      } else {
-        delete button.dataset.ytaStatus;
-        syncInlineButtonState(button);
-      }
-    }
-    function createAddButton(overlay, overlayHost) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = ADD_BUTTON_CLASS;
-      button.addEventListener("click", (event) => {
-        void handleAddButtonClick(event, button);
-      }, true);
-      overlay.appendChild(button);
-      overlays2.observeInlineOverlay(overlayHost, button);
-      return button;
-    }
-    return { createAddButton };
-  }
-
   // src/content/video-cards/buttonOwnership.js
   function createCardButtonOwnership({
     overlays: overlays2,
@@ -7004,7 +6947,6 @@
     inlineButtonsByVideoId: inlineButtonsByVideoId2,
     inlineButtonOwners: inlineButtonOwners2
   }) {
-    let addButtonController = null;
     const buttonOwnership = createCardButtonOwnership({
       overlays: overlays2,
       previewOverlay: previewOverlay2,
@@ -7036,16 +6978,65 @@
       }
       return null;
     }
-    function getAddButtonController() {
-      if (!addButtonController) {
-        addButtonController = createAddButtonController({
-          bindButtonTarget: buttonOwnership.bindButtonTarget,
-          overlays: overlays2,
-          playlistSuccessTimers: playlistSuccessTimers2,
-          resolveFreshTargetForButton
-        });
+    async function handleAddButtonClick(event, button) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      const freshTarget = resolveFreshTargetForButton(button);
+      if (!freshTarget) return;
+      buttonOwnership.bindButtonTarget(button, freshTarget);
+      const videoId = button.dataset.videoId;
+      const playlistId = button.dataset.playlistId;
+      if (!videoId && !playlistId) return;
+      if (button.dataset.ytaStatus === "pending") return;
+      if (videoId && (button.dataset.ytaStatus === "present" || isVideoInCurrentList(videoId))) {
+        return;
       }
-      return addButtonController;
+      clearPlaylistSuccessTimer(button, playlistSuccessTimers2);
+      const startedAt = playlistId ? Date.now() : 0;
+      let addMetrics = { added: 0, requested: null, missing: 0 };
+      button.dataset.ytaStatus = "pending";
+      button.disabled = true;
+      syncInlineButtonState(button);
+      try {
+        const response = await sendInlineAddRequest({
+          playlistId,
+          videoId,
+          listId: inlinePlaylistState.currentListId || void 0
+        });
+        addMetrics = await applyInlineAddResponse(response);
+      } catch (err) {
+        delete button.dataset.ytaStatus;
+        button.disabled = false;
+        syncInlineButtonState(button);
+        return;
+      }
+      if (playlistId) {
+        showPlaylistSuccess(
+          button,
+          addMetrics,
+          startedAt ? Date.now() - startedAt : 0,
+          playlistSuccessTimers2
+        );
+      } else {
+        delete button.dataset.ytaStatus;
+        syncInlineButtonState(button);
+      }
+    }
+    function createAddButton(overlay, overlayHost) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = ADD_BUTTON_CLASS;
+      button.addEventListener(
+        "click",
+        (event) => {
+          void handleAddButtonClick(event, button);
+        },
+        true
+      );
+      overlay.appendChild(button);
+      overlays2.observeInlineOverlay(overlayHost, button);
+      return button;
     }
     function decorateVideoCard(card) {
       if (!(card instanceof HTMLElement)) return;
@@ -7092,7 +7083,7 @@
         overlay.appendChild(button);
       }
       if (!button) {
-        button = getAddButtonController().createAddButton(overlay, overlayHost);
+        button = createAddButton(overlay, overlayHost);
       } else {
         overlays2.observeInlineOverlay(overlayHost, button);
       }
@@ -7178,8 +7169,14 @@
   var pendingUiFrame = null;
   var pendingUiFrameType = null;
   var pendingUiScan = false;
+  function measure(name, run) {
+    if (typeof ytaDiagMeasure === "function") {
+      return ytaDiagMeasure(name, run);
+    }
+    return run();
+  }
   function flushScheduledUiUpdate() {
-    const run = () => {
+    measure("navigation.flushScheduledUiUpdate", () => {
       pendingUiFrame = null;
       pendingUiFrameType = null;
       const shouldScan = pendingUiScan;
@@ -7189,12 +7186,7 @@
       }
       updatePageActions();
       ensurePlayerControls2();
-    };
-    if (typeof ytaDiagMeasure === "function") {
-      ytaDiagMeasure("navigation.flushScheduledUiUpdate", run);
-      return;
-    }
-    run();
+    });
   }
   function scheduleUiUpdate({ scan = false } = {}) {
     if (scan) {
@@ -7232,88 +7224,74 @@
     pendingUiFrameType = null;
     pendingUiScan = false;
   }
-  var observer = new MutationObserver((mutations) => {
-    const run = () => {
-      let shouldScanVideo = false;
-      const maybeEnhanceCards = (node) => {
-        if (!(node instanceof HTMLElement)) {
-          return;
-        }
-        if (node.closest?.(
-          "#movie_player, .html5-video-player, ytd-player, #player-container-outer"
-        )) {
-          return;
-        }
-        if (typeof ytaDiagMeasure === "function") {
-          ytaDiagMeasure("navigation.enhanceVideoCards.node", () => {
-            enhanceVideoCards(node);
-          });
-        } else {
+  function cancelPageCollection(label) {
+    if (typeof cancelAddAllFromPage === "function") {
+      try {
+        cancelAddAllFromPage({ silent: true });
+      } catch (err) {
+        console.warn(`Failed to cancel page collection on ${label}`, err);
+      }
+      return;
+    }
+    if (typeof pageActions === "object" && pageActions?.collectAbort) {
+      try {
+        pageActions.collectAbort.abort();
+      } catch (err) {
+        console.warn(`Failed to abort page collection controller on ${label}`, err);
+      }
+    }
+  }
+  function enhanceCardsFromMutationNode(node) {
+    if (!(node instanceof HTMLElement)) {
+      if (node && node.nodeType === Node.DOCUMENT_FRAGMENT_NODE && typeof node.querySelector === "function") {
+        measure("navigation.enhanceVideoCards.fragment", () => {
           enhanceVideoCards(node);
-        }
-      };
+        });
+        return Boolean(node.querySelector("video"));
+      }
+      return false;
+    }
+    if (node.closest?.(
+      "#movie_player, .html5-video-player, ytd-player, #player-container-outer"
+    )) {
+      return node.tagName === "VIDEO" || Boolean(node.querySelector?.("video"));
+    }
+    measure("navigation.enhanceVideoCards.node", () => {
+      enhanceVideoCards(node);
+    });
+    return node.tagName === "VIDEO" || Boolean(node.querySelector?.("video"));
+  }
+  var observer = new MutationObserver((mutations) => {
+    measure("navigation.mutationObserver", () => {
+      let shouldScanVideo = false;
       for (const mutation of mutations) {
-        if (mutation.type === "childList") {
-          mutation.addedNodes.forEach((node) => {
-            if (node instanceof HTMLElement) {
-              maybeEnhanceCards(node);
-              if (!shouldScanVideo) {
-                if (node.tagName === "VIDEO" || node.querySelector?.("video")) {
-                  shouldScanVideo = true;
-                }
-              }
-            } else if (node && node.nodeType === Node.DOCUMENT_FRAGMENT_NODE && typeof node.querySelector === "function") {
-              if (typeof ytaDiagMeasure === "function") {
-                ytaDiagMeasure("navigation.enhanceVideoCards.fragment", () => {
-                  enhanceVideoCards(node);
-                });
-              } else {
-                enhanceVideoCards(node);
-              }
-              if (!shouldScanVideo && node.querySelector("video")) {
-                shouldScanVideo = true;
-              }
-            }
-          });
-          mutation.removedNodes.forEach((node) => {
-            if (!(node instanceof HTMLElement)) return;
-            if (node === state.videoElement || node.contains(state.videoElement)) {
-              shouldScanVideo = true;
-            }
-          });
+        if (mutation.type !== "childList") {
+          continue;
         }
+        mutation.addedNodes.forEach((node) => {
+          if (enhanceCardsFromMutationNode(node)) {
+            shouldScanVideo = true;
+          }
+        });
+        mutation.removedNodes.forEach((node) => {
+          if (!(node instanceof HTMLElement)) return;
+          if (node === state.videoElement || node.contains(state.videoElement)) {
+            shouldScanVideo = true;
+          }
+        });
       }
       const needsScan = shouldScanVideo || !state.videoElement || state.videoElement && !document.contains(state.videoElement);
       scheduleUiUpdate({ scan: needsScan });
-    };
-    if (typeof ytaDiagMeasure === "function") {
-      ytaDiagMeasure("navigation.mutationObserver", run);
-      return;
-    }
-    run();
+    });
   });
   function resetStateForNavigation(event = null) {
     const eventType = typeof event?.type === "string" ? event.type : "";
     const isNavigateStart = eventType === "yt-navigate-start";
-    const run = () => {
-      if (typeof maybeFinalizeVideoEndedBeforeNavigation2 === "function") {
-        maybeFinalizeVideoEndedBeforeNavigation2();
-      }
+    measure("navigation.resetStateForNavigation", () => {
+      maybeFinalizeVideoEndedBeforeNavigation2();
       if (isNavigateStart) {
         cancelScheduledUiUpdate();
-        if (typeof cancelAddAllFromPage === "function") {
-          try {
-            cancelAddAllFromPage({ silent: true });
-          } catch (err) {
-            console.warn("Failed to cancel page collection on navigation start", err);
-          }
-        } else if (typeof pageActions === "object" && pageActions?.collectAbort) {
-          try {
-            pageActions.collectAbort.abort();
-          } catch (err) {
-            console.warn("Failed to abort page collection controller on navigation start", err);
-          }
-        }
+        cancelPageCollection("navigation start");
         return;
       }
       try {
@@ -7322,42 +7300,22 @@
         console.warn("Failed to reset video card decorations", err);
       }
       cancelScheduledUiUpdate();
-      if (typeof cancelAddAllFromPage === "function") {
-        try {
-          cancelAddAllFromPage({ silent: true });
-        } catch (err) {
-          console.warn("Failed to cancel page collection on navigation", err);
-        }
-      } else if (typeof pageActions === "object" && pageActions?.collectAbort) {
-        try {
-          pageActions.collectAbort.abort();
-        } catch (err) {
-          console.warn("Failed to abort page collection controller", err);
-        }
-      }
+      cancelPageCollection("navigation");
       detachVideoListeners();
       state.controlsActive = false;
       state.currentVideoId = parseVideoId(window.location.href) || null;
       state.lastReportedVideoId = null;
       state.lastUnavailableVideoId = null;
-      if (typeof resetPlaybackWatchdog === "function") {
-        resetPlaybackWatchdog(state.currentVideoId || null);
-      }
-      if (typeof stopPlaybackWatchdog === "function") {
-        stopPlaybackWatchdog();
-      }
-      if (typeof hidePlaybackNotification === "function") {
-        hidePlaybackNotification(true);
-      }
+      resetPlaybackWatchdog(state.currentVideoId || null);
+      stopPlaybackWatchdog();
+      hidePlaybackNotification(true);
       updateMediaSessionHandlers();
       updatePlayerControlsUI();
       updatePageActions();
-      if (typeof teardownInlineQueue === "function") {
-        try {
-          teardownInlineQueue();
-        } catch (err) {
-          console.warn("Failed to reset inline queue UI", err);
-        }
+      try {
+        teardownInlineQueue();
+      } catch (err) {
+        console.warn("Failed to reset inline queue UI", err);
       }
       void refreshInlinePlaylistState();
       setTimeout(() => {
@@ -7366,12 +7324,7 @@
         ensurePlayerControls2();
         updatePageActions();
       }, 0);
-    };
-    if (typeof ytaDiagMeasure === "function") {
-      ytaDiagMeasure("navigation.resetStateForNavigation", run);
-      return;
-    }
-    run();
+    });
   }
 
   // src/content/core/interceptors.js

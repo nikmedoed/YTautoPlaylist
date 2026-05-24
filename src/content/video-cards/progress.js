@@ -5,14 +5,14 @@ import {
 } from "../core/base.js";
 import {
   clampProgressPercent,
-  resolveProgressPercentFromMap,
+  getProgressPercent,
 } from "../../progress.js";
 
 const PROGRESS_ELEMENT_CLASS = "video-thumb__progress";
 const PROGRESS_BAR_CLASS = "video-thumb__progress-bar";
 
 export function resolveVideoProgressPercent(videoId) {
-  return resolveProgressPercentFromMap(inlinePlaylistState?.progress, videoId);
+  return getProgressPercent(inlinePlaylistState?.progress, videoId);
 }
 
 export function applyCardProgress(card, videoId) {

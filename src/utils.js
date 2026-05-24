@@ -1,4 +1,5 @@
-// Shared parsing utilities. Contains YouTube video and playlist id extraction used by content, popup, and background code.
+// Shared parsing utilities. Extracts YouTube ids from raw ids, URLs, and
+// YouTube DOM attributes across content, popup, and background code.
 const MAX_CAPTURED_LOGS = 100;
 const YOUTUBE_ID_PATTERN = /[\w-]{11}/;
 const PLAYLIST_ID_PATTERN = /[\w-]{13,64}/;
@@ -12,12 +13,17 @@ export function logMessage(level, context, count, message) {
   }
 }
 
+// Accepts raw ids, absolute URLs, and relative YouTube hrefs from the content DOM.
 export function parseVideoId(input) {
   if (!input) return "";
   const str = String(input).trim();
   if (/^[\w-]{11}$/.test(str)) return str;
   try {
-    const url = new URL(str);
+    const baseUrl =
+      typeof globalThis?.location?.href === "string"
+        ? globalThis.location.href
+        : null;
+    const url = baseUrl ? new URL(str, baseUrl) : new URL(str);
     if (url.hostname.includes("youtu.be")) {
       const id = url.pathname.split("/").filter(Boolean)[0];
       if (/^[\w-]{11}$/.test(id)) return id;

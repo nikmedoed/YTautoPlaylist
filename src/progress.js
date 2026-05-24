@@ -16,15 +16,15 @@ export function normalizeProgressPercent(entry) {
   return percent && percent > 0 ? percent : null;
 }
 
-export function resolveProgressPercentFromMap(progressMap, videoId) {
-  if (!videoId || !(progressMap instanceof Map)) {
+// Reads a progress entry from either content-side Maps or stored plain objects.
+export function getProgressPercent(progressById, videoId) {
+  if (!videoId || !progressById) {
     return null;
   }
-  return normalizeProgressPercent(progressMap.get(videoId));
-}
-
-export function resolveProgressPercentFromObject(progressById, videoId) {
-  if (!videoId || !progressById || typeof progressById !== "object") {
+  if (progressById instanceof Map) {
+    return normalizeProgressPercent(progressById.get(videoId));
+  }
+  if (typeof progressById !== "object") {
     return null;
   }
   return normalizeProgressPercent(progressById[videoId]);

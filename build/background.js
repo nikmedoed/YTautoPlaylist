@@ -1648,7 +1648,8 @@ function parseVideoId(input) {
   const str = String(input).trim();
   if (/^[\w-]{11}$/.test(str)) return str;
   try {
-    const url = new URL(str);
+    const baseUrl = typeof globalThis?.location?.href === "string" ? globalThis.location.href : null;
+    const url = baseUrl ? new URL(str, baseUrl) : new URL(str);
     if (url.hostname.includes("youtu.be")) {
       const id = url.pathname.split("/").filter(Boolean)[0];
       if (/^[\w-]{11}$/.test(id)) return id;

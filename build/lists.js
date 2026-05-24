@@ -744,7 +744,8 @@ function parseVideoId(input) {
   const str = String(input).trim();
   if (/^[\w-]{11}$/.test(str)) return str;
   try {
-    const url = new URL(str);
+    const baseUrl = typeof globalThis?.location?.href === "string" ? globalThis.location.href : null;
+    const url = baseUrl ? new URL(str, baseUrl) : new URL(str);
     if (url.hostname.includes("youtu.be")) {
       const id = url.pathname.split("/").filter(Boolean)[0];
       if (/^[\w-]{11}$/.test(id)) return id;
@@ -1605,8 +1606,14 @@ function normalizeProgressPercent(entry) {
   const percent = clampProgressPercent(entry?.percent);
   return percent && percent > 0 ? percent : null;
 }
-function resolveProgressPercentFromObject(progressById, videoId) {
-  if (!videoId || !progressById || typeof progressById !== "object") {
+function getProgressPercent(progressById, videoId) {
+  if (!videoId || !progressById) {
+    return null;
+  }
+  if (progressById instanceof Map) {
+    return normalizeProgressPercent(progressById.get(videoId));
+  }
+  if (typeof progressById !== "object") {
     return null;
   }
   return normalizeProgressPercent(progressById[videoId]);
@@ -1619,7 +1626,7 @@ function getWatchedVideoIds(details, videoProgress) {
   for (const video of queue) {
     const id = typeof video?.id === "string" ? video.id : "";
     if (!id) continue;
-    const progress = resolveProgressPercentFromObject(videoProgress, id);
+    const progress = getProgressPercent(videoProgress, id);
     if (typeof progress === "number" && progress > 95) {
       watchedIds.push(id);
     }
@@ -2178,7 +2185,7 @@ function createManagerVideoRow({
       dataset: postponeDataset
     });
   }
-  const progressPercent = resolveProgressPercentFromObject(videoProgress, video.id);
+  const progressPercent = getProgressPercent(videoProgress, video.id);
   const { element: card } = createVideoItem(video, {
     tag: "div",
     classes: [

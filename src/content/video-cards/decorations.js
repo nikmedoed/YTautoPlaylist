@@ -1,13 +1,23 @@
 // Video-card decoration helpers. Applies progress and added-state visual markers to card overlays.
 import {
+  ADD_BUTTON_CLASS,
   CARD_MARK,
   CARD_OVERLAY_HOST_CLASS,
+  inlinePlaylistState,
   THUMB_HOST_CLASS,
   VIDEO_CARD_SELECTOR,
   ytaDiagMeasure,
 } from "../core/base.js";
-import { syncInlineButtonState } from "../inline-queue/index.js";
-import { createAddButtonController } from "./addButton.js";
+import {
+  isVideoInCurrentList,
+  syncInlineButtonState,
+} from "../inline-queue/index.js";
+import {
+  applyInlineAddResponse,
+  clearPlaylistSuccessTimer,
+  sendInlineAddRequest,
+  showPlaylistSuccess,
+} from "./addFlow.js";
 import { createCardButtonOwnership } from "./buttonOwnership.js";
 import { createVideoCardCleanup } from "./cleanup.js";
 import { applyCardProgress } from "./progress.js";
@@ -36,7 +46,6 @@ export function createVideoCardDecorationController({
   inlineButtonsByVideoId,
   inlineButtonOwners,
 }) {
-  let addButtonController = null;
   const buttonOwnership = createCardButtonOwnership({
     overlays,
     previewOverlay,
@@ -75,16 +84,71 @@ export function createVideoCardDecorationController({
     return null;
   }
 
-  function getAddButtonController() {
-    if (!addButtonController) {
-      addButtonController = createAddButtonController({
-        bindButtonTarget: buttonOwnership.bindButtonTarget,
-        overlays,
-        playlistSuccessTimers,
-        resolveFreshTargetForButton,
-      });
+  // Owns the card overlay add flow so target refresh, button ownership, and
+  // playlist success feedback stay in one place.
+  async function handleAddButtonClick(event, button) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    const freshTarget = resolveFreshTargetForButton(button);
+    if (!freshTarget) return;
+    buttonOwnership.bindButtonTarget(button, freshTarget);
+    const videoId = button.dataset.videoId;
+    const playlistId = button.dataset.playlistId;
+    if (!videoId && !playlistId) return;
+    if (button.dataset.ytaStatus === "pending") return;
+    if (
+      videoId &&
+      (button.dataset.ytaStatus === "present" || isVideoInCurrentList(videoId))
+    ) {
+      return;
     }
-    return addButtonController;
+    clearPlaylistSuccessTimer(button, playlistSuccessTimers);
+    const startedAt = playlistId ? Date.now() : 0;
+    let addMetrics = { added: 0, requested: null, missing: 0 };
+    button.dataset.ytaStatus = "pending";
+    button.disabled = true;
+    syncInlineButtonState(button);
+    try {
+      const response = await sendInlineAddRequest({
+        playlistId,
+        videoId,
+        listId: inlinePlaylistState.currentListId || undefined,
+      });
+      addMetrics = await applyInlineAddResponse(response);
+    } catch (err) {
+      delete button.dataset.ytaStatus;
+      button.disabled = false;
+      syncInlineButtonState(button);
+      return;
+    }
+    if (playlistId) {
+      showPlaylistSuccess(
+        button,
+        addMetrics,
+        startedAt ? Date.now() - startedAt : 0,
+        playlistSuccessTimers
+      );
+    } else {
+      delete button.dataset.ytaStatus;
+      syncInlineButtonState(button);
+    }
+  }
+
+  function createAddButton(overlay, overlayHost) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = ADD_BUTTON_CLASS;
+    button.addEventListener(
+      "click",
+      (event) => {
+        void handleAddButtonClick(event, button);
+      },
+      true
+    );
+    overlay.appendChild(button);
+    overlays.observeInlineOverlay(overlayHost, button);
+    return button;
   }
 
   // Enhances a single card if it resolves to a valid video/playlist target and is not part of the inline queue.
@@ -142,7 +206,7 @@ export function createVideoCardDecorationController({
       overlay.appendChild(button);
     }
     if (!button) {
-      button = getAddButtonController().createAddButton(overlay, overlayHost);
+      button = createAddButton(overlay, overlayHost);
     } else {
       overlays.observeInlineOverlay(overlayHost, button);
     }
