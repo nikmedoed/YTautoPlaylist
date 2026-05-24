@@ -100,6 +100,8 @@ function isElementVisible(element) {
   return rect.width > 0 && rect.height > 0;
 }
 
+// Detects YouTube watch pages that cannot play the current video and tells the
+// background queue to skip only when that unavailable video is still active.
 export function detectUnavailableWatchState(context = {}) {
   const run = () => {
     if (determinePageContext() !== "watch") {

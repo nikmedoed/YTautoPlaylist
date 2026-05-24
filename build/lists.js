@@ -739,6 +739,7 @@ function createSelectionController({
 
 // src/utils.js
 var YOUTUBE_ID_PATTERN = /[\w-]{11}/;
+var THUMBNAIL_PRIORITY = ["maxres", "standard", "high", "medium", "default"];
 function parseVideoId(input) {
   if (!input) return "";
   const str = String(input).trim();
@@ -760,6 +761,33 @@ function parseVideoId(input) {
   }
   const match = str.match(YOUTUBE_ID_PATTERN);
   return match ? match[0] : "";
+}
+function pickThumbnailValue(value) {
+  if (typeof value === "string" && value) {
+    return value;
+  }
+  if (!value || typeof value !== "object") {
+    return "";
+  }
+  return value.url || value.fallback || value.defaultSrc || "";
+}
+function pickThumbnailSet(thumbnails) {
+  if (!thumbnails || typeof thumbnails !== "object") {
+    return "";
+  }
+  for (const key of THUMBNAIL_PRIORITY) {
+    const url = pickThumbnailValue(thumbnails[key]);
+    if (url) {
+      return url;
+    }
+  }
+  return "";
+}
+function resolveThumbnailUrl(entry, fallback = "") {
+  if (!entry || typeof entry !== "object") {
+    return fallback || "";
+  }
+  return pickThumbnailValue(entry.thumbnail) || pickThumbnailSet(entry.thumbnails) || fallback || "";
 }
 
 // src/popup/modules/manager/runtime.js
@@ -1610,9 +1638,6 @@ function getProgressPercent(progressById, videoId) {
   if (!videoId || !progressById) {
     return null;
   }
-  if (progressById instanceof Map) {
-    return normalizeProgressPercent(progressById.get(videoId));
-  }
   if (typeof progressById !== "object") {
     return null;
   }
@@ -1968,15 +1993,6 @@ function createActionButton(doc, descriptor) {
   }
   return element;
 }
-function resolveThumbnail(entry, fallback) {
-  if (entry && typeof entry.thumbnail === "string" && entry.thumbnail) {
-    return entry.thumbnail;
-  }
-  if (entry?.thumbnail?.url) {
-    return entry.thumbnail.url;
-  }
-  return fallback || "";
-}
 function resolveThumbnailDuration(video, thumbnailOptions = {}) {
   if (!thumbnailOptions || thumbnailOptions.showDuration === false) {
     return "";
@@ -2046,7 +2062,7 @@ function createVideoItem(video, options = {}) {
     thumbWrapper.className = thumbnail.wrapperClassName || "video-thumb-wrapper";
     const thumb = doc.createElement("img");
     thumb.className = thumbnail.className || "video-thumb";
-    thumb.src = thumbnail.src || resolveThumbnail(video, thumbnail.fallback || thumbnail.defaultSrc);
+    thumb.src = thumbnail.src || resolveThumbnailUrl(video, thumbnail.fallback || thumbnail.defaultSrc);
     const titleText = typeof titleOptions.text === "string" ? titleOptions.text : video?.title;
     thumb.alt = thumbnail.alt || (titleText ? sanitizeText(titleText) : DEFAULT_ALT) || DEFAULT_ALT;
     thumb.loading = thumbnail.loading || "lazy";
@@ -3856,7 +3872,7 @@ function createCollectionController({
   };
 }
 
-// src/popup/modules/collection/cooldown.js
+// src/popup/modules/collection/availability.js
 function readAutoCollectMeta(state) {
   const meta = state?.autoCollect || {};
   const cooldownMs = Number(meta.cooldownMs) || 0;
@@ -3899,8 +3915,6 @@ function formatCooldownMessage(remainingMs, targetTime) {
   const timeLabel = formatTimeOfDay(targetTime);
   return timeLabel ? `\u0421\u0431\u043E\u0440 \u0431\u0443\u0434\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0447\u0435\u0440\u0435\u0437 ${parts.join(" ")} (\u2248 ${timeLabel})` : `\u0421\u0431\u043E\u0440 \u0431\u0443\u0434\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0447\u0435\u0440\u0435\u0437 ${parts.join(" ")}`;
 }
-
-// src/popup/modules/collection/availability.js
 function createCollectionAvailabilityController({
   applyState,
   collectBtn,

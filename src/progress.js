@@ -11,18 +11,15 @@ export function clampProgressPercent(value) {
   return percent >= 100 ? 100 : percent;
 }
 
-export function normalizeProgressPercent(entry) {
+function normalizeProgressPercent(entry) {
   const percent = clampProgressPercent(entry?.percent);
   return percent && percent > 0 ? percent : null;
 }
 
-// Reads a progress entry from either content-side Maps or stored plain objects.
+// Reads a progress entry from the persisted plain-object progress map.
 export function getProgressPercent(progressById, videoId) {
   if (!videoId || !progressById) {
     return null;
-  }
-  if (progressById instanceof Map) {
-    return normalizeProgressPercent(progressById.get(videoId));
   }
   if (typeof progressById !== "object") {
     return null;

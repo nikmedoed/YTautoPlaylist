@@ -2,7 +2,7 @@
 import {
   DEFAULT_LIST_ID,
 } from "./constants.js";
-import { deepClone } from "./utils.js";
+import { deepClone } from "../../utils.js";
 import { sanitizeVideoProgressMap } from "./videoProgress.js";
 
 // Reconstructs the in-memory state from split chrome.storage keys while preserving legacy stored shapes.

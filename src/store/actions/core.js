@@ -8,8 +8,8 @@ import {
   HISTORY_LIMIT,
   DEFAULT_LIST_ID,
   sanitizeAutoCollectSeenIds,
+  normalizeAutoCollectTimestamp,
 } from "../state/index.js";
-import { normalizeAutoCollectTimestamp } from "../state/autoCollectTimestamp.js";
 
 export const AUTO_COLLECT_COOLDOWN_MS = 60 * 60 * 1000;
 

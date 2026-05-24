@@ -214,6 +214,8 @@ async function handleAddVisibleFromPage() {
   }
 }
 
+// Performs the long "add all" page scan: collect visible ids, scroll/load more,
+// respect cancellation, then send the deduped ids through the normal add flow.
 async function handleAddAllFromPage() {
   const caps = getContextCapabilities();
   if (!caps.canAddAll) return;

@@ -13,7 +13,7 @@ import {
 } from "./constants.js";
 import { composeRawState, splitStateForStorage } from "./serialization.js";
 import { sanitizeState } from "./sanitizers.js";
-import { deepClone } from "./utils.js";
+import { deepClone } from "../../utils.js";
 
 const hasChromeStorage =
   typeof chrome !== "undefined" && chrome?.storage?.local;

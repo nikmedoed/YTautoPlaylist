@@ -24,7 +24,7 @@ import {
 import {
   collectAutoCollectSeenIds,
 } from '../src/background/collectionSync.js';
-import { parseVideoId } from '../src/utils.js';
+import { parseVideoId, resolveThumbnailUrl } from '../src/utils.js';
 import { applyFilters, getVideoFilterReason, saveFilters } from '../src/filter.js';
 import './popupHelpers.test.js';
 import './inlineQueueHelpers.test.js';
@@ -130,6 +130,24 @@ console.log('getNewVideos falls back to search');
   assert.strictEqual(parseVideoId(examples[2]), 'hE79n2sUboU');
   assert.strictEqual(parseVideoId(examples[3]), 'hE79n2sUboU');
   console.log('parseVideoId handles messy URLs');
+}
+
+{
+  assert.strictEqual(
+    resolveThumbnailUrl({
+      thumbnails: {
+        default: { url: 'default.jpg' },
+        high: { url: 'high.jpg' },
+      },
+    }),
+    'high.jpg'
+  );
+  assert.strictEqual(
+    resolveThumbnailUrl({ thumbnail: { defaultSrc: 'local.png' } }, 'fallback.png'),
+    'local.png'
+  );
+  assert.strictEqual(resolveThumbnailUrl({}, 'fallback.png'), 'fallback.png');
+  console.log('resolveThumbnailUrl handles API thumbnails, local thumbnail objects and fallback');
 }
 
 {

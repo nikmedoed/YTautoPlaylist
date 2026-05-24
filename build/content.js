@@ -1,6 +1,7 @@
 (() => {
   // src/utils.js
   var YOUTUBE_ID_PATTERN = /[\w-]{11}/;
+  var THUMBNAIL_PRIORITY = ["maxres", "standard", "high", "medium", "default"];
   function parseVideoId(input) {
     if (!input) return "";
     const str = String(input).trim();
@@ -22,6 +23,33 @@
     }
     const match = str.match(YOUTUBE_ID_PATTERN);
     return match ? match[0] : "";
+  }
+  function pickThumbnailValue(value) {
+    if (typeof value === "string" && value) {
+      return value;
+    }
+    if (!value || typeof value !== "object") {
+      return "";
+    }
+    return value.url || value.fallback || value.defaultSrc || "";
+  }
+  function pickThumbnailSet(thumbnails) {
+    if (!thumbnails || typeof thumbnails !== "object") {
+      return "";
+    }
+    for (const key of THUMBNAIL_PRIORITY) {
+      const url = pickThumbnailValue(thumbnails[key]);
+      if (url) {
+        return url;
+      }
+    }
+    return "";
+  }
+  function resolveThumbnailUrl(entry, fallback = "") {
+    if (!entry || typeof entry !== "object") {
+      return fallback || "";
+    }
+    return pickThumbnailValue(entry.thumbnail) || pickThumbnailSet(entry.thumbnails) || fallback || "";
   }
 
   // src/content/core/diagnostics.js
@@ -281,7 +309,7 @@
     currentVideoId: null,
     queueEntries: [],
     lists: [],
-    progress: /* @__PURE__ */ new Map()
+    progress: {}
   };
   var cardRetryState = /* @__PURE__ */ new WeakMap();
   var STYLE_ID = "yta-controller-style";
@@ -3611,9 +3639,6 @@
     if (!videoId || !progressById) {
       return null;
     }
-    if (progressById instanceof Map) {
-      return normalizeProgressPercent(progressById.get(videoId));
-    }
     if (typeof progressById !== "object") {
       return null;
     }
@@ -4375,25 +4400,18 @@
   // src/content/video-cards/progress.js
   var PROGRESS_ELEMENT_CLASS = "video-thumb__progress";
   var PROGRESS_BAR_CLASS = "video-thumb__progress-bar";
-  function resolveVideoProgressPercent(videoId) {
-    return getProgressPercent(inlinePlaylistState?.progress, videoId);
-  }
   function applyCardProgress(card, videoId) {
     if (!(card instanceof HTMLElement)) {
       return;
     }
     const hostCandidate = card.querySelector(`.${THUMB_HOST_CLASS}`);
     const host = hostCandidate instanceof HTMLElement ? hostCandidate : card;
-    const percent = resolveVideoProgressPercent(videoId);
+    const percent = getProgressPercent(inlinePlaylistState?.progress, videoId);
     let container = host.querySelector(`.${PROGRESS_ELEMENT_CLASS}`);
     if (!percent) {
       if (container) {
         container.remove();
       }
-      return;
-    }
-    const clamped = clampProgressPercent(percent);
-    if (clamped === null) {
       return;
     }
     if (!container) {
@@ -4410,7 +4428,7 @@
       container.appendChild(bar);
       return bar;
     })();
-    barEl.style.width = `${clamped}%`;
+    barEl.style.width = `${percent}%`;
   }
   function syncVideoCardProgress(root = document, cardMark) {
     const scope = root instanceof Document || root instanceof HTMLElement ? root : document;
@@ -4485,24 +4503,6 @@
     });
     return { normalizedEntries, orderedIds };
   }
-  function buildProgressMap(presentation) {
-    const progressEntries = presentation && typeof presentation === "object" && presentation.videoProgress ? presentation.videoProgress : null;
-    const progressMap = /* @__PURE__ */ new Map();
-    if (progressEntries && typeof progressEntries === "object") {
-      Object.entries(progressEntries).forEach(([id, entry]) => {
-        if (typeof id !== "string" || !id) {
-          return;
-        }
-        const percent = normalizeProgressPercent(entry);
-        if (percent === null) {
-          return;
-        }
-        const updatedAt = Number.isFinite(Number(entry?.updatedAt)) ? Number(entry.updatedAt) : 0;
-        progressMap.set(id, { percent, updatedAt });
-      });
-    }
-    return progressMap;
-  }
   function updateInlinePlaylistState2(rawPresentation, context = {}) {
     const presentation = normalizePresentation(rawPresentation);
     if (!presentation) {
@@ -4549,7 +4549,7 @@
     })).filter((list) => list.id);
     inlinePlaylistState.currentListName = typeof presentation?.currentQueue?.name === "string" ? presentation.currentQueue.name : "";
     inlinePlaylistState.currentVideoId = typeof presentation?.currentVideoId === "string" && presentation.currentVideoId ? presentation.currentVideoId : null;
-    inlinePlaylistState.progress = buildProgressMap(presentation);
+    inlinePlaylistState.progress = presentation.videoProgress && typeof presentation.videoProgress === "object" ? presentation.videoProgress : {};
     if (changed) {
       syncAllInlineButtons();
     }
@@ -6040,29 +6040,6 @@
     }
     return createInlineQueueDetailContainer(parts);
   }
-  function resolveInlineQueueThumbnail(entry) {
-    if (!entry) {
-      return "";
-    }
-    if (typeof entry.thumbnail === "string" && entry.thumbnail) {
-      return entry.thumbnail;
-    }
-    if (entry.thumbnail && typeof entry.thumbnail === "object") {
-      if (typeof entry.thumbnail.url === "string" && entry.thumbnail.url) {
-        return entry.thumbnail.url;
-      }
-      if (typeof entry.thumbnail.fallback === "string" && entry.thumbnail.fallback) {
-        return entry.thumbnail.fallback;
-      }
-      if (typeof entry.thumbnail.defaultSrc === "string" && entry.thumbnail.defaultSrc) {
-        return entry.thumbnail.defaultSrc;
-      }
-    }
-    if (entry.id) {
-      return `https://i.ytimg.com/vi/${entry.id}/mqdefault.jpg`;
-    }
-    return "";
-  }
   function createInlineQueueActionButton(className, textContent, title) {
     const button = document.createElement("button");
     button.type = "button";
@@ -6130,7 +6107,10 @@
     thumb.className = "video-thumb";
     thumb.decoding = "async";
     thumb.loading = "lazy";
-    const thumbUrl = resolveInlineQueueThumbnail(entry);
+    const thumbUrl = resolveThumbnailUrl(
+      entry,
+      entry.id ? `https://i.ytimg.com/vi/${entry.id}/mqdefault.jpg` : ""
+    );
     if (thumbUrl) {
       thumb.src = thumbUrl;
     }
@@ -6901,7 +6881,9 @@
     };
   }
 
-  // src/content/video-cards/retry.js
+  // src/content/video-cards/decorations.js
+  var INLINE_QUEUE_SELECTOR = ".yta-inline-queue";
+  var MAX_CARD_RETRY_ATTEMPTS = 6;
   function clearCardRetryTimeout(card) {
     const retryState = cardRetryState.get(card);
     if (!retryState?.timeout) return;
@@ -6917,7 +6899,7 @@
   function scheduleCardRetry(card, retryCallback) {
     if (!(card instanceof HTMLElement)) return;
     const existing = cardRetryState.get(card) || { attempts: 0, timeout: null };
-    if (existing.timeout || existing.attempts >= 6) return;
+    if (existing.timeout || existing.attempts >= MAX_CARD_RETRY_ATTEMPTS) return;
     const attempts = existing.attempts + 1;
     const delay2 = Math.min(500, 75 * attempts);
     const timeout = window.setTimeout(() => {
@@ -6930,9 +6912,6 @@
     }, delay2);
     cardRetryState.set(card, { attempts, timeout });
   }
-
-  // src/content/video-cards/decorations.js
-  var INLINE_QUEUE_SELECTOR = ".yta-inline-queue";
   function shouldEnhanceVideoCardCandidate({
     insideInlineQueue,
     hasNestedCandidate

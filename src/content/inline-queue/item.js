@@ -1,4 +1,6 @@
 // Inline queue item renderer. Builds one queue row with metadata, progress, active state, and action buttons.
+import { resolveThumbnailUrl } from "../../utils.js";
+
 const INLINE_QUEUE_DURATION_PATTERN = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/;
 
 const inlineQueueDateFormatter = new Intl.DateTimeFormat("ru-RU", {
@@ -126,33 +128,6 @@ function buildInlineQueueDetails(entry) {
   return createInlineQueueDetailContainer(parts);
 }
 
-function resolveInlineQueueThumbnail(entry) {
-  if (!entry) {
-    return "";
-  }
-  if (typeof entry.thumbnail === "string" && entry.thumbnail) {
-    return entry.thumbnail;
-  }
-  if (entry.thumbnail && typeof entry.thumbnail === "object") {
-    if (typeof entry.thumbnail.url === "string" && entry.thumbnail.url) {
-      return entry.thumbnail.url;
-    }
-    if (
-      typeof entry.thumbnail.fallback === "string" &&
-      entry.thumbnail.fallback
-    ) {
-      return entry.thumbnail.fallback;
-    }
-    if (typeof entry.thumbnail.defaultSrc === "string" && entry.thumbnail.defaultSrc) {
-      return entry.thumbnail.defaultSrc;
-    }
-  }
-  if (entry.id) {
-    return `https://i.ytimg.com/vi/${entry.id}/mqdefault.jpg`;
-  }
-  return "";
-}
-
 function createInlineQueueActionButton(className, textContent, title) {
   const button = document.createElement("button");
   button.type = "button";
@@ -230,7 +205,10 @@ export function createInlineQueueItem(entry, index, isCurrent, options = {}) {
   thumb.className = "video-thumb";
   thumb.decoding = "async";
   thumb.loading = "lazy";
-  const thumbUrl = resolveInlineQueueThumbnail(entry);
+  const thumbUrl = resolveThumbnailUrl(
+    entry,
+    entry.id ? `https://i.ytimg.com/vi/${entry.id}/mqdefault.jpg` : ""
+  );
   if (thumbUrl) {
     thumb.src = thumbUrl;
   }

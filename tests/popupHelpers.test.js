@@ -7,7 +7,7 @@ import {
 import {
   formatCooldownMessage,
   readAutoCollectMeta,
-} from '../src/popup/modules/collection/cooldown.js';
+} from '../src/popup/modules/collection/availability.js';
 import {
   getWatchedVideoIds,
   haveListMetaChanged,

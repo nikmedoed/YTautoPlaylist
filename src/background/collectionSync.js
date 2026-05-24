@@ -7,43 +7,18 @@ import {
   getPresentationState,
   getState,
   getAutoCollectMeta,
+  normalizeAutoCollectTimestamp,
   queueListEmptyNotification,
   recordDefaultAutoCollect,
   shouldAutoRefreshDefault,
 } from "../store/index.js";
-import { normalizeAutoCollectTimestamp } from "../store/state/autoCollectTimestamp.js";
 import { COLLECTION_WINDOW_MS } from "./constants.js";
 import { sendCollectionProgress, notifyState } from "./channel.js";
 import { collectVideos } from "../playlist.js";
+import { resolveThumbnailUrl } from "../utils.js";
 
 let defaultAutoCollectRunning = false;
 let defaultAutoCollectPromise = null;
-
-function resolveThumbnail(entry) {
-  if (!entry || typeof entry !== "object") {
-    return "";
-  }
-  if (typeof entry.thumbnail === "string" && entry.thumbnail) {
-    return entry.thumbnail;
-  }
-  const thumbnails = entry.thumbnails;
-  if (!thumbnails || typeof thumbnails !== "object") {
-    return "";
-  }
-  const candidates = [
-    thumbnails?.maxres?.url,
-    thumbnails?.standard?.url,
-    thumbnails?.high?.url,
-    thumbnails?.medium?.url,
-    thumbnails?.default?.url,
-  ];
-  for (const url of candidates) {
-    if (typeof url === "string" && url) {
-      return url;
-    }
-  }
-  return "";
-}
 
 function addEntryIds(target, entries) {
   if (!(target instanceof Set) || !Array.isArray(entries)) {
@@ -157,7 +132,7 @@ export async function collectAndAppendSubscriptions({ origin = "auto" } = {}) {
         continue;
       }
       existingIds.add(entry.id);
-      const thumbnail = resolveThumbnail(entry);
+      const thumbnail = resolveThumbnailUrl(entry);
       uniqueEntries.push({ ...entry, thumbnail });
     }
     sendCollectionProgress({

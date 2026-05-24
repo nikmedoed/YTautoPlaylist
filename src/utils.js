@@ -1,8 +1,9 @@
-// Shared parsing utilities. Extracts YouTube ids from raw ids, URLs, and
-// YouTube DOM attributes across content, popup, and background code.
+// Shared parsing utilities. Extracts YouTube ids/thumbnail URLs from raw ids,
+// URLs, API records, and YouTube DOM attributes across extension contexts.
 const MAX_CAPTURED_LOGS = 100;
 const YOUTUBE_ID_PATTERN = /[\w-]{11}/;
 const PLAYLIST_ID_PATTERN = /[\w-]{13,64}/;
+const THUMBNAIL_PRIORITY = ["maxres", "standard", "high", "medium", "default"];
 
 export function logMessage(level, context, count, message) {
   const text = `[${context}] item ${count}: ${message}`;
@@ -11,6 +12,13 @@ export function logMessage(level, context, count, message) {
   } else {
     console.error(text);
   }
+}
+
+export function deepClone(value) {
+  if (value == null) {
+    return value;
+  }
+  return JSON.parse(JSON.stringify(value));
 }
 
 // Accepts raw ids, absolute URLs, and relative YouTube hrefs from the content DOM.
@@ -73,6 +81,41 @@ export function parsePlaylistId(input) {
   }
   const candidate = match[0];
   return candidate.length === 11 ? "" : candidate;
+}
+
+function pickThumbnailValue(value) {
+  if (typeof value === "string" && value) {
+    return value;
+  }
+  if (!value || typeof value !== "object") {
+    return "";
+  }
+  return value.url || value.fallback || value.defaultSrc || "";
+}
+
+function pickThumbnailSet(thumbnails) {
+  if (!thumbnails || typeof thumbnails !== "object") {
+    return "";
+  }
+  for (const key of THUMBNAIL_PRIORITY) {
+    const url = pickThumbnailValue(thumbnails[key]);
+    if (url) {
+      return url;
+    }
+  }
+  return "";
+}
+
+export function resolveThumbnailUrl(entry, fallback = "") {
+  if (!entry || typeof entry !== "object") {
+    return fallback || "";
+  }
+  return (
+    pickThumbnailValue(entry.thumbnail) ||
+    pickThumbnailSet(entry.thumbnails) ||
+    fallback ||
+    ""
+  );
 }
 
 export const logMessages = [];

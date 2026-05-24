@@ -1,6 +1,7 @@
 // Popup video item renderer. Builds compact video rows shared by queue and history views.
 import { formatDuration } from "../../time.js";
 import { clampProgressPercent } from "../../progress.js";
+import { resolveThumbnailUrl } from "../../utils.js";
 import { applyAttributes, applyDataset } from "./dom.js";
 
 const DEFAULT_TITLE = "Без названия";
@@ -123,16 +124,6 @@ function createActionButton(doc, descriptor) {
   return element;
 }
 
-export function resolveThumbnail(entry, fallback) {
-  if (entry && typeof entry.thumbnail === "string" && entry.thumbnail) {
-    return entry.thumbnail;
-  }
-  if (entry?.thumbnail?.url) {
-    return entry.thumbnail.url;
-  }
-  return fallback || "";
-}
-
 function resolveThumbnailDuration(video, thumbnailOptions = {}) {
   if (!thumbnailOptions || thumbnailOptions.showDuration === false) {
     return "";
@@ -221,7 +212,7 @@ export function createVideoItem(video, options = {}) {
     thumb.className = thumbnail.className || "video-thumb";
     thumb.src =
       thumbnail.src ||
-      resolveThumbnail(video, thumbnail.fallback || thumbnail.defaultSrc);
+      resolveThumbnailUrl(video, thumbnail.fallback || thumbnail.defaultSrc);
     const titleText =
       typeof titleOptions.text === "string"
         ? titleOptions.text

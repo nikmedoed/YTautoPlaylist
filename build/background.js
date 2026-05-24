@@ -50,21 +50,6 @@ function getListStorageKey(id) {
   return `${LIST_CONTENT_PREFIX}${id}`;
 }
 
-// src/store/state/autoCollectTimestamp.js
-var SECOND_TS_MIN = 1e9;
-var SECOND_TS_MAX = 1e10;
-function normalizeAutoCollectTimestamp(value) {
-  let ts = Number(value);
-  if (!Number.isFinite(ts) || ts <= 0) {
-    return 0;
-  }
-  ts = Math.trunc(ts);
-  if (ts >= SECOND_TS_MIN && ts < SECOND_TS_MAX) {
-    ts *= 1e3;
-  }
-  return ts;
-}
-
 // src/progress.js
 function clampProgressPercent(value) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -224,11 +209,23 @@ function cloneVideoProgress(state) {
   if (!state || typeof state !== "object") {
     return {};
   }
-  const sanitized = sanitizeVideoProgressMap(state.videoProgress);
-  return JSON.parse(JSON.stringify(sanitized));
+  return sanitizeVideoProgressMap(state.videoProgress);
 }
 
 // src/store/state/sanitizers.js
+var SECOND_TS_MIN = 1e9;
+var SECOND_TS_MAX = 1e10;
+function normalizeAutoCollectTimestamp(value) {
+  let ts = Number(value);
+  if (!Number.isFinite(ts) || ts <= 0) {
+    return 0;
+  }
+  ts = Math.trunc(ts);
+  if (ts >= SECOND_TS_MIN && ts < SECOND_TS_MAX) {
+    ts *= 1e3;
+  }
+  return ts;
+}
 function sanitizeAutoCollectSeenIds(raw) {
   const source = Array.isArray(raw) ? raw : [];
   const seen = /* @__PURE__ */ new Set();
@@ -420,15 +417,102 @@ function ensureListExists(state, listId) {
   }
 }
 
-// src/store/state/utils.js
-function deepClone(value) {
-  if (value === null || value === void 0) {
-    return value;
+// src/utils.js
+var YOUTUBE_ID_PATTERN = /[\w-]{11}/;
+var PLAYLIST_ID_PATTERN = /[\w-]{13,64}/;
+var THUMBNAIL_PRIORITY = ["maxres", "standard", "high", "medium", "default"];
+function logMessage(level, context, count, message) {
+  const text = `[${context}] item ${count}: ${message}`;
+  if (level === "warn") {
+    console.warn(text);
+  } else {
+    console.error(text);
   }
-  if (typeof value !== "object") {
+}
+function deepClone(value) {
+  if (value == null) {
     return value;
   }
   return JSON.parse(JSON.stringify(value));
+}
+function parseVideoId(input) {
+  if (!input) return "";
+  const str = String(input).trim();
+  if (/^[\w-]{11}$/.test(str)) return str;
+  try {
+    const baseUrl = typeof globalThis?.location?.href === "string" ? globalThis.location.href : null;
+    const url = baseUrl ? new URL(str, baseUrl) : new URL(str);
+    if (url.hostname.includes("youtu.be")) {
+      const id = url.pathname.split("/").filter(Boolean)[0];
+      if (/^[\w-]{11}$/.test(id)) return id;
+    }
+    const candidate = url.searchParams.get("v");
+    if (candidate && /^[\w-]{11}$/.test(candidate)) return candidate;
+    const segments = url.pathname.split("/");
+    for (const segment of segments) {
+      if (/^[\w-]{11}$/.test(segment)) return segment;
+    }
+  } catch {
+  }
+  const match = str.match(YOUTUBE_ID_PATTERN);
+  return match ? match[0] : "";
+}
+function parsePlaylistId(input) {
+  if (!input) return "";
+  const str = String(input).trim();
+  if (str.length === 11) {
+    return "";
+  }
+  if (/^[\w-]{13,64}$/.test(str)) {
+    return str;
+  }
+  try {
+    const url = new URL(str, "https://www.youtube.com");
+    const listParam = url.searchParams.get("list");
+    if (listParam && listParam.length !== 11 && /^[\w-]{13,64}$/.test(listParam)) {
+      return listParam;
+    }
+    const segments = url.pathname.split("/");
+    for (const segment of segments) {
+      if (segment.length !== 11 && /^[\w-]{13,64}$/.test(segment)) {
+        return segment;
+      }
+    }
+  } catch {
+  }
+  const match = String(input).replace(/content-id-/gi, "").match(PLAYLIST_ID_PATTERN);
+  if (!match) {
+    return "";
+  }
+  const candidate = match[0];
+  return candidate.length === 11 ? "" : candidate;
+}
+function pickThumbnailValue(value) {
+  if (typeof value === "string" && value) {
+    return value;
+  }
+  if (!value || typeof value !== "object") {
+    return "";
+  }
+  return value.url || value.fallback || value.defaultSrc || "";
+}
+function pickThumbnailSet(thumbnails) {
+  if (!thumbnails || typeof thumbnails !== "object") {
+    return "";
+  }
+  for (const key of THUMBNAIL_PRIORITY) {
+    const url = pickThumbnailValue(thumbnails[key]);
+    if (url) {
+      return url;
+    }
+  }
+  return "";
+}
+function resolveThumbnailUrl(entry, fallback = "") {
+  if (!entry || typeof entry !== "object") {
+    return fallback || "";
+  }
+  return pickThumbnailValue(entry.thumbnail) || pickThumbnailSet(entry.thumbnails) || fallback || "";
 }
 
 // src/store/state/serialization.js
@@ -1632,70 +1716,6 @@ async function getPresentationState() {
   };
 }
 
-// src/utils.js
-var YOUTUBE_ID_PATTERN = /[\w-]{11}/;
-var PLAYLIST_ID_PATTERN = /[\w-]{13,64}/;
-function logMessage(level, context, count, message) {
-  const text = `[${context}] item ${count}: ${message}`;
-  if (level === "warn") {
-    console.warn(text);
-  } else {
-    console.error(text);
-  }
-}
-function parseVideoId(input) {
-  if (!input) return "";
-  const str = String(input).trim();
-  if (/^[\w-]{11}$/.test(str)) return str;
-  try {
-    const baseUrl = typeof globalThis?.location?.href === "string" ? globalThis.location.href : null;
-    const url = baseUrl ? new URL(str, baseUrl) : new URL(str);
-    if (url.hostname.includes("youtu.be")) {
-      const id = url.pathname.split("/").filter(Boolean)[0];
-      if (/^[\w-]{11}$/.test(id)) return id;
-    }
-    const candidate = url.searchParams.get("v");
-    if (candidate && /^[\w-]{11}$/.test(candidate)) return candidate;
-    const segments = url.pathname.split("/");
-    for (const segment of segments) {
-      if (/^[\w-]{11}$/.test(segment)) return segment;
-    }
-  } catch {
-  }
-  const match = str.match(YOUTUBE_ID_PATTERN);
-  return match ? match[0] : "";
-}
-function parsePlaylistId(input) {
-  if (!input) return "";
-  const str = String(input).trim();
-  if (str.length === 11) {
-    return "";
-  }
-  if (/^[\w-]{13,64}$/.test(str)) {
-    return str;
-  }
-  try {
-    const url = new URL(str, "https://www.youtube.com");
-    const listParam = url.searchParams.get("list");
-    if (listParam && listParam.length !== 11 && /^[\w-]{13,64}$/.test(listParam)) {
-      return listParam;
-    }
-    const segments = url.pathname.split("/");
-    for (const segment of segments) {
-      if (segment.length !== 11 && /^[\w-]{13,64}$/.test(segment)) {
-        return segment;
-      }
-    }
-  } catch {
-  }
-  const match = String(input).replace(/content-id-/gi, "").match(PLAYLIST_ID_PATTERN);
-  if (!match) {
-    return "";
-  }
-  const candidate = match[0];
-  return candidate.length === 11 ? "" : candidate;
-}
-
 // src/auth.js
 if (typeof chrome !== "undefined") {
   chrome.storage.local.set({ authStatus: false });
@@ -2200,10 +2220,6 @@ async function getVideoInfo(idList, nextPage) {
 }
 
 // src/background/collector.js
-function pickThumbnail(thumbnails) {
-  if (!thumbnails) return "";
-  return thumbnails?.medium?.url || thumbnails?.high?.url || thumbnails?.standard?.url || thumbnails?.maxres?.url || thumbnails?.default?.url || "";
-}
 function normalizeLiveStreamingDetails(details) {
   if (!details || typeof details !== "object") {
     return null;
@@ -2227,7 +2243,7 @@ function toQueueEntry(video, overrides = {}) {
     title: video.title || "",
     channelId: video.channelId || "",
     channelTitle: video.channelTitle || "",
-    thumbnail: overrides.thumbnail ?? pickThumbnail(video.thumbnails),
+    thumbnail: overrides.thumbnail ?? resolveThumbnailUrl(video),
     publishedAt: published,
     duration: video.duration || null,
     addedAt: Date.now(),
@@ -2255,9 +2271,7 @@ async function fetchVideoEntries(videoIds) {
     chunk.forEach((id) => {
       const data = map.get(id);
       if (data) {
-        result.push(
-          toQueueEntry(data, { thumbnail: pickThumbnail(data.thumbnails) })
-        );
+        result.push(toQueueEntry(data));
       }
     });
   }
@@ -2837,31 +2851,6 @@ async function collectVideos(startDate = new Date(Date.now() - 6048e5), progress
 // src/background/collectionSync.js
 var defaultAutoCollectRunning = false;
 var defaultAutoCollectPromise = null;
-function resolveThumbnail(entry) {
-  if (!entry || typeof entry !== "object") {
-    return "";
-  }
-  if (typeof entry.thumbnail === "string" && entry.thumbnail) {
-    return entry.thumbnail;
-  }
-  const thumbnails = entry.thumbnails;
-  if (!thumbnails || typeof thumbnails !== "object") {
-    return "";
-  }
-  const candidates = [
-    thumbnails?.maxres?.url,
-    thumbnails?.standard?.url,
-    thumbnails?.high?.url,
-    thumbnails?.medium?.url,
-    thumbnails?.default?.url
-  ];
-  for (const url of candidates) {
-    if (typeof url === "string" && url) {
-      return url;
-    }
-  }
-  return "";
-}
 function addEntryIds(target, entries) {
   if (!(target instanceof Set) || !Array.isArray(entries)) {
     return target;
@@ -2952,7 +2941,7 @@ async function collectAndAppendSubscriptions({ origin = "auto" } = {}) {
         continue;
       }
       existingIds.add(entry.id);
-      const thumbnail = resolveThumbnail(entry);
+      const thumbnail = resolveThumbnailUrl(entry);
       uniqueEntries.push({ ...entry, thumbnail });
     }
     sendCollectionProgress({
@@ -3157,7 +3146,7 @@ async function handleAddByIds(message) {
   const entries = await fetchVideoEntries(uniqueIds);
   const fetchedIds = new Set(entries.map((entry) => entry?.id).filter(Boolean));
   const missing = uniqueIds.filter((id) => !fetchedIds.has(id)).length;
-  const state = await addEntries(entries, message?.listId || null, {
+  const state = await addEntries(entries, targetListId, {
     ensureDefault: Boolean(message?.ensureDefault)
   });
   const added = countAddedEntriesInQueue(state, targetListId, beforeState);
@@ -3543,23 +3532,6 @@ var optionsHandlers = {
   }
 };
 
-// src/background/tabs.js
-async function ensureTab(tabId) {
-  if (typeof tabId !== "number" || !Number.isInteger(tabId)) return null;
-  try {
-    return await chrome.tabs.get(tabId);
-  } catch {
-    return null;
-  }
-}
-async function resolvePreferredTab(preferredIds = []) {
-  for (const id of preferredIds) {
-    const tab = await ensureTab(id);
-    if (tab) return tab;
-  }
-  return null;
-}
-
 // src/background/playback.js
 function buildWatchUrl(videoId) {
   return `https://www.youtube.com/watch?v=${videoId}`;
@@ -3594,6 +3566,21 @@ function isYouTubeUrl(url) {
 function isSameVideoInTab(tab, videoId) {
   const currentId = parseVideoId(extractTabUrl(tab));
   return Boolean(currentId && currentId === videoId);
+}
+async function ensureTab(tabId) {
+  if (typeof tabId !== "number" || !Number.isInteger(tabId)) return null;
+  try {
+    return await chrome.tabs.get(tabId);
+  } catch {
+    return null;
+  }
+}
+async function resolvePreferredTab(preferredIds = []) {
+  for (const id of preferredIds) {
+    const tab = await ensureTab(id);
+    if (tab) return tab;
+  }
+  return null;
 }
 function findVideoLocation(state, videoId) {
   if (!state || !videoId || !state.lists) {

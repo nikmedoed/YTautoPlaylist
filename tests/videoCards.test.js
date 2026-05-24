@@ -1,9 +1,9 @@
 // Video card tests. Covers card detection exclusions, inline queue skipping, and progress sync behavior.
 import assert from "assert";
+import { getProgressPercent } from "../src/progress.js";
 import { inlinePlaylistState } from "../src/content/core/base.js";
 import { updateInlinePlaylistState } from "../src/content/inline-queue/state.js";
 import { shouldEnhanceVideoCardCandidate } from "../src/content/video-cards/decorations.js";
-import { resolveVideoProgressPercent } from "../src/content/video-cards/progress.js";
 
 {
   assert.strictEqual(
@@ -57,10 +57,10 @@ import { resolveVideoProgressPercent } from "../src/content/video-cards/progress
       }
     );
     assert.strictEqual(syncCount, 1);
-    assert.strictEqual(resolveVideoProgressPercent("progressVid1"), 42);
+    assert.strictEqual(getProgressPercent(inlinePlaylistState.progress, "progressVid1"), 42);
     assert.deepStrictEqual(
-      inlinePlaylistState.progress.get("progressVid1"),
-      { percent: 42, updatedAt: 10 }
+      inlinePlaylistState.progress.progressVid1,
+      { percent: 42.4, updatedAt: 10 }
     );
   } finally {
     globalThis.document = previousDocument;

@@ -9,7 +9,6 @@ import {
 import {
   syncVideoCardProgress as syncVideoCardProgressBase,
 } from "../video-cards/progress.js";
-import { normalizeProgressPercent } from "../../progress.js";
 
 let pendingInlineRefresh = false;
 
@@ -87,30 +86,6 @@ function normalizeQueueEntries(queueEntries) {
     normalizedEntries.push(normalized);
   });
   return { normalizedEntries, orderedIds };
-}
-
-function buildProgressMap(presentation) {
-  const progressEntries =
-    presentation && typeof presentation === "object" && presentation.videoProgress
-      ? presentation.videoProgress
-      : null;
-  const progressMap = new Map();
-  if (progressEntries && typeof progressEntries === "object") {
-    Object.entries(progressEntries).forEach(([id, entry]) => {
-      if (typeof id !== "string" || !id) {
-        return;
-      }
-      const percent = normalizeProgressPercent(entry);
-      if (percent === null) {
-        return;
-      }
-      const updatedAt = Number.isFinite(Number(entry?.updatedAt))
-        ? Number(entry.updatedAt)
-        : 0;
-      progressMap.set(id, { percent, updatedAt });
-    });
-  }
-  return progressMap;
 }
 
 // Converts the background presentation object into the compact content-side
@@ -193,7 +168,10 @@ export function updateInlinePlaylistState(rawPresentation, context = {}) {
     typeof presentation?.currentVideoId === "string" && presentation.currentVideoId
       ? presentation.currentVideoId
       : null;
-  inlinePlaylistState.progress = buildProgressMap(presentation);
+  inlinePlaylistState.progress =
+    presentation.videoProgress && typeof presentation.videoProgress === "object"
+      ? presentation.videoProgress
+      : {};
   if (changed) {
     syncAllInlineButtons();
   }

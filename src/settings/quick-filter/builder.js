@@ -7,6 +7,7 @@ import {
   renderSelectedTags,
 } from "./renderers.js";
 
+// Owns quick-filter metadata, chips, duration inputs, preview, and submit flow.
 export function createQuickFilterBuilder({
   addDurationFilterToSection,
   addPlaylistFilterToSection,

@@ -14,9 +14,6 @@ import { notifyState } from "./channel.js";
 import { dispatchNotifications, ensureDefaultQueueFilled } from "./collectionSync.js";
 import { fetchVideoEntries } from "./collector.js";
 
-// Shared background helpers for store mutations, queue add/remove flows, and
-// content-tab communication. Handler files call these to keep routing thin.
-
 function normalizeVideoIdList(values) {
   const source = Array.isArray(values) ? values : [];
   return Array.from(
@@ -133,7 +130,7 @@ export async function handleAddByIds(message) {
   const entries = await fetchVideoEntries(uniqueIds);
   const fetchedIds = new Set(entries.map((entry) => entry?.id).filter(Boolean));
   const missing = uniqueIds.filter((id) => !fetchedIds.has(id)).length;
-  const state = await addEntries(entries, message?.listId || null, {
+  const state = await addEntries(entries, targetListId, {
     ensureDefault: Boolean(message?.ensureDefault),
   });
   const added = countAddedEntriesInQueue(state, targetListId, beforeState);

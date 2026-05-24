@@ -72,7 +72,7 @@ export const inlinePlaylistState = {
   currentVideoId: null,
   queueEntries: [],
   lists: [],
-  progress: new Map(),
+  progress: {},
 };
 
 export const cardRetryState = new WeakMap();

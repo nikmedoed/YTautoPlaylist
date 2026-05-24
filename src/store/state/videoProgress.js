@@ -166,6 +166,5 @@ export function cloneVideoProgress(state) {
   if (!state || typeof state !== "object") {
     return {};
   }
-  const sanitized = sanitizeVideoProgressMap(state.videoProgress);
-  return JSON.parse(JSON.stringify(sanitized));
+  return sanitizeVideoProgressMap(state.videoProgress);
 }

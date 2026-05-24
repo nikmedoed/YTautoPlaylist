@@ -1,20 +1,12 @@
 // Fetches video entries and playlist ids for background add flows. Contains YouTube metadata conversion and active-tab collection requests.
 import { getPlaylistVideoIds } from "../youtube-api/playlists.js";
 import { getVideoInfo } from "../youtube-api/videos.js";
-import { parseVideoId, parsePlaylistId } from "../utils.js";
+import {
+  parsePlaylistId,
+  parseVideoId,
+  resolveThumbnailUrl,
+} from "../utils.js";
 import { MAX_API_BATCH } from "./constants.js";
-
-function pickThumbnail(thumbnails) {
-  if (!thumbnails) return "";
-  return (
-    thumbnails?.medium?.url ||
-    thumbnails?.high?.url ||
-    thumbnails?.standard?.url ||
-    thumbnails?.maxres?.url ||
-    thumbnails?.default?.url ||
-    ""
-  );
-}
 
 function normalizeLiveStreamingDetails(details) {
   if (!details || typeof details !== "object") {
@@ -49,7 +41,7 @@ function toQueueEntry(video, overrides = {}) {
     title: video.title || "",
     channelId: video.channelId || "",
     channelTitle: video.channelTitle || "",
-    thumbnail: overrides.thumbnail ?? pickThumbnail(video.thumbnails),
+    thumbnail: overrides.thumbnail ?? resolveThumbnailUrl(video),
     publishedAt: published,
     duration: video.duration || null,
     addedAt: Date.now(),
@@ -80,9 +72,7 @@ export async function fetchVideoEntries(videoIds) {
     chunk.forEach((id) => {
       const data = map.get(id);
       if (data) {
-        result.push(
-          toQueueEntry(data, { thumbnail: pickThumbnail(data.thumbnails) })
-        );
+        result.push(toQueueEntry(data));
       }
     });
   }

@@ -183,6 +183,8 @@ export function beginVideoEndHandling(videoId) {
   return true;
 }
 
+// Fallback for missed ended events. It only advances when progress is near the
+// end, the same video is still active, and duplicate handling is suppressed.
 function maybeTriggerVideoEndFallback(percent = null, context = {}, options = {}) {
   const source =
     options && typeof options.source === "string" ? options.source : "unknown";

@@ -1,6 +1,7 @@
 // Video-card decoration helpers. Applies progress and added-state visual markers to card overlays.
 import {
   ADD_BUTTON_CLASS,
+  cardRetryState,
   CARD_MARK,
   CARD_OVERLAY_HOST_CLASS,
   inlinePlaylistState,
@@ -21,14 +22,41 @@ import {
 import { createCardButtonOwnership } from "./buttonOwnership.js";
 import { createVideoCardCleanup } from "./cleanup.js";
 import { applyCardProgress } from "./progress.js";
-import {
-  clearCardRetryTimeout,
-  forgetCardRetry,
-  scheduleCardRetry,
-} from "./retry.js";
 import { determineCardTarget, hasNestedCardCandidate } from "./targets.js";
 
 const INLINE_QUEUE_SELECTOR = ".yta-inline-queue";
+const MAX_CARD_RETRY_ATTEMPTS = 6;
+
+function clearCardRetryTimeout(card) {
+  const retryState = cardRetryState.get(card);
+  if (!retryState?.timeout) return;
+  clearTimeout(retryState.timeout);
+  cardRetryState.set(card, {
+    attempts: retryState.attempts,
+    timeout: null,
+  });
+}
+
+function forgetCardRetry(card) {
+  cardRetryState.delete(card);
+}
+
+function scheduleCardRetry(card, retryCallback) {
+  if (!(card instanceof HTMLElement)) return;
+  const existing = cardRetryState.get(card) || { attempts: 0, timeout: null };
+  if (existing.timeout || existing.attempts >= MAX_CARD_RETRY_ATTEMPTS) return;
+  const attempts = existing.attempts + 1;
+  const delay = Math.min(500, 75 * attempts);
+  const timeout = window.setTimeout(() => {
+    if (!document.contains(card)) {
+      cardRetryState.delete(card);
+      return;
+    }
+    cardRetryState.set(card, { attempts, timeout: null });
+    retryCallback(card);
+  }, delay);
+  cardRetryState.set(card, { attempts, timeout });
+}
 
 export function shouldEnhanceVideoCardCandidate({
   insideInlineQueue,

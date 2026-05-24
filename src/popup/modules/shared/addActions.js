@@ -26,6 +26,8 @@ export function createAddActionsController({
     controlling: false,
   };
 
+  // Shared popup add command. It asks the active tab to collect ids, sends them
+  // to background, then applies the returned presentation state and status text.
   async function addFromScope(scope) {
     const button =
       scope === "current"

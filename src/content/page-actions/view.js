@@ -302,6 +302,8 @@ export function createPageActionViewController({
     }
   }
 
+  // Recomputes the floating action UI from page context, collection state, and
+  // playback ownership without changing the underlying queue data.
   function updatePageActions() {
     const context = determinePageContext();
     const caps = getContextCapabilities(context);
