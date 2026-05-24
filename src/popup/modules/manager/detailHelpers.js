@@ -1,6 +1,27 @@
 // Manager detail helpers. Contains progress lookup, watched selection, list metadata comparisons, and detail reload decisions.
 import { getProgressPercent } from "../../../progress.js";
 
+function getLength(list, fallback = 0) {
+  return Number.isFinite(list?.length) ? Number(list.length) : fallback;
+}
+
+function haveSameListMeta(previous, next, previousLength, nextLength) {
+  const previousRevision = Number.isFinite(previous?.revision)
+    ? Number(previous.revision)
+    : 0;
+  const nextRevision = Number.isFinite(next?.revision)
+    ? Number(next.revision)
+    : 0;
+  return (
+    Boolean(previous && next) &&
+    previous?.id === next?.id &&
+    (previous?.name || "") === (next?.name || "") &&
+    Boolean(previous?.freeze) === Boolean(next?.freeze) &&
+    previousRevision === nextRevision &&
+    previousLength === nextLength
+  );
+}
+
 export function getWatchedVideoIds(details, videoProgress) {
   const queue = Array.isArray(details?.queue) ? details.queue : [];
   const watchedIds = [];
@@ -43,23 +64,7 @@ export function haveListMetaChanged(previous, next) {
   for (let index = 0; index < curr.length; index += 1) {
     const a = prev[index];
     const b = curr[index];
-    if (!a || !b || a.id !== b.id) {
-      return true;
-    }
-    if ((a.name || "") !== (b.name || "")) {
-      return true;
-    }
-    if (Boolean(a.freeze) !== Boolean(b.freeze)) {
-      return true;
-    }
-    const aRevision = Number.isFinite(a.revision) ? Number(a.revision) : 0;
-    const bRevision = Number.isFinite(b.revision) ? Number(b.revision) : 0;
-    if (aRevision !== bRevision) {
-      return true;
-    }
-    const aLength = Number.isFinite(a.length) ? Number(a.length) : 0;
-    const bLength = Number.isFinite(b.length) ? Number(b.length) : 0;
-    if (aLength !== bLength) {
+    if (!haveSameListMeta(a, b, getLength(a), getLength(b))) {
       return true;
     }
   }
@@ -79,22 +84,13 @@ export function shouldReloadSelectedDetails(state, selectedListId, selectedDetai
   if (!selectedDetails || selectedDetails.id !== selectedListId) {
     return true;
   }
-  if ((selectedDetails.name || "") !== (meta.name || "")) {
-    return true;
-  }
-  if (Boolean(selectedDetails.freeze) !== Boolean(meta.freeze)) {
-    return true;
-  }
-  const currentRevision = Number.isFinite(selectedDetails.revision)
-    ? Number(selectedDetails.revision)
-    : 0;
-  const metaRevision = Number.isFinite(meta.revision) ? Number(meta.revision) : 0;
-  if (currentRevision !== metaRevision) {
-    return true;
-  }
-  const currentLength = Array.isArray(selectedDetails.queue)
+  const detailLength = Array.isArray(selectedDetails.queue)
     ? selectedDetails.queue.length
     : 0;
-  const metaLength = Number.isFinite(meta.length) ? Number(meta.length) : 0;
-  return currentLength !== metaLength;
+  return !haveSameListMeta(
+    selectedDetails,
+    meta,
+    detailLength,
+    getLength(meta)
+  );
 }

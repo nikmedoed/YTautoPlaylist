@@ -15,6 +15,17 @@ export function registerManagerBulkActions({
   // selected list. Handlers are kept explicit because their UI recovery differs.
   const { bulkDeleteBtn, bulkMoveBtn, clearListBtn, removeWatchedBtn } = buttons;
 
+  async function removeFromSelectedList(videoIds) {
+    const selectedListDetails = getSelectedListDetails();
+    if (!selectedListDetails?.id || !videoIds.length) return false;
+    await sendMessage("playlist:remove", {
+      listId: selectedListDetails.id,
+      videoIds,
+    });
+    await loadState();
+    return true;
+  }
+
   if (removeWatchedBtn) {
     removeWatchedBtn.addEventListener("click", async () => {
       const selectedListDetails = getSelectedListDetails();
@@ -36,11 +47,7 @@ export function registerManagerBulkActions({
       }
       removeWatchedBtn.disabled = true;
       try {
-        await sendMessage("playlist:remove", {
-          listId: selectedListDetails.id,
-          videoIds,
-        });
-        await loadState();
+        await removeFromSelectedList(videoIds);
         setStatus(
           count === 1
             ? "Просмотренное видео удалено"
@@ -73,11 +80,7 @@ export function registerManagerBulkActions({
       if (videoIds.length === 0) return;
       const count = videoIds.length;
       try {
-        await sendMessage("playlist:remove", {
-          listId: selectedListDetails.id,
-          videoIds,
-        });
-        await loadState();
+        await removeFromSelectedList(videoIds);
         clearSelection();
         setStatus(count > 1 ? `Удалено ${count} видео` : "Видео удалено", "success", 2500);
       } catch (err) {
@@ -100,11 +103,7 @@ export function registerManagerBulkActions({
       if (!videoIds.length) return;
       clearListBtn.disabled = true;
       try {
-        await sendMessage("playlist:remove", {
-          listId: selectedListDetails.id,
-          videoIds,
-        });
-        await loadState();
+        await removeFromSelectedList(videoIds);
         clearSelection();
         setStatus("Список очищен", "success", 2500);
       } catch (err) {

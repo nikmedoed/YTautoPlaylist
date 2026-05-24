@@ -3950,43 +3950,29 @@
     requestPrevious: requestPrevious2,
     requestStartPlayback: requestStartPlayback2
   };
-  function detectUnavailableWatchState2() {
-    return detectUnavailableWatchState(playerErrorContext);
-  }
   function handleVideoUnavailable2(details = {}) {
     return handleVideoUnavailable(details, playerErrorContext);
   }
-  function ensurePlayerErrorMonitoring2() {
-    return ensurePlayerErrorMonitoring(playerErrorContext);
-  }
+  var playbackProgressContext = {
+    handleVideoEnded,
+    hasRecentUserAction
+  };
+  var playbackWatchdogContext = {
+    ...playbackProgressContext,
+    detectUnavailableWatchState: () => detectUnavailableWatchState(playerErrorContext),
+    handleVideoUnavailable: handleVideoUnavailable2
+  };
   function ensurePlaybackWatchdog2() {
-    ensurePlaybackWatchdog({
-      detectUnavailableWatchState: detectUnavailableWatchState2,
-      handleVideoEnded,
-      handleVideoUnavailable: handleVideoUnavailable2,
-      hasRecentUserAction
-    });
+    ensurePlaybackWatchdog(playbackWatchdogContext);
   }
   function maybeFinalizeVideoEndedBeforeNavigation2() {
-    maybeFinalizeVideoEndedBeforeNavigation({
-      handleVideoEnded,
-      hasRecentUserAction
-    });
+    maybeFinalizeVideoEndedBeforeNavigation(playbackProgressContext);
   }
   function handleVideoProgressUpdate2() {
-    handleVideoProgressUpdate({
-      handleVideoEnded,
-      hasRecentUserAction
-    });
+    handleVideoProgressUpdate(playbackProgressContext);
   }
   function handleVideoSeeked() {
-    handleVideoProgressUpdate(
-      {
-        handleVideoEnded,
-        hasRecentUserAction
-      },
-      { source: "seeked" }
-    );
+    handleVideoProgressUpdate(playbackProgressContext, { source: "seeked" });
   }
   function handlePlaybackAdvanceResponse(response, context = {}) {
     if (response?.state && typeof response.state === "object") {
@@ -4158,7 +4144,7 @@
     handleVideoStarted();
   }
   function scanForVideo() {
-    ensurePlayerErrorMonitoring2();
+    ensurePlayerErrorMonitoring(playerErrorContext);
     const video = document.querySelector("video");
     if (video) {
       attachVideoListeners(video);
@@ -4166,7 +4152,7 @@
       ensurePlaybackWatchdog2();
       return true;
     }
-    detectUnavailableWatchState2();
+    detectUnavailableWatchState(playerErrorContext);
     ensurePlaybackWatchdog2();
     return false;
   }

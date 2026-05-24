@@ -69,49 +69,36 @@ const playerControlsViewContext = {
   requestStartPlayback,
 };
 
-function detectUnavailableWatchState() {
-  return detectUnavailableWatchStateBase(playerErrorContext);
-}
-
 function handleVideoUnavailable(details = {}) {
   return handleVideoUnavailableBase(details, playerErrorContext);
 }
 
-function ensurePlayerErrorMonitoring() {
-  return ensurePlayerErrorMonitoringBase(playerErrorContext);
-}
+const playbackProgressContext = {
+  handleVideoEnded,
+  hasRecentUserAction,
+};
+
+const playbackWatchdogContext = {
+  ...playbackProgressContext,
+  detectUnavailableWatchState: () =>
+    detectUnavailableWatchStateBase(playerErrorContext),
+  handleVideoUnavailable,
+};
 
 export function ensurePlaybackWatchdog() {
-  ensurePlaybackWatchdogBase({
-    detectUnavailableWatchState,
-    handleVideoEnded,
-    handleVideoUnavailable,
-    hasRecentUserAction,
-  });
+  ensurePlaybackWatchdogBase(playbackWatchdogContext);
 }
 
 export function maybeFinalizeVideoEndedBeforeNavigation() {
-  maybeFinalizeVideoEndedBeforeNavigationBase({
-    handleVideoEnded,
-    hasRecentUserAction,
-  });
+  maybeFinalizeVideoEndedBeforeNavigationBase(playbackProgressContext);
 }
 
 function handleVideoProgressUpdate() {
-  handleVideoProgressUpdateBase({
-    handleVideoEnded,
-    hasRecentUserAction,
-  });
+  handleVideoProgressUpdateBase(playbackProgressContext);
 }
 
 function handleVideoSeeked() {
-  handleVideoProgressUpdateBase(
-    {
-      handleVideoEnded,
-      hasRecentUserAction,
-    },
-    { source: "seeked" }
-  );
+  handleVideoProgressUpdateBase(playbackProgressContext, { source: "seeked" });
 }
 
 function handlePlaybackAdvanceResponse(response, context = {}) {
@@ -309,7 +296,7 @@ function attachVideoListeners(video) {
 }
 
 export function scanForVideo() {
-  ensurePlayerErrorMonitoring();
+  ensurePlayerErrorMonitoringBase(playerErrorContext);
   const video = document.querySelector("video");
   if (video) {
     attachVideoListeners(video);
@@ -317,7 +304,7 @@ export function scanForVideo() {
     ensurePlaybackWatchdog();
     return true;
   }
-  detectUnavailableWatchState();
+  detectUnavailableWatchStateBase(playerErrorContext);
   ensurePlaybackWatchdog();
   return false;
 }

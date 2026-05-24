@@ -1513,6 +1513,16 @@ function registerManagerBulkActions({
   updateRemoveWatchedButton: updateRemoveWatchedButton2
 }) {
   const { bulkDeleteBtn, bulkMoveBtn, clearListBtn, removeWatchedBtn } = buttons;
+  async function removeFromSelectedList(videoIds) {
+    const selectedListDetails2 = getSelectedListDetails();
+    if (!selectedListDetails2?.id || !videoIds.length) return false;
+    await sendMessage3("playlist:remove", {
+      listId: selectedListDetails2.id,
+      videoIds
+    });
+    await loadState();
+    return true;
+  }
   if (removeWatchedBtn) {
     removeWatchedBtn.addEventListener("click", async () => {
       const selectedListDetails2 = getSelectedListDetails();
@@ -1533,11 +1543,7 @@ function registerManagerBulkActions({
       }
       removeWatchedBtn.disabled = true;
       try {
-        await sendMessage3("playlist:remove", {
-          listId: selectedListDetails2.id,
-          videoIds
-        });
-        await loadState();
+        await removeFromSelectedList(videoIds);
         setStatus2(
           count === 1 ? "\u041F\u0440\u043E\u0441\u043C\u043E\u0442\u0440\u0435\u043D\u043D\u043E\u0435 \u0432\u0438\u0434\u0435\u043E \u0443\u0434\u0430\u043B\u0435\u043D\u043E" : `\u0423\u0434\u0430\u043B\u0435\u043D\u043E ${count} \u043F\u0440\u043E\u0441\u043C\u043E\u0442\u0440\u0435\u043D\u043D\u044B\u0445 \u0432\u0438\u0434\u0435\u043E`,
           "success",
@@ -1566,11 +1572,7 @@ function registerManagerBulkActions({
       if (videoIds.length === 0) return;
       const count = videoIds.length;
       try {
-        await sendMessage3("playlist:remove", {
-          listId: selectedListDetails2.id,
-          videoIds
-        });
-        await loadState();
+        await removeFromSelectedList(videoIds);
         clearSelection2();
         setStatus2(count > 1 ? `\u0423\u0434\u0430\u043B\u0435\u043D\u043E ${count} \u0432\u0438\u0434\u0435\u043E` : "\u0412\u0438\u0434\u0435\u043E \u0443\u0434\u0430\u043B\u0435\u043D\u043E", "success", 2500);
       } catch (err) {
@@ -1590,11 +1592,7 @@ function registerManagerBulkActions({
       if (!videoIds.length) return;
       clearListBtn.disabled = true;
       try {
-        await sendMessage3("playlist:remove", {
-          listId: selectedListDetails2.id,
-          videoIds
-        });
-        await loadState();
+        await removeFromSelectedList(videoIds);
         clearSelection2();
         setStatus2("\u0421\u043F\u0438\u0441\u043E\u043A \u043E\u0447\u0438\u0449\u0435\u043D", "success", 2500);
       } catch (err) {
@@ -1632,6 +1630,14 @@ function getProgressPercent(progressById, videoId) {
 }
 
 // src/popup/modules/manager/detailHelpers.js
+function getLength(list, fallback = 0) {
+  return Number.isFinite(list?.length) ? Number(list.length) : fallback;
+}
+function haveSameListMeta(previous, next, previousLength, nextLength) {
+  const previousRevision = Number.isFinite(previous?.revision) ? Number(previous.revision) : 0;
+  const nextRevision = Number.isFinite(next?.revision) ? Number(next.revision) : 0;
+  return Boolean(previous && next) && previous?.id === next?.id && (previous?.name || "") === (next?.name || "") && Boolean(previous?.freeze) === Boolean(next?.freeze) && previousRevision === nextRevision && previousLength === nextLength;
+}
 function getWatchedVideoIds(details, videoProgress) {
   const queue = Array.isArray(details?.queue) ? details.queue : [];
   const watchedIds = [];
@@ -1672,23 +1678,7 @@ function haveListMetaChanged(previous, next) {
   for (let index = 0; index < curr.length; index += 1) {
     const a = prev[index];
     const b = curr[index];
-    if (!a || !b || a.id !== b.id) {
-      return true;
-    }
-    if ((a.name || "") !== (b.name || "")) {
-      return true;
-    }
-    if (Boolean(a.freeze) !== Boolean(b.freeze)) {
-      return true;
-    }
-    const aRevision = Number.isFinite(a.revision) ? Number(a.revision) : 0;
-    const bRevision = Number.isFinite(b.revision) ? Number(b.revision) : 0;
-    if (aRevision !== bRevision) {
-      return true;
-    }
-    const aLength = Number.isFinite(a.length) ? Number(a.length) : 0;
-    const bLength = Number.isFinite(b.length) ? Number(b.length) : 0;
-    if (aLength !== bLength) {
+    if (!haveSameListMeta(a, b, getLength(a), getLength(b))) {
       return true;
     }
   }
@@ -1705,20 +1695,13 @@ function shouldReloadSelectedDetails(state, selectedListId2, selectedDetails) {
   if (!selectedDetails || selectedDetails.id !== selectedListId2) {
     return true;
   }
-  if ((selectedDetails.name || "") !== (meta.name || "")) {
-    return true;
-  }
-  if (Boolean(selectedDetails.freeze) !== Boolean(meta.freeze)) {
-    return true;
-  }
-  const currentRevision = Number.isFinite(selectedDetails.revision) ? Number(selectedDetails.revision) : 0;
-  const metaRevision = Number.isFinite(meta.revision) ? Number(meta.revision) : 0;
-  if (currentRevision !== metaRevision) {
-    return true;
-  }
-  const currentLength = Array.isArray(selectedDetails.queue) ? selectedDetails.queue.length : 0;
-  const metaLength = Number.isFinite(meta.length) ? Number(meta.length) : 0;
-  return currentLength !== metaLength;
+  const detailLength = Array.isArray(selectedDetails.queue) ? selectedDetails.queue.length : 0;
+  return !haveSameListMeta(
+    selectedDetails,
+    meta,
+    detailLength,
+    getLength(meta)
+  );
 }
 
 // src/time.js
