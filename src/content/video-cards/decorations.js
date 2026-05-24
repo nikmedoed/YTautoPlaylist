@@ -141,7 +141,6 @@ export function createVideoCardDecorationController({
       const response = await sendInlineAddRequest({
         playlistId,
         videoId,
-        listId: inlinePlaylistState.currentListId || undefined,
       });
       addMetrics = await applyInlineAddResponse(response);
     } catch (err) {

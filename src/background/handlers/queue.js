@@ -31,9 +31,11 @@ export const queueHandlers = {
     return mutateAndPresent(() => setCurrentList(message.listId));
   },
 
-  "playlist:addByIds": handleAddByIds,
+  async "playlist:addByIds"(message, sender) {
+    return handleAddByIds(message, sender);
+  },
 
-  async "playlist:addPlaylist"(message) {
+  async "playlist:addPlaylist"(message, sender) {
     // Expands a YouTube playlist URL/id into video ids, then reuses the normal
     // add-by-id path so result counters stay identical.
     const rawId =
@@ -62,7 +64,7 @@ export const queueHandlers = {
           added: 0,
         };
       }
-      return handleAddByIds({ ...message, videoIds: ids, playlistId });
+      return handleAddByIds({ ...message, videoIds: ids, playlistId }, sender);
     } catch (err) {
       console.warn("Failed to add playlist", playlistId, err);
       return {

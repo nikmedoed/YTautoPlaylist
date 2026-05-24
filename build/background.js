@@ -614,6 +614,13 @@ function splitStateForStorage(state) {
 // src/store/state/storage.js
 var hasChromeStorage = typeof chrome !== "undefined" && chrome?.storage?.local;
 var memoryState = null;
+var stateWriteQueue = Promise.resolve();
+function enqueueStateWrite(operation) {
+  const result = stateWriteQueue.then(operation, operation);
+  stateWriteQueue = result.catch(() => {
+  });
+  return result;
+}
 async function loadRawState() {
   if (!hasChromeStorage) {
     const source = memoryState ?? defaultState;
@@ -778,19 +785,23 @@ async function getState() {
   return sanitizeState(raw);
 }
 async function replaceState(newState) {
-  const sanitized = sanitizeState(newState);
-  await persistState(sanitized);
-  return sanitized;
+  return enqueueStateWrite(async () => {
+    const sanitized = sanitizeState(newState);
+    await persistState(sanitized);
+    return sanitized;
+  });
 }
 async function mutateState(mutator) {
-  const current = await getState();
-  const updated = await Promise.resolve(mutator(current));
-  if (!updated || typeof updated !== "object") {
-    throw new TypeError("State mutator must return updated state");
-  }
-  const sanitized = sanitizeState(updated);
-  await persistState(sanitized);
-  return sanitized;
+  return enqueueStateWrite(async () => {
+    const current = await getState();
+    const updated = await Promise.resolve(mutator(current));
+    if (!updated || typeof updated !== "object") {
+      throw new TypeError("State mutator must return updated state");
+    }
+    const sanitized = sanitizeState(updated);
+    await persistState(sanitized);
+    return sanitized;
+  });
 }
 
 // src/store/actions/core.js
@@ -3129,7 +3140,7 @@ async function addEntries(entries, listId = null, options = {}) {
     ensureDefault
   });
 }
-async function handleAddByIds(message) {
+async function handleAddByIds(message, sender = null) {
   const uniqueIds = normalizeVideoIdList(message?.videoIds);
   if (!uniqueIds.length) {
     const state2 = await getPresentationState();
@@ -3142,7 +3153,8 @@ async function handleAddByIds(message) {
     };
   }
   const beforeState = await getState();
-  const targetListId = resolveAddTargetListId(beforeState, message?.listId || null);
+  const requestedListId = sender?.tab ? null : message?.listId || null;
+  const targetListId = resolveAddTargetListId(beforeState, requestedListId);
   const entries = await fetchVideoEntries(uniqueIds);
   const fetchedIds = new Set(entries.map((entry) => entry?.id).filter(Boolean));
   const missing = uniqueIds.filter((id) => !fetchedIds.has(id)).length;
@@ -3844,6 +3856,13 @@ async function postponeCurrent(options = {}) {
 }
 
 // src/background/handlers/playback.js
+async function rejectInvalidVideo() {
+  return {
+    handled: false,
+    reason: "INVALID_VIDEO",
+    state: await getPresentationState()
+  };
+}
 var playbackHandlers = {
   async "playlist:play"(message, sender) {
     if (!message?.videoId) {
@@ -3864,9 +3883,13 @@ var playbackHandlers = {
     return getPresentationState();
   },
   async "playlist:playNext"(message) {
+    const videoId = parseVideoId(message?.videoId);
+    if (!videoId) {
+      return rejectInvalidVideo();
+    }
     return advanceToNext({
       tabId: message.tabId,
-      videoId: message.videoId
+      videoId
     });
   },
   async "playlist:postpone"(message) {
@@ -3963,6 +3986,10 @@ var playbackHandlers = {
     return { ok: true, changed };
   },
   async "player:videoEnded"(message, sender) {
+    const videoId = parseVideoId(message.videoId);
+    if (!videoId) {
+      return rejectInvalidVideo();
+    }
     const tabId = sender?.tab?.id;
     let state = await getState();
     const hasSenderTabId = typeof tabId === "number" && Number.isInteger(tabId);
@@ -3984,7 +4011,7 @@ var playbackHandlers = {
     }
     return advanceToNext({
       tabId,
-      videoId: parseVideoId(message.videoId)
+      videoId
     });
   },
   async "player:videoUnavailable"(message, sender) {
@@ -4022,10 +4049,14 @@ var playbackHandlers = {
     return { ...response, skipped: true };
   },
   async "player:requestNext"(message, sender) {
+    const videoId = parseVideoId(message.videoId);
+    if (!videoId) {
+      return rejectInvalidVideo();
+    }
     const tabId = sender?.tab?.id;
     return advanceToNext({
       tabId,
-      videoId: parseVideoId(message.videoId)
+      videoId
     });
   },
   async "player:requestPrevious"(message, sender) {
@@ -4086,8 +4117,10 @@ var queueHandlers = {
     if (!message?.listId) return getPresentationState();
     return mutateAndPresent(() => setCurrentList(message.listId));
   },
-  "playlist:addByIds": handleAddByIds,
-  async "playlist:addPlaylist"(message) {
+  async "playlist:addByIds"(message, sender) {
+    return handleAddByIds(message, sender);
+  },
+  async "playlist:addPlaylist"(message, sender) {
     const rawId = message?.playlistId || message?.id || message?.listId || message?.videoId;
     const playlistId = parsePlaylistId(rawId);
     if (!playlistId) {
@@ -4113,7 +4146,7 @@ var queueHandlers = {
           added: 0
         };
       }
-      return handleAddByIds({ ...message, videoIds: ids, playlistId });
+      return handleAddByIds({ ...message, videoIds: ids, playlistId }, sender);
     } catch (err) {
       console.warn("Failed to add playlist", playlistId, err);
       return {

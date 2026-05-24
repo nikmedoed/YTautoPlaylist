@@ -2604,9 +2604,6 @@
     const payload = {
       videoIds: safeIds
     };
-    if (inlinePlaylistState.currentListId) {
-      payload.listId = inlinePlaylistState.currentListId;
-    }
     const response = await sendMessage("playlist:addByIds", payload);
     const { state: presentation, requested, missing, added } = normalizeAddResponse(
       response
@@ -3453,6 +3450,7 @@
   function requestNext(context = {}) {
     if (!canHandlePlaybackActions()) return;
     const videoId = getCurrentVideoId();
+    if (!videoId) return;
     recordUserAction();
     clearQueueEndAnnouncement();
     sendMessage("player:requestNext", { videoId }).then(
@@ -6701,13 +6699,11 @@
     playlistSuccessTimers2.delete(button);
     maybeShowPlaylistSuccessNotification(metrics, durationMs);
   }
-  async function sendInlineAddRequest({ playlistId, videoId, listId }) {
+  async function sendInlineAddRequest({ playlistId, videoId }) {
     const payload = playlistId ? {
-      playlistId,
-      listId: listId || void 0
+      playlistId
     } : {
-      videoIds: [videoId],
-      listId: listId || void 0
+      videoIds: [videoId]
     };
     return playlistId ? sendMessage("playlist:addPlaylist", payload) : sendMessage("playlist:addByIds", payload);
   }
@@ -6999,8 +6995,7 @@
       try {
         const response = await sendInlineAddRequest({
           playlistId,
-          videoId,
-          listId: inlinePlaylistState.currentListId || void 0
+          videoId
         });
         addMetrics = await applyInlineAddResponse(response);
       } catch (err) {

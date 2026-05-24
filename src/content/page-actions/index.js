@@ -119,9 +119,6 @@ async function addVideoIds(videoIds, options = {}) {
   const payload = {
     videoIds: safeIds,
   };
-  if (inlinePlaylistState.currentListId) {
-    payload.listId = inlinePlaylistState.currentListId;
-  }
   const response = await sendMessage("playlist:addByIds", payload);
   const { state: presentation, requested, missing, added } = normalizeAddResponse(
     response

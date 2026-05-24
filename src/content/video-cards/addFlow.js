@@ -85,15 +85,13 @@ export function showPlaylistSuccess(
   maybeShowPlaylistSuccessNotification(metrics, durationMs);
 }
 
-export async function sendInlineAddRequest({ playlistId, videoId, listId }) {
+export async function sendInlineAddRequest({ playlistId, videoId }) {
   const payload = playlistId
     ? {
         playlistId,
-        listId: listId || undefined,
       }
     : {
         videoIds: [videoId],
-        listId: listId || undefined,
       };
   return playlistId
     ? sendMessage("playlist:addPlaylist", payload)

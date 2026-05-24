@@ -24,6 +24,7 @@ import {
 import {
   collectAutoCollectSeenIds,
 } from '../src/background/collectionSync.js';
+import { queueHandlers } from '../src/background/handlers/queue.js';
 import { parseVideoId, resolveThumbnailUrl } from '../src/utils.js';
 import { applyFilters, getVideoFilterReason, saveFilters } from '../src/filter.js';
 import './popupHelpers.test.js';
@@ -273,6 +274,90 @@ console.log('getNewVideos falls back to search');
     ['queueVid001', 'queueVid002']
   );
   console.log('default-list additions are remembered for future auto-collect dedupe');
+}
+
+{
+  await replaceState({
+    lists: {
+      default: {
+        id: 'default',
+        name: 'Основной',
+        freeze: false,
+        queue: [],
+        currentIndex: null,
+        revision: 0,
+      },
+    },
+    listOrder: ['default'],
+    currentListId: 'default',
+  });
+  await Promise.all([
+    addVideos([{ id: 'parallel001', title: 'Parallel one' }], 'default'),
+    addVideos([{ id: 'parallel002', title: 'Parallel two' }], 'default'),
+  ]);
+  const stored = await getState();
+  assert.deepStrictEqual(
+    stored.lists.default.queue.map((entry) => entry.id),
+    ['parallel001', 'parallel002']
+  );
+  console.log('parallel queue additions are serialized without losing videos');
+}
+
+{
+  await replaceState({
+    lists: {
+      default: {
+        id: 'default',
+        name: 'Основной',
+        freeze: false,
+        queue: [],
+        currentIndex: null,
+        revision: 0,
+      },
+      target: {
+        id: 'target',
+        name: 'Target',
+        freeze: false,
+        queue: [],
+        currentIndex: null,
+        revision: 0,
+      },
+    },
+    listOrder: ['default', 'target'],
+    currentListId: 'target',
+  });
+  __setCallApi(async (path) => {
+    if (path === 'videos') {
+      return {
+        items: [
+          {
+            id: 'videoAdd001',
+            snippet: {
+              title: 'Added from content',
+              channelId: 'channel001',
+              channelTitle: 'Channel',
+              publishedAt: '2024-01-01T00:00:00Z',
+            },
+            contentDetails: {
+              duration: 'PT2M',
+            },
+          },
+        ],
+      };
+    }
+    return { items: [] };
+  });
+  await queueHandlers['playlist:addByIds'](
+    { videoIds: ['videoAdd001'], listId: 'default' },
+    { tab: { id: 77 } }
+  );
+  const stored = await getState();
+  assert.deepStrictEqual(stored.lists.default.queue.map((entry) => entry.id), []);
+  assert.deepStrictEqual(
+    stored.lists.target.queue.map((entry) => entry.id),
+    ['videoAdd001']
+  );
+  console.log('content add requests use the current active list from background state');
 }
 
 {

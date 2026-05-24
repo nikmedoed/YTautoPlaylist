@@ -112,7 +112,9 @@ export async function addEntries(entries, listId = null, options = {}) {
   });
 }
 
-export async function handleAddByIds(message) {
+// Adds fetched YouTube metadata to the active list. Content scripts are not
+// allowed to choose a list; popup/manager calls may pass an explicit listId.
+export async function handleAddByIds(message, sender = null) {
   const uniqueIds = normalizeVideoIdList(message?.videoIds);
   if (!uniqueIds.length) {
     const state = await getPresentationState();
@@ -125,7 +127,8 @@ export async function handleAddByIds(message) {
     };
   }
   const beforeState = await getState();
-  const targetListId = resolveAddTargetListId(beforeState, message?.listId || null);
+  const requestedListId = sender?.tab ? null : message?.listId || null;
+  const targetListId = resolveAddTargetListId(beforeState, requestedListId);
 
   const entries = await fetchVideoEntries(uniqueIds);
   const fetchedIds = new Set(entries.map((entry) => entry?.id).filter(Boolean));

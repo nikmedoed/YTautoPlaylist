@@ -3572,10 +3572,16 @@ function createPlaybackController({
   }
   async function playNext() {
     const playlistState2 = getPlaylistState() || {};
+    const videoId = typeof playlistState2?.currentVideoId === "string" ? playlistState2.currentVideoId : null;
+    if (!videoId) {
+      setStatus2("\u0422\u0435\u043A\u0443\u0449\u0435\u0435 \u0432\u0438\u0434\u0435\u043E \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E", "info", 3e3);
+      return;
+    }
     setLoading2(playNextBtn2, true);
     setStatus2("\u041F\u0435\u0440\u0435\u0445\u043E\u0434\u0438\u043C \u043A \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0435\u043C\u0443...", "info");
     try {
       const state = await sendMessage2("playlist:playNext", {
+        videoId,
         tabId: Number.isInteger(playlistState2?.currentTabId) ? playlistState2.currentTabId : void 0
       });
       if (state?.handled === false) {

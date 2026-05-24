@@ -15,6 +15,7 @@ import {
 export function requestNext(context = {}) {
   if (!canHandlePlaybackActions()) return;
   const videoId = getCurrentVideoId();
+  if (!videoId) return;
   recordUserAction();
   clearQueueEndAnnouncement();
   sendMessage("player:requestNext", { videoId }).then((resp) =>

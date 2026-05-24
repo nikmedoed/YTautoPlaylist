@@ -322,10 +322,19 @@ export function createPlaybackController({
 
   async function playNext() {
     const playlistState = getPlaylistState() || {};
+    const videoId =
+      typeof playlistState?.currentVideoId === "string"
+        ? playlistState.currentVideoId
+        : null;
+    if (!videoId) {
+      setStatus("Текущее видео не найдено", "info", 3000);
+      return;
+    }
     setLoading(playNextBtn, true);
     setStatus("Переходим к следующему...", "info");
     try {
       const state = await sendMessage("playlist:playNext", {
+        videoId,
         tabId: Number.isInteger(playlistState?.currentTabId)
           ? playlistState.currentTabId
           : undefined,
