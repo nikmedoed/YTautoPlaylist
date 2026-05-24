@@ -73,7 +73,7 @@ export function createManagerVideoRow({
   }
 
   const progressPercent = getProgressPercent(videoProgress, video.id);
-  const { element: card } = createVideoItem(video, {
+  const card = createVideoItem(video, {
     tag: "div",
     classes: [
       "manage-video-item",

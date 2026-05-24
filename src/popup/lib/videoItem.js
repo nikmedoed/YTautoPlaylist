@@ -2,7 +2,7 @@
 import { formatDuration } from "../../time.js";
 import { clampProgressPercent } from "../../progress.js";
 import { resolveThumbnailUrl } from "../../utils.js";
-import { applyAttributes, applyDataset } from "./dom.js";
+import { applyDataset } from "./dom.js";
 
 const DEFAULT_TITLE = "Без названия";
 const DEFAULT_ALT = "Видео";
@@ -32,56 +32,32 @@ function createHandle(doc, options = {}) {
   return button;
 }
 
-function createDetailNode(doc, part) {
-  if (!part) return null;
-  if (part instanceof Node) return part;
-  if (typeof part === "string") {
-    const span = doc.createElement("span");
-    span.textContent = part;
-    return span;
-  }
-  if (part.node instanceof Node) {
-    return part.node;
-  }
-  if (typeof part === "object" && part !== null) {
-    const text = typeof part.text === "string" ? part.text : "";
-    if (!text && !part.icon) {
-      return null;
-    }
-    const span = doc.createElement("span");
-    if (part.className) span.classList.add(part.className);
-    if (part.title) span.title = part.title;
-
-    if (part.icon) {
-      const iconSpan = doc.createElement("span");
-      iconSpan.className = part.iconClassName || "video-detail__icon";
-      iconSpan.textContent = part.icon;
-      iconSpan.setAttribute("aria-hidden", "true");
-      span.appendChild(iconSpan);
-    }
-
-    if (text) {
-      if (part.icon) {
-        const textSpan = doc.createElement("span");
-        textSpan.className = part.textClassName || "video-detail__text";
-        textSpan.textContent = text;
-        span.appendChild(textSpan);
-      } else {
-        span.textContent = text;
-      }
-    }
-
-    return span;
-  }
-  return null;
-}
-
 function createDetails(doc, parts, className = "video-details") {
   const details = doc.createElement("div");
   details.className = className;
   for (const part of parts || []) {
-    const node = createDetailNode(doc, part);
-    if (!node) continue;
+    const text = typeof part?.text === "string" ? part.text : "";
+    if (!text && !part?.icon) continue;
+    const node = doc.createElement("span");
+    if (part.className) node.className = part.className;
+    if (part.title) node.title = part.title;
+    if (part.icon) {
+      const icon = doc.createElement("span");
+      icon.className = part.iconClassName || "video-detail__icon";
+      icon.textContent = part.icon;
+      icon.setAttribute("aria-hidden", "true");
+      node.appendChild(icon);
+    }
+    if (text) {
+      if (part.icon) {
+        const textNode = doc.createElement("span");
+        textNode.className = part.textClassName || "video-detail__text";
+        textNode.textContent = text;
+        node.appendChild(textNode);
+      } else {
+        node.textContent = text;
+      }
+    }
     const skipSeparator =
       typeof part === "object" && part !== null && part.noSeparator;
     if (details.childNodes.length && !skipSeparator) {
@@ -98,15 +74,8 @@ function createDetails(doc, parts, className = "video-details") {
 
 function createActionButton(doc, descriptor) {
   if (!descriptor) return null;
-  if (typeof descriptor.element === "function") {
-    const node = descriptor.element(doc);
-    return node instanceof Node ? node : null;
-  }
-  const tag = descriptor.tag || "button";
-  const element = doc.createElement(tag);
-  if (tag === "button") {
-    element.type = descriptor.type || "button";
-  }
+  const element = doc.createElement("button");
+  element.type = "button";
   if (descriptor.className) {
     element.className = descriptor.className;
   }
@@ -117,9 +86,10 @@ function createActionButton(doc, descriptor) {
     element.title = descriptor.title;
   }
   applyDataset(element, descriptor.dataset);
-  applyAttributes(element, descriptor.attrs);
   if (typeof descriptor.ariaLabel === "string") {
     element.setAttribute("aria-label", descriptor.ariaLabel);
+  } else if (descriptor.title) {
+    element.setAttribute("aria-label", descriptor.title);
   }
   return element;
 }
@@ -133,27 +103,10 @@ function resolveThumbnailDuration(video, thumbnailOptions = {}) {
     return thumbnailOptions.duration.trim();
   }
 
-  let rawDuration = null;
-  if (typeof thumbnailOptions.durationExtractor === "function") {
-    rawDuration = thumbnailOptions.durationExtractor(video, thumbnailOptions);
-  } else if (
-    thumbnailOptions.durationKey &&
-    typeof thumbnailOptions.durationKey === "string"
-  ) {
-    rawDuration = video?.[thumbnailOptions.durationKey];
-  } else {
-    rawDuration = video?.duration;
-  }
-
-  if (rawDuration == null || rawDuration === "") {
+  if (video?.duration == null || video.duration === "") {
     return "";
   }
-
-  const formatter =
-    typeof thumbnailOptions.formatDuration === "function"
-      ? thumbnailOptions.formatDuration
-      : formatDuration;
-  const formatted = formatter(rawDuration);
+  const formatted = formatDuration(video.duration);
   return typeof formatted === "string" ? formatted.trim() : "";
 }
 
@@ -165,7 +118,6 @@ export function createVideoItem(video, options = {}) {
     tag = "li",
     classes = [],
     dataset,
-    attrs,
     draggable = false,
     handle,
     thumbnail = {},
@@ -175,7 +127,6 @@ export function createVideoItem(video, options = {}) {
     detailsClass = "video-details",
     details = [],
     actions = [],
-    sanitize = sanitizeText,
     progress: progressOption = null,
     progressClassName = "video-thumb__progress",
     progressBarClassName = "video-thumb__progress-bar",
@@ -192,7 +143,6 @@ export function createVideoItem(video, options = {}) {
     element.draggable = true;
   }
   applyDataset(element, dataset);
-  applyAttributes(element, attrs);
 
   let handleElement = null;
   if (handle) {
@@ -203,7 +153,6 @@ export function createVideoItem(video, options = {}) {
     element.classList.add("video-item--no-handle");
   }
 
-  let thumbnailElement = null;
   if (thumbnail !== false) {
     const thumbWrapper = doc.createElement("div");
     thumbWrapper.className = thumbnail.wrapperClassName || "video-thumb-wrapper";
@@ -262,7 +211,6 @@ export function createVideoItem(video, options = {}) {
     }
 
     element.appendChild(thumbWrapper);
-    thumbnailElement = thumb;
   }
 
   const body = doc.createElement("div");
@@ -274,11 +222,8 @@ export function createVideoItem(video, options = {}) {
     typeof titleOptions.text === "string"
       ? titleOptions.text
       : video?.title || DEFAULT_TITLE;
-  const resolvedTitle = sanitize ? sanitize(rawTitle) : rawTitle;
+  const resolvedTitle = sanitizeText(rawTitle);
   titleNode.textContent = resolvedTitle || DEFAULT_TITLE;
-  if (titleOptions.titleAttr) {
-    titleNode.title = titleOptions.titleAttr;
-  }
   body.appendChild(titleNode);
 
   const detailsNode = createDetails(doc, details, detailsClass);
@@ -286,24 +231,14 @@ export function createVideoItem(video, options = {}) {
 
   element.appendChild(body);
 
-  const actionNodes = [];
   for (const action of actions) {
     const node = createActionButton(doc, action);
     if (node) {
       element.appendChild(node);
-      actionNodes.push(node);
     }
   }
 
-  return {
-    element,
-    handle: handleElement,
-    thumbnail: thumbnailElement,
-    body,
-    title: titleNode,
-    details: detailsNode,
-    actions: actionNodes,
-  };
+  return element;
 }
 
 export { sanitizeText };

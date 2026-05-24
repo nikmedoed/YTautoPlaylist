@@ -5921,55 +5921,74 @@
     return scrollInlineQueueToCurrentItem(targetVideoId);
   }
 
-  // src/content/inline-queue/item.js
-  var INLINE_QUEUE_DURATION_PATTERN = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/;
-  var inlineQueueDateFormatter = new Intl.DateTimeFormat("ru-RU", {
+  // src/time.js
+  var ISO_DURATION_PATTERN = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/;
+  var DISPLAY_DATE_FORMATTER = new Intl.DateTimeFormat("ru-RU", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit"
   });
-  function parseInlineQueueDuration(duration) {
-    if (duration == null) {
-      return null;
+  var STORAGE_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat("ru", {
+    year: "2-digit",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric"
+  });
+  function toDate(value) {
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : new Date(value.getTime());
     }
+    if (typeof value === "number") {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+    if (typeof value === "string" && value) {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+    return null;
+  }
+  function formatHms(totalSeconds) {
+    const seconds = Math.max(0, Math.round(totalSeconds));
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor(seconds % 3600 / 60);
+    const secs = seconds % 60;
+    if (hours) {
+      return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(
+        2,
+        "0"
+      )}:${String(secs).padStart(2, "0")}`;
+    }
+    return `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  }
+  function parseDuration(duration) {
+    if (duration == null) return void 0;
     if (typeof duration === "number" && Number.isFinite(duration)) {
       return Math.max(0, duration);
     }
-    const match = INLINE_QUEUE_DURATION_PATTERN.exec(String(duration));
-    if (!match) {
-      return null;
-    }
+    const match = ISO_DURATION_PATTERN.exec(String(duration));
+    if (!match) return void 0;
     const hours = Number(match[1] || 0);
     const minutes = Number(match[2] || 0);
     const seconds = Number(match[3] || 0);
     return hours * 3600 + minutes * 60 + seconds;
   }
-  function formatInlineQueueDuration(duration) {
-    const seconds = parseInlineQueueDuration(duration);
-    if (seconds == null) {
-      return "";
-    }
-    const total = Math.max(0, Math.round(seconds));
-    const hours = Math.floor(total / 3600);
-    const minutes = Math.floor(total % 3600 / 60);
-    const secs = total % 60;
-    if (hours > 0) {
-      return `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-    }
-    return `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  function formatDuration(duration) {
+    if (duration == null) return "";
+    const seconds = parseDuration(duration);
+    if (seconds == null) return "";
+    return formatHms(seconds);
   }
-  function formatInlineQueueDate(value) {
-    if (!value) {
-      return "";
-    }
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
-      return "";
-    }
-    return inlineQueueDateFormatter.format(date);
+  function formatDateTime(value) {
+    const date = toDate(value);
+    return date ? DISPLAY_DATE_FORMATTER.format(date) : "";
   }
+
+  // src/content/inline-queue/item.js
   function createInlineQueueDetailContainer(parts) {
     const details = document.createElement("div");
     details.className = "video-details";
@@ -6034,7 +6053,7 @@
         textClassName: "video-detail__text yta-inline-queue__detail-link"
       });
     }
-    const published = formatInlineQueueDate(entry?.publishedAt);
+    const published = formatDateTime(entry?.publishedAt);
     if (published) {
       parts.push({ text: published, textClassName: "video-detail__text" });
     }
@@ -6116,7 +6135,7 @@
     }
     thumb.alt = baseTitle;
     thumbWrapper.appendChild(thumb);
-    const durationText = formatInlineQueueDuration(entry?.duration);
+    const durationText = formatDuration(entry?.duration);
     if (durationText) {
       const durationEl = document.createElement("span");
       durationEl.className = "video-thumb__duration";

@@ -287,7 +287,7 @@ export function createQueueController({
         });
       }
 
-      const { element } = createVideoItem(entry, {
+      const element = createVideoItem(entry, {
         tag: "li",
         classes: ["queue-item", allowPostpone ? "video-item--has-postpone" : null],
         dataset,
