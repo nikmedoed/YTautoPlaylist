@@ -1884,51 +1884,6 @@ function createCollectionSummary() {
         break;
     }
   }
-  function getHeaderParts() {
-    const parts = [];
-    if (data.channelCount) {
-      parts.push(`\u041A\u0430\u043D\u0430\u043B\u044B ${formatCount(data.channelCount)}`);
-    }
-    if (data.playlistsTotal) {
-      const current = Math.max(data.playlistCurrent, data.playlistsDone);
-      parts.push(
-        `\u041F\u043B\u0435\u0439\u043B\u0438\u0441\u0442\u044B ${formatCount(Math.min(current, data.playlistsTotal))}/${formatCount(
-          data.playlistsTotal
-        )}`
-      );
-    }
-    const totalVideos = data.completeTarget || data.readyPotential || data.filterTotal || data.fetched;
-    if (totalVideos) {
-      const processed = Math.max(
-        data.added || 0,
-        data.ready || 0,
-        data.filtered || 0,
-        data.filterProcessed || 0,
-        data.filterTotals?.passed || 0
-      );
-      if (processed) {
-        parts.push(
-          `\u0412\u0438\u0434\u0435\u043E ${formatCount(Math.min(processed, totalVideos))}/${formatCount(
-            totalVideos
-          )}`
-        );
-      } else {
-        parts.push(`\u0412\u0438\u0434\u0435\u043E ${formatCount(totalVideos)}`);
-      }
-    } else if (data.fetched) {
-      parts.push(`\u0412\u0438\u0434\u0435\u043E ${formatCount(data.fetched)}`);
-    }
-    if (data.ready) {
-      const skipped = data.skippedExisting ? ` (\u0443\u0436\u0435 ${formatCount(data.skippedExisting)})` : "";
-      parts.push(`\u0413\u043E\u0442\u043E\u0432\u043E ${formatCount(data.ready)}${skipped}`);
-    }
-    if (data.added) {
-      parts.push(`\u0414\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E ${formatCount(data.added)}`);
-    } else if (data.adding) {
-      parts.push(`\u0414\u043E\u0431\u0430\u0432\u043B\u044F\u0435\u0442\u0441\u044F ${formatCount(data.adding)}`);
-    }
-    return parts;
-  }
   function getMetrics() {
     const metrics = [];
     const playlistTotal = data.playlistsTotal || 0;
@@ -1972,7 +1927,6 @@ function createCollectionSummary() {
     data,
     reset,
     update,
-    getHeaderParts,
     getMetrics
   };
 }
@@ -2284,8 +2238,6 @@ function createStageLogManager({ logEl, collapsed = true } = {}) {
     return {
       clear() {
       },
-      setCollapsed() {
-      },
       applyUpdate() {
         return null;
       },
@@ -2295,7 +2247,7 @@ function createStageLogManager({ logEl, collapsed = true } = {}) {
       }
     };
   }
-  let isCollapsed = Boolean(collapsed);
+  const isCollapsed = Boolean(collapsed);
   const stages = /* @__PURE__ */ new Map();
   function clear() {
     stages.forEach((entry) => entry.container?.remove());
@@ -2482,18 +2434,8 @@ function createStageLogManager({ logEl, collapsed = true } = {}) {
       }
     });
   }
-  function setCollapsed(collapsedValue) {
-    isCollapsed = Boolean(collapsedValue);
-    stages.forEach((entry) => {
-      if (!entry.details) return;
-      if (isCollapsed || entry.container.classList.contains("completed")) {
-        entry.details.open = false;
-      }
-    });
-  }
   return {
     clear,
-    setCollapsed,
     applyUpdate,
     markCompleted,
     openStage
@@ -3126,12 +3068,6 @@ function createCollectionAvailabilityController({
   }
   return {
     collectSubscriptions,
-    get collecting() {
-      return isCollecting;
-    },
-    get controller() {
-      return collectionController2;
-    },
     handleProgressMessage,
     teardown: stopCollectionCooldownTimer,
     updateAvailability
@@ -3721,7 +3657,7 @@ var queueController = createQueueController({
   hideMoveMenu: () => moveMenu.hide(),
   setStatus,
   sendMessage,
-  onStateChange: (state) => renderState(state),
+  onStateChange: renderState,
   getPlaylistState: () => playlistState,
   defaultListId: DEFAULT_LIST_ID
 });
@@ -3733,7 +3669,7 @@ var historyController = createHistoryController({
   setStatus,
   hideMoveMenu: () => moveMenu.hide(),
   sendMessage,
-  onStateChange: (state) => renderState(state),
+  onStateChange: renderState,
   modeButtons: historyModeButtons
 });
 var collectionController = createCollectionController({
@@ -3745,7 +3681,7 @@ var collectionController = createCollectionController({
   setStatus
 });
 var collectionAvailabilityController = createCollectionAvailabilityController({
-  applyState: (state) => renderState(state),
+  applyState: renderState,
   collectBtn,
   collectionArea,
   collectionNote,
@@ -3765,7 +3701,7 @@ var playbackController = createPlaybackController({
   togglePlaybackBtn,
   playbackControls,
   getPlaylistState: () => playlistState,
-  renderState: (state) => renderState(state),
+  renderState,
   setLoading,
   setStatus,
   sendMessage
@@ -3777,7 +3713,7 @@ var addActionsController = createAddActionsController({
   addRow,
   defaultListId: DEFAULT_LIST_ID,
   getSelectedListId,
-  renderState: (state) => renderState(state),
+  renderState,
   setLoading,
   setStatus,
   sendMessage,

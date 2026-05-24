@@ -119,9 +119,6 @@ export function ensureDefaultList(state) {
   if (!state.currentListId || !state.lists[state.currentListId]) {
     state.currentListId = DEFAULT_LIST_ID;
   }
-  if (!state.lists[state.currentListId]) {
-    state.currentListId = DEFAULT_LIST_ID;
-  }
   return state;
 }
 
@@ -144,7 +141,7 @@ function sanitizeList(rawList, id) {
     freeze:
       id === DEFAULT_LIST_ID
         ? false
-        : Boolean(rawList.freeze && id !== DEFAULT_LIST_ID),
+        : Boolean(rawList.freeze),
     queue: Array.isArray(rawList.queue)
       ? rawList.queue
           .map((item) => {

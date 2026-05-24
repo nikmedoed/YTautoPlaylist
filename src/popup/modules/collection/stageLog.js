@@ -8,7 +8,6 @@ export function createStageLogManager({ logEl, collapsed = true } = {}) {
   if (!logEl) {
     return {
       clear() {},
-      setCollapsed() {},
       applyUpdate() {
         return null;
       },
@@ -17,7 +16,7 @@ export function createStageLogManager({ logEl, collapsed = true } = {}) {
     };
   }
 
-  let isCollapsed = Boolean(collapsed);
+  const isCollapsed = Boolean(collapsed);
   const stages = new Map();
 
   function clear() {
@@ -216,19 +215,8 @@ export function createStageLogManager({ logEl, collapsed = true } = {}) {
     });
   }
 
-  function setCollapsed(collapsedValue) {
-    isCollapsed = Boolean(collapsedValue);
-    stages.forEach((entry) => {
-      if (!entry.details) return;
-      if (isCollapsed || entry.container.classList.contains("completed")) {
-        entry.details.open = false;
-      }
-    });
-  }
-
   return {
     clear,
-    setCollapsed,
     applyUpdate,
     markCompleted,
     openStage,

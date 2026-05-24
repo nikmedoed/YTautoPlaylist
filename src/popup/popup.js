@@ -98,7 +98,7 @@ const queueController = createQueueController({
   hideMoveMenu: () => moveMenu.hide(),
   setStatus,
   sendMessage,
-  onStateChange: (state) => renderState(state),
+  onStateChange: renderState,
   getPlaylistState: () => playlistState,
   defaultListId: DEFAULT_LIST_ID,
 });
@@ -111,7 +111,7 @@ const historyController = createHistoryController({
   setStatus,
   hideMoveMenu: () => moveMenu.hide(),
   sendMessage,
-  onStateChange: (state) => renderState(state),
+  onStateChange: renderState,
   modeButtons: historyModeButtons,
 });
 
@@ -125,7 +125,7 @@ const collectionController = createCollectionController({
 });
 
 const collectionAvailabilityController = createCollectionAvailabilityController({
-  applyState: (state) => renderState(state),
+  applyState: renderState,
   collectBtn,
   collectionArea,
   collectionNote,
@@ -146,7 +146,7 @@ const playbackController = createPlaybackController({
   togglePlaybackBtn,
   playbackControls,
   getPlaylistState: () => playlistState,
-  renderState: (state) => renderState(state),
+  renderState,
   setLoading,
   setStatus,
   sendMessage,
@@ -159,7 +159,7 @@ const addActionsController = createAddActionsController({
   addRow,
   defaultListId: DEFAULT_LIST_ID,
   getSelectedListId,
-  renderState: (state) => renderState(state),
+  renderState,
   setLoading,
   setStatus,
   sendMessage,

@@ -215,12 +215,6 @@ export function createCollectionAvailabilityController({
 
   return {
     collectSubscriptions,
-    get collecting() {
-      return isCollecting;
-    },
-    get controller() {
-      return collectionController;
-    },
     handleProgressMessage,
     teardown: stopCollectionCooldownTimer,
     updateAvailability,

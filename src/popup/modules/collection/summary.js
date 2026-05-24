@@ -1,7 +1,6 @@
 // Collection summary accumulator. Tracks fetched, filtered, skipped, and added counts across collection events.
 import {
   EMPTY_FILTER_TOTALS,
-  formatCount,
   formatRatio,
   resolveFilterTotals,
 } from "./metrics.js";
@@ -185,53 +184,6 @@ export function createCollectionSummary() {
     }
   }
 
-  function getHeaderParts() {
-    const parts = [];
-    if (data.channelCount) {
-      parts.push(`Каналы ${formatCount(data.channelCount)}`);
-    }
-    if (data.playlistsTotal) {
-      const current = Math.max(data.playlistCurrent, data.playlistsDone);
-      parts.push(
-        `Плейлисты ${formatCount(Math.min(current, data.playlistsTotal))}/${formatCount(
-          data.playlistsTotal
-        )}`
-      );
-    }
-    const totalVideos =
-      data.completeTarget || data.readyPotential || data.filterTotal || data.fetched;
-    if (totalVideos) {
-      const processed = Math.max(
-        data.added || 0,
-        data.ready || 0,
-        data.filtered || 0,
-        data.filterProcessed || 0,
-        data.filterTotals?.passed || 0
-      );
-      if (processed) {
-        parts.push(
-          `Видео ${formatCount(Math.min(processed, totalVideos))}/${formatCount(
-            totalVideos
-          )}`
-        );
-      } else {
-        parts.push(`Видео ${formatCount(totalVideos)}`);
-      }
-    } else if (data.fetched) {
-      parts.push(`Видео ${formatCount(data.fetched)}`);
-    }
-    if (data.ready) {
-      const skipped = data.skippedExisting ? ` (уже ${formatCount(data.skippedExisting)})` : "";
-      parts.push(`Готово ${formatCount(data.ready)}${skipped}`);
-    }
-    if (data.added) {
-      parts.push(`Добавлено ${formatCount(data.added)}`);
-    } else if (data.adding) {
-      parts.push(`Добавляется ${formatCount(data.adding)}`);
-    }
-    return parts;
-  }
-
   function getMetrics() {
     const metrics = [];
 
@@ -287,7 +239,6 @@ export function createCollectionSummary() {
     data,
     reset,
     update,
-    getHeaderParts,
     getMetrics,
   };
 }

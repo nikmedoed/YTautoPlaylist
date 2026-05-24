@@ -312,9 +312,6 @@ function ensureDefaultList(state) {
   if (!state.currentListId || !state.lists[state.currentListId]) {
     state.currentListId = DEFAULT_LIST_ID;
   }
-  if (!state.lists[state.currentListId]) {
-    state.currentListId = DEFAULT_LIST_ID;
-  }
   return state;
 }
 function sanitizeList(rawList, id) {
@@ -331,7 +328,7 @@ function sanitizeList(rawList, id) {
   const list = {
     id: rawList.id || id,
     name: rawList.name || (id === DEFAULT_LIST_ID ? DEFAULT_LIST_NAME : "\u0421\u043F\u0438\u0441\u043E\u043A"),
-    freeze: id === DEFAULT_LIST_ID ? false : Boolean(rawList.freeze && id !== DEFAULT_LIST_ID),
+    freeze: id === DEFAULT_LIST_ID ? false : Boolean(rawList.freeze),
     queue: Array.isArray(rawList.queue) ? rawList.queue.map((item) => {
       try {
         return sanitizeEntry(item);

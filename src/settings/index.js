@@ -74,7 +74,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   saveBtn?.addEventListener("click", () => {
     const val = startInput.value;
     const dt = new Date(val);
-    if (String(dt) !== "Invalid Date") {
+    if (!Number.isNaN(dt.getTime())) {
       setStartDate(dt).then((ok) => {
         if (ok) {
           startInput.value = toLocalInputValue(dt);

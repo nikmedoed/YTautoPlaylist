@@ -109,13 +109,6 @@ export function createPreviewOverlayController({
     hasButton(button) {
       return state.button === button;
     },
-    stop() {
-      observer?.disconnect();
-      observer = null;
-      watcherReady = false;
-      syncPending = false;
-      detach();
-    },
   };
 }
 

@@ -6588,13 +6588,6 @@
       ensureWatcher,
       hasButton(button) {
         return state2.button === button;
-      },
-      stop() {
-        observer2?.disconnect();
-        observer2 = null;
-        watcherReady = false;
-        syncPending = false;
-        detach();
       }
     };
   }
