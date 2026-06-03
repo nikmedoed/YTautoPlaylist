@@ -1,5 +1,5 @@
 // Presentation-state builder for UI consumers. Converts raw store state into popup/content friendly list and queue details.
-import { getState, cloneVideoProgress } from "../state/index.js";
+import { getState, sanitizeVideoProgressMap } from "../state/index.js";
 import {
   AUTO_COLLECT_COOLDOWN_MS,
   ensureAutoCollectMeta,
@@ -25,7 +25,7 @@ export async function getPresentationState() {
     activeListId: state.currentListId,
     currentVideoId: state.currentVideoId,
     currentTabId: state.currentTabId,
-    videoProgress: cloneVideoProgress(state),
+    videoProgress: sanitizeVideoProgressMap(state.videoProgress),
     currentQueue: currentList
       ? {
           id: currentList.id,

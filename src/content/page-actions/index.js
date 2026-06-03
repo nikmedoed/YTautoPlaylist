@@ -29,8 +29,6 @@ import {
   createPageActionViewController,
 } from "./view.js";
 
-export { formatAddResultMessage } from "../../addResultMessages.js";
-
 const ACTION_DEFINITIONS = [
   { key: "addCurrent", label: "Добавить в плейлист", handler: handleAddCurrentFromPage },
   { key: "addVisible", label: "Добавить видимые", handler: handleAddVisibleFromPage },
@@ -119,9 +117,6 @@ async function addVideoIds(videoIds, options = {}) {
   const payload = {
     videoIds: safeIds,
   };
-  if (inlinePlaylistState.currentListId) {
-    payload.listId = inlinePlaylistState.currentListId;
-  }
   const response = await sendMessage("playlist:addByIds", payload);
   const { state: presentation, requested, missing, added } = normalizeAddResponse(
     response
@@ -214,6 +209,8 @@ async function handleAddVisibleFromPage() {
   }
 }
 
+// Performs the long "add all" page scan: collect visible ids, scroll/load more,
+// respect cancellation, then send the deduped ids through the normal add flow.
 async function handleAddAllFromPage() {
   const caps = getContextCapabilities();
   if (!caps.canAddAll) return;

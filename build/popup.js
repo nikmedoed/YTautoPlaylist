@@ -48,9 +48,7 @@ function positionMenu(root, anchor, { offset, padding }) {
 function createMoveMenu({
   document: doc = globalThis.document,
   headerText = "\u041F\u0435\u0440\u0435\u043D\u0435\u0441\u0442\u0438 \u0432:",
-  emptyMessage = "\u041D\u0435\u0442 \u0434\u0440\u0443\u0433\u0438\u0445 \u0441\u043F\u0438\u0441\u043A\u043E\u0432",
   cancelLabel = "\u041E\u0442\u043C\u0435\u043D\u0430",
-  emptyCancelLabel = "\u0417\u0430\u043A\u0440\u044B\u0442\u044C",
   className = "move-menu",
   messageClass = "move-menu__message",
   buttonsClass = "move-menu__buttons",
@@ -256,16 +254,6 @@ function createStatusController({
   }
   let timeoutHandle = null;
   let hideTimer = null;
-  const clearTimers = () => {
-    if (timeoutHandle) {
-      clearTimeout(timeoutHandle);
-      timeoutHandle = null;
-    }
-    if (hideTimer) {
-      clearTimeout(hideTimer);
-      hideTimer = null;
-    }
-  };
   const finalizeHide = () => {
     hideTimer = null;
     applyStatusProgress(progressEl, progressBarEl, null);
@@ -273,7 +261,7 @@ function createStatusController({
     statusBox2.removeAttribute("data-kind");
     statusText2.textContent = "";
   };
-  const hideStatus2 = (immediate = false) => {
+  const hideStatus = (immediate = false) => {
     clearTimeout(hideTimer);
     statusBox2.dataset.visible = "0";
     if (immediate) {
@@ -288,7 +276,7 @@ function createStatusController({
   };
   const setStatus2 = (text, kind = "info", timeout = DEFAULT_TIMEOUT, options = {}) => {
     if (!text) {
-      hideStatus2(true);
+      hideStatus(true);
       return;
     }
     clearTimeout(hideTimer);
@@ -303,7 +291,7 @@ function createStatusController({
     }
     if (timeout && timeout > 0) {
       timeoutHandle = window.setTimeout(() => {
-        hideStatus2();
+        hideStatus();
       }, timeout);
     } else {
       timeoutHandle = null;
@@ -314,9 +302,9 @@ function createStatusController({
     progressEl.hidden = true;
   }
   statusBox2.addEventListener("click", () => {
-    hideStatus2(true);
+    hideStatus(true);
   });
-  return { setStatus: setStatus2, hideStatus: hideStatus2 };
+  return { setStatus: setStatus2, hideStatus };
 }
 
 // src/progress.js
@@ -331,15 +319,15 @@ function clampProgressPercent(value) {
   if (percent <= 0) return 0;
   return percent >= 100 ? 100 : percent;
 }
-function normalizeProgressPercent(entry) {
-  const percent = clampProgressPercent(entry?.percent);
-  return percent && percent > 0 ? percent : null;
-}
-function resolveProgressPercentFromObject(progressById, videoId) {
-  if (!videoId || !progressById || typeof progressById !== "object") {
+function getProgressPercent(progressById, videoId) {
+  if (!videoId || !progressById) {
     return null;
   }
-  return normalizeProgressPercent(progressById[videoId]);
+  if (typeof progressById !== "object") {
+    return null;
+  }
+  const percent = clampProgressPercent(progressById[videoId]?.percent);
+  return percent && percent > 0 ? percent : null;
 }
 
 // src/time.js
@@ -417,6 +405,36 @@ function formatClockTime(value = /* @__PURE__ */ new Date()) {
   return `${hours}:${minutes}:${seconds}`;
 }
 
+// src/utils.js
+var THUMBNAIL_PRIORITY = ["maxres", "standard", "high", "medium", "default"];
+function pickThumbnailValue(value) {
+  if (typeof value === "string" && value) {
+    return value;
+  }
+  if (!value || typeof value !== "object") {
+    return "";
+  }
+  return value.url || value.fallback || value.defaultSrc || "";
+}
+function pickThumbnailSet(thumbnails) {
+  if (!thumbnails || typeof thumbnails !== "object") {
+    return "";
+  }
+  for (const key of THUMBNAIL_PRIORITY) {
+    const url = pickThumbnailValue(thumbnails[key]);
+    if (url) {
+      return url;
+    }
+  }
+  return "";
+}
+function resolveThumbnailUrl(entry, fallback = "") {
+  if (!entry || typeof entry !== "object") {
+    return fallback || "";
+  }
+  return pickThumbnailValue(entry.thumbnail) || pickThumbnailSet(entry.thumbnails) || fallback || "";
+}
+
 // src/popup/lib/videoItem.js
 var DEFAULT_TITLE = "\u0411\u0435\u0437 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044F";
 var DEFAULT_ALT = "\u0412\u0438\u0434\u0435\u043E";
@@ -443,52 +461,32 @@ function createHandle(doc, options = {}) {
   }
   return button;
 }
-function createDetailNode(doc, part) {
-  if (!part) return null;
-  if (part instanceof Node) return part;
-  if (typeof part === "string") {
-    const span = doc.createElement("span");
-    span.textContent = part;
-    return span;
-  }
-  if (part.node instanceof Node) {
-    return part.node;
-  }
-  if (typeof part === "object" && part !== null) {
-    const text = typeof part.text === "string" ? part.text : "";
-    if (!text && !part.icon) {
-      return null;
-    }
-    const span = doc.createElement("span");
-    if (part.className) span.classList.add(part.className);
-    if (part.title) span.title = part.title;
-    if (part.icon) {
-      const iconSpan = doc.createElement("span");
-      iconSpan.className = part.iconClassName || "video-detail__icon";
-      iconSpan.textContent = part.icon;
-      iconSpan.setAttribute("aria-hidden", "true");
-      span.appendChild(iconSpan);
-    }
-    if (text) {
-      if (part.icon) {
-        const textSpan = doc.createElement("span");
-        textSpan.className = part.textClassName || "video-detail__text";
-        textSpan.textContent = text;
-        span.appendChild(textSpan);
-      } else {
-        span.textContent = text;
-      }
-    }
-    return span;
-  }
-  return null;
-}
 function createDetails(doc, parts, className = "video-details") {
   const details = doc.createElement("div");
   details.className = className;
   for (const part of parts || []) {
-    const node = createDetailNode(doc, part);
-    if (!node) continue;
+    const text = typeof part?.text === "string" ? part.text : "";
+    if (!text && !part?.icon) continue;
+    const node = doc.createElement("span");
+    if (part.className) node.className = part.className;
+    if (part.title) node.title = part.title;
+    if (part.icon) {
+      const icon = doc.createElement("span");
+      icon.className = part.iconClassName || "video-detail__icon";
+      icon.textContent = part.icon;
+      icon.setAttribute("aria-hidden", "true");
+      node.appendChild(icon);
+    }
+    if (text) {
+      if (part.icon) {
+        const textNode = doc.createElement("span");
+        textNode.className = part.textClassName || "video-detail__text";
+        textNode.textContent = text;
+        node.appendChild(textNode);
+      } else {
+        node.textContent = text;
+      }
+    }
     const skipSeparator = typeof part === "object" && part !== null && part.noSeparator;
     if (details.childNodes.length && !skipSeparator) {
       const separator = doc.createElement("span");
@@ -503,15 +501,8 @@ function createDetails(doc, parts, className = "video-details") {
 }
 function createActionButton(doc, descriptor) {
   if (!descriptor) return null;
-  if (typeof descriptor.element === "function") {
-    const node = descriptor.element(doc);
-    return node instanceof Node ? node : null;
-  }
-  const tag = descriptor.tag || "button";
-  const element = doc.createElement(tag);
-  if (tag === "button") {
-    element.type = descriptor.type || "button";
-  }
+  const element = doc.createElement("button");
+  element.type = "button";
   if (descriptor.className) {
     element.className = descriptor.className;
   }
@@ -522,20 +513,12 @@ function createActionButton(doc, descriptor) {
     element.title = descriptor.title;
   }
   applyDataset(element, descriptor.dataset);
-  applyAttributes(element, descriptor.attrs);
   if (typeof descriptor.ariaLabel === "string") {
     element.setAttribute("aria-label", descriptor.ariaLabel);
+  } else if (descriptor.title) {
+    element.setAttribute("aria-label", descriptor.title);
   }
   return element;
-}
-function resolveThumbnail(entry, fallback) {
-  if (entry && typeof entry.thumbnail === "string" && entry.thumbnail) {
-    return entry.thumbnail;
-  }
-  if (entry?.thumbnail?.url) {
-    return entry.thumbnail.url;
-  }
-  return fallback || "";
 }
 function resolveThumbnailDuration(video, thumbnailOptions = {}) {
   if (!thumbnailOptions || thumbnailOptions.showDuration === false) {
@@ -544,19 +527,10 @@ function resolveThumbnailDuration(video, thumbnailOptions = {}) {
   if (typeof thumbnailOptions.duration === "string") {
     return thumbnailOptions.duration.trim();
   }
-  let rawDuration = null;
-  if (typeof thumbnailOptions.durationExtractor === "function") {
-    rawDuration = thumbnailOptions.durationExtractor(video, thumbnailOptions);
-  } else if (thumbnailOptions.durationKey && typeof thumbnailOptions.durationKey === "string") {
-    rawDuration = video?.[thumbnailOptions.durationKey];
-  } else {
-    rawDuration = video?.duration;
-  }
-  if (rawDuration == null || rawDuration === "") {
+  if (video?.duration == null || video.duration === "") {
     return "";
   }
-  const formatter = typeof thumbnailOptions.formatDuration === "function" ? thumbnailOptions.formatDuration : formatDuration;
-  const formatted = formatter(rawDuration);
+  const formatted = formatDuration(video.duration);
   return typeof formatted === "string" ? formatted.trim() : "";
 }
 function createVideoItem(video, options = {}) {
@@ -565,7 +539,6 @@ function createVideoItem(video, options = {}) {
     tag = "li",
     classes = [],
     dataset,
-    attrs,
     draggable = false,
     handle,
     thumbnail = {},
@@ -575,7 +548,6 @@ function createVideoItem(video, options = {}) {
     detailsClass = "video-details",
     details = [],
     actions = [],
-    sanitize = sanitizeText,
     progress: progressOption = null,
     progressClassName = "video-thumb__progress",
     progressBarClassName = "video-thumb__progress-bar"
@@ -591,7 +563,6 @@ function createVideoItem(video, options = {}) {
     element.draggable = true;
   }
   applyDataset(element, dataset);
-  applyAttributes(element, attrs);
   let handleElement = null;
   if (handle) {
     handleElement = createHandle(doc, handle);
@@ -600,13 +571,12 @@ function createVideoItem(video, options = {}) {
   if (!handleElement) {
     element.classList.add("video-item--no-handle");
   }
-  let thumbnailElement = null;
   if (thumbnail !== false) {
     const thumbWrapper = doc.createElement("div");
     thumbWrapper.className = thumbnail.wrapperClassName || "video-thumb-wrapper";
     const thumb = doc.createElement("img");
     thumb.className = thumbnail.className || "video-thumb";
-    thumb.src = thumbnail.src || resolveThumbnail(video, thumbnail.fallback || thumbnail.defaultSrc);
+    thumb.src = thumbnail.src || resolveThumbnailUrl(video, thumbnail.fallback || thumbnail.defaultSrc);
     const titleText = typeof titleOptions.text === "string" ? titleOptions.text : video?.title;
     thumb.alt = thumbnail.alt || (titleText ? sanitizeText(titleText) : DEFAULT_ALT) || DEFAULT_ALT;
     thumb.loading = thumbnail.loading || "lazy";
@@ -646,39 +616,25 @@ function createVideoItem(video, options = {}) {
       thumbWrapper.appendChild(progressContainer);
     }
     element.appendChild(thumbWrapper);
-    thumbnailElement = thumb;
   }
   const body = doc.createElement("div");
   body.className = bodyClass;
   const titleNode = doc.createElement("div");
   titleNode.className = titleClass;
   const rawTitle = typeof titleOptions.text === "string" ? titleOptions.text : video?.title || DEFAULT_TITLE;
-  const resolvedTitle = sanitize ? sanitize(rawTitle) : rawTitle;
+  const resolvedTitle = sanitizeText(rawTitle);
   titleNode.textContent = resolvedTitle || DEFAULT_TITLE;
-  if (titleOptions.titleAttr) {
-    titleNode.title = titleOptions.titleAttr;
-  }
   body.appendChild(titleNode);
   const detailsNode = createDetails(doc, details, detailsClass);
   body.appendChild(detailsNode);
   element.appendChild(body);
-  const actionNodes = [];
   for (const action of actions) {
     const node = createActionButton(doc, action);
     if (node) {
       element.appendChild(node);
-      actionNodes.push(node);
     }
   }
-  return {
-    element,
-    handle: handleElement,
-    thumbnail: thumbnailElement,
-    body,
-    title: titleNode,
-    details: detailsNode,
-    actions: actionNodes
-  };
+  return element;
 }
 
 // src/popup/lib/detailParts.js
@@ -1184,7 +1140,7 @@ function createDragReorderController({
     }
     try {
       handle.setPointerCapture?.(event.pointerId);
-    } catch (_) {
+    } catch {
     }
     updateDropIndicatorAt(event.clientY);
     doc.addEventListener("pointermove", manualMove, { capture: true });
@@ -1211,7 +1167,7 @@ function createDragReorderController({
   function endManualDrag() {
     try {
       state.manualHandleEl?.releasePointerCapture?.(state.manualPointerId);
-    } catch (_) {
+    } catch {
     }
     doc.removeEventListener("pointermove", manualMove, { capture: true });
     doc.removeEventListener("pointerup", manualUp, { capture: true });
@@ -1450,7 +1406,7 @@ function createQueueController({
         dataset.listId = listId;
       }
       const detailParts = buildDetailParts(entry);
-      const progressPercent = resolveProgressPercentFromObject(
+      const progressPercent = getProgressPercent(
         playlistState2?.videoProgress,
         entry.id
       );
@@ -1486,7 +1442,7 @@ function createQueueController({
           dataset: postponeDataset
         });
       }
-      const { element } = createVideoItem(entry, {
+      const element = createVideoItem(entry, {
         tag: "li",
         classes: ["queue-item", allowPostpone ? "video-item--has-postpone" : null],
         dataset,
@@ -1624,7 +1580,7 @@ function createHistoryController({
       const isDeletedMode = modeConfig.restore === "deleted";
       const restoreAction = isDeletedMode ? "restore-deleted" : "restore";
       const restoreTitle = isDeletedMode ? "\u0412\u043E\u0441\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u044C \u0432 \u0441\u043F\u0438\u0441\u043E\u043A" : "\u0412\u0435\u0440\u043D\u0443\u0442\u044C \u0432 \u043E\u0447\u0435\u0440\u0435\u0434\u044C";
-      const { element } = createVideoItem(entry, {
+      const element = createVideoItem(entry, {
         tag: "li",
         classes: ["video-item--static"],
         dataset,
@@ -1925,51 +1881,6 @@ function createCollectionSummary() {
         break;
     }
   }
-  function getHeaderParts() {
-    const parts = [];
-    if (data.channelCount) {
-      parts.push(`\u041A\u0430\u043D\u0430\u043B\u044B ${formatCount(data.channelCount)}`);
-    }
-    if (data.playlistsTotal) {
-      const current = Math.max(data.playlistCurrent, data.playlistsDone);
-      parts.push(
-        `\u041F\u043B\u0435\u0439\u043B\u0438\u0441\u0442\u044B ${formatCount(Math.min(current, data.playlistsTotal))}/${formatCount(
-          data.playlistsTotal
-        )}`
-      );
-    }
-    const totalVideos = data.completeTarget || data.readyPotential || data.filterTotal || data.fetched;
-    if (totalVideos) {
-      const processed = Math.max(
-        data.added || 0,
-        data.ready || 0,
-        data.filtered || 0,
-        data.filterProcessed || 0,
-        data.filterTotals?.passed || 0
-      );
-      if (processed) {
-        parts.push(
-          `\u0412\u0438\u0434\u0435\u043E ${formatCount(Math.min(processed, totalVideos))}/${formatCount(
-            totalVideos
-          )}`
-        );
-      } else {
-        parts.push(`\u0412\u0438\u0434\u0435\u043E ${formatCount(totalVideos)}`);
-      }
-    } else if (data.fetched) {
-      parts.push(`\u0412\u0438\u0434\u0435\u043E ${formatCount(data.fetched)}`);
-    }
-    if (data.ready) {
-      const skipped = data.skippedExisting ? ` (\u0443\u0436\u0435 ${formatCount(data.skippedExisting)})` : "";
-      parts.push(`\u0413\u043E\u0442\u043E\u0432\u043E ${formatCount(data.ready)}${skipped}`);
-    }
-    if (data.added) {
-      parts.push(`\u0414\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E ${formatCount(data.added)}`);
-    } else if (data.adding) {
-      parts.push(`\u0414\u043E\u0431\u0430\u0432\u043B\u044F\u0435\u0442\u0441\u044F ${formatCount(data.adding)}`);
-    }
-    return parts;
-  }
   function getMetrics() {
     const metrics = [];
     const playlistTotal = data.playlistsTotal || 0;
@@ -2013,7 +1924,6 @@ function createCollectionSummary() {
     data,
     reset,
     update,
-    getHeaderParts,
     getMetrics
   };
 }
@@ -2325,8 +2235,6 @@ function createStageLogManager({ logEl, collapsed = true } = {}) {
     return {
       clear() {
       },
-      setCollapsed() {
-      },
       applyUpdate() {
         return null;
       },
@@ -2336,7 +2244,7 @@ function createStageLogManager({ logEl, collapsed = true } = {}) {
       }
     };
   }
-  let isCollapsed = Boolean(collapsed);
+  const isCollapsed = Boolean(collapsed);
   const stages = /* @__PURE__ */ new Map();
   function clear() {
     stages.forEach((entry) => entry.container?.remove());
@@ -2523,18 +2431,8 @@ function createStageLogManager({ logEl, collapsed = true } = {}) {
       }
     });
   }
-  function setCollapsed(collapsedValue) {
-    isCollapsed = Boolean(collapsedValue);
-    stages.forEach((entry) => {
-      if (!entry.details) return;
-      if (isCollapsed || entry.container.classList.contains("completed")) {
-        entry.details.open = false;
-      }
-    });
-  }
   return {
     clear,
-    setCollapsed,
     applyUpdate,
     markCompleted,
     openStage
@@ -2954,7 +2852,7 @@ function createAddActionsController({
           context: "unknown"
         });
       }
-    } catch (err) {
+    } catch {
       applyControlCapabilities({
         canAddCurrent: false,
         canAddVisible: false,
@@ -2970,7 +2868,7 @@ function createAddActionsController({
   };
 }
 
-// src/popup/modules/collection/cooldown.js
+// src/popup/modules/collection/availability.js
 function readAutoCollectMeta(state) {
   const meta = state?.autoCollect || {};
   const cooldownMs = Number(meta.cooldownMs) || 0;
@@ -3013,8 +2911,6 @@ function formatCooldownMessage(remainingMs, targetTime) {
   const timeLabel = formatTimeOfDay(targetTime);
   return timeLabel ? `\u0421\u0431\u043E\u0440 \u0431\u0443\u0434\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0447\u0435\u0440\u0435\u0437 ${parts.join(" ")} (\u2248 ${timeLabel})` : `\u0421\u0431\u043E\u0440 \u0431\u0443\u0434\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0447\u0435\u0440\u0435\u0437 ${parts.join(" ")}`;
 }
-
-// src/popup/modules/collection/availability.js
 function createCollectionAvailabilityController({
   applyState,
   collectBtn: collectBtn2,
@@ -3169,12 +3065,6 @@ function createCollectionAvailabilityController({
   }
   return {
     collectSubscriptions,
-    get collecting() {
-      return isCollecting;
-    },
-    get controller() {
-      return collectionController2;
-    },
     handleProgressMessage,
     teardown: stopCollectionCooldownTimer,
     updateAvailability
@@ -3328,14 +3218,17 @@ function createPlaybackController({
       known: status.known === false ? false : true
     };
   }
+  function resetPlaybackStatus() {
+    applyPlaybackStatus({ playing: false, hasVideo: false, known: true });
+  }
+  function getActivePlaybackTabId(state = getPlaylistState() || {}) {
+    return Boolean(state?.currentListId) && Boolean(state?.currentVideoId) && Number.isInteger(state?.currentTabId) ? state.currentTabId : null;
+  }
   function updatePlaybackControls() {
     const playlistState2 = getPlaylistState() || {};
     const meta = computePlaybackMeta(playlistState2);
     const queueHasEntries = meta.queueIds.length > 0;
-    const activeListId = playlistState2?.currentListId || null;
-    const hasKnownVideo = Boolean(activeListId) && Boolean(playlistState2?.currentVideoId);
-    const hasActiveTab = Boolean(activeListId) && Number.isInteger(playlistState2?.currentTabId);
-    const hasPlaybackContext = hasActiveTab && hasKnownVideo;
+    const hasPlaybackContext = getActivePlaybackTabId(playlistState2) !== null;
     const hasActivePlayback = hasPlaybackContext && meta.controlling;
     const shouldShowStart = queueHasEntries && !hasPlaybackContext;
     let showPlaybackCluster = false;
@@ -3445,13 +3338,13 @@ function createPlaybackController({
       }
       if (response?.reason === "NO_ACTIVE_TAB" || response?.reason === "TAB_UNREACHABLE") {
         setStatus2("\u041D\u0435\u0442 \u0430\u043A\u0442\u0438\u0432\u043D\u043E\u0433\u043E \u0432\u043E\u0441\u043F\u0440\u043E\u0438\u0437\u0432\u0435\u0434\u0435\u043D\u0438\u044F", "info", 2500);
-        applyPlaybackStatus({ playing: false, hasVideo: false, known: true });
+        resetPlaybackStatus();
         updatePlaybackControls();
         return;
       }
       if (response?.reason === "NO_VIDEO") {
         setStatus2("\u0412\u0438\u0434\u0435\u043E \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E \u043D\u0430 \u0432\u043A\u043B\u0430\u0434\u043A\u0435", "info", 2500);
-        applyPlaybackStatus({ playing: false, hasVideo: false, known: true });
+        resetPlaybackStatus();
         updatePlaybackControls();
         return;
       }
@@ -3472,7 +3365,7 @@ function createPlaybackController({
     } catch (err) {
       console.error("Toggle playback failed", err);
       setStatus2("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u0442\u044C \u0432\u043E\u0441\u043F\u0440\u043E\u0438\u0437\u0432\u0435\u0434\u0435\u043D\u0438\u0435\u043C", "error", 3500);
-      applyPlaybackStatus({ playing: false, hasVideo: false, known: true });
+      resetPlaybackStatus();
       updatePlaybackControls();
     } finally {
       togglePlaybackBtn2.removeAttribute("data-loading");
@@ -3482,14 +3375,13 @@ function createPlaybackController({
     }
   }
   function hasActivePlaybackTab() {
-    const playlistState2 = getPlaylistState() || {};
-    return Boolean(playlistState2?.currentListId) && Boolean(playlistState2?.currentVideoId) && Number.isInteger(playlistState2?.currentTabId);
+    return getActivePlaybackTabId() !== null;
   }
   async function refreshPlaybackStatus({ force = false } = {}) {
     if (!hasActivePlaybackTab()) {
       playbackStatusPromise = null;
       lastPlaybackStatusRequest = 0;
-      applyPlaybackStatus({ playing: false, hasVideo: false, known: true });
+      resetPlaybackStatus();
       updatePlaybackControls();
       return;
     }
@@ -3518,12 +3410,12 @@ function createPlaybackController({
         return;
       }
       if (response?.reason === "NO_VIDEO" || response?.reason === "TAB_UNREACHABLE") {
-        applyPlaybackStatus({ playing: false, hasVideo: false, known: true });
+        resetPlaybackStatus();
         updatePlaybackControls();
         return;
       }
       if (response?.reason === "NO_ACTIVE_TAB") {
-        applyPlaybackStatus({ playing: false, hasVideo: false, known: true });
+        resetPlaybackStatus();
         updatePlaybackControls();
       }
     }).catch((err) => {
@@ -3531,7 +3423,7 @@ function createPlaybackController({
       if (!err || !/receiving end/i.test(err.message || "")) {
         console.error("Failed to get playback status", err);
       }
-      applyPlaybackStatus({ playing: false, hasVideo: false, known: true });
+      resetPlaybackStatus();
       updatePlaybackControls();
     });
     return playbackStatusPromise;
@@ -3603,10 +3495,16 @@ function createPlaybackController({
   }
   async function playNext() {
     const playlistState2 = getPlaylistState() || {};
+    const videoId = typeof playlistState2?.currentVideoId === "string" ? playlistState2.currentVideoId : null;
+    if (!videoId) {
+      setStatus2("\u0422\u0435\u043A\u0443\u0449\u0435\u0435 \u0432\u0438\u0434\u0435\u043E \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E", "info", 3e3);
+      return;
+    }
     setLoading2(playNextBtn2, true);
     setStatus2("\u041F\u0435\u0440\u0435\u0445\u043E\u0434\u0438\u043C \u043A \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0435\u043C\u0443...", "info");
     try {
       const state = await sendMessage2("playlist:playNext", {
+        videoId,
         tabId: Number.isInteger(playlistState2?.currentTabId) ? playlistState2.currentTabId : void 0
       });
       if (state?.handled === false) {
@@ -3629,14 +3527,13 @@ function createPlaybackController({
     }
   }
   function syncState(state) {
-    const hasControlledVideo = Boolean(state?.currentListId) && Boolean(state?.currentVideoId);
-    const nextActiveTabId = hasControlledVideo && Number.isInteger(state?.currentTabId) ? state.currentTabId : null;
+    const nextActiveTabId = getActivePlaybackTabId(state);
     const activeTabChanged = nextActiveTabId !== activePlaybackTabId;
     activePlaybackTabId = nextActiveTabId;
     if (!activePlaybackTabId) {
       playbackStatusPromise = null;
       lastPlaybackStatusRequest = 0;
-      applyPlaybackStatus({ playing: false, hasVideo: false, known: true });
+      resetPlaybackStatus();
     } else if (activeTabChanged) {
       applyPlaybackStatus({ playing: true, hasVideo: true, known: false });
     }
@@ -3719,7 +3616,7 @@ var addRow = document.querySelector(".control-row--add");
 var fallbackThumbnail = chrome.runtime.getURL("icon/icon.png");
 var DEFAULT_LIST_ID = "default";
 var playlistState = null;
-var { setStatus, hideStatus } = createStatusController({ statusBox, statusText });
+var { setStatus } = createStatusController({ statusBox, statusText });
 var moveMenu = createMoveMenu({
   getOptions: ({ sourceListId }) => {
     const lists = Array.isArray(playlistState?.lists) ? playlistState.lists : [];
@@ -3758,7 +3655,7 @@ var queueController = createQueueController({
   hideMoveMenu: () => moveMenu.hide(),
   setStatus,
   sendMessage,
-  onStateChange: (state) => renderState(state),
+  onStateChange: renderState,
   getPlaylistState: () => playlistState,
   defaultListId: DEFAULT_LIST_ID
 });
@@ -3770,7 +3667,7 @@ var historyController = createHistoryController({
   setStatus,
   hideMoveMenu: () => moveMenu.hide(),
   sendMessage,
-  onStateChange: (state) => renderState(state),
+  onStateChange: renderState,
   modeButtons: historyModeButtons
 });
 var collectionController = createCollectionController({
@@ -3782,7 +3679,7 @@ var collectionController = createCollectionController({
   setStatus
 });
 var collectionAvailabilityController = createCollectionAvailabilityController({
-  applyState: (state) => renderState(state),
+  applyState: renderState,
   collectBtn,
   collectionArea,
   collectionNote,
@@ -3802,7 +3699,7 @@ var playbackController = createPlaybackController({
   togglePlaybackBtn,
   playbackControls,
   getPlaylistState: () => playlistState,
-  renderState: (state) => renderState(state),
+  renderState,
   setLoading,
   setStatus,
   sendMessage
@@ -3814,7 +3711,7 @@ var addActionsController = createAddActionsController({
   addRow,
   defaultListId: DEFAULT_LIST_ID,
   getSelectedListId,
-  renderState: (state) => renderState(state),
+  renderState,
   setLoading,
   setStatus,
   sendMessage,

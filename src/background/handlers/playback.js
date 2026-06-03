@@ -24,6 +24,14 @@ import {
   pingActivePlaybackTab,
 } from "../services.js";
 
+async function rejectInvalidVideo() {
+  return {
+    handled: false,
+    reason: "INVALID_VIDEO",
+    state: await getPresentationState(),
+  };
+}
+
 // Playback message handlers coordinate queue state with the owning YouTube tab.
 // Tab ownership checks are intentionally local here because they decide whether
 // content-script playback events should control the extension queue.
@@ -51,9 +59,13 @@ export const playbackHandlers = {
   },
 
   async "playlist:playNext"(message) {
+    const videoId = parseVideoId(message?.videoId);
+    if (!videoId) {
+      return rejectInvalidVideo();
+    }
     return advanceToNext({
       tabId: message.tabId,
-      videoId: message.videoId,
+      videoId,
     });
   },
 
@@ -177,6 +189,10 @@ export const playbackHandlers = {
 
   async "player:videoEnded"(message, sender) {
     // End events can race between tabs, so re-check ownership before advancing.
+    const videoId = parseVideoId(message.videoId);
+    if (!videoId) {
+      return rejectInvalidVideo();
+    }
     const tabId = sender?.tab?.id;
     let state = await getState();
     const hasSenderTabId = typeof tabId === "number" && Number.isInteger(tabId);
@@ -200,7 +216,7 @@ export const playbackHandlers = {
     }
     return advanceToNext({
       tabId,
-      videoId: parseVideoId(message.videoId),
+      videoId,
     });
   },
 
@@ -243,10 +259,14 @@ export const playbackHandlers = {
   },
 
   async "player:requestNext"(message, sender) {
+    const videoId = parseVideoId(message.videoId);
+    if (!videoId) {
+      return rejectInvalidVideo();
+    }
     const tabId = sender?.tab?.id;
     return advanceToNext({
       tabId,
-      videoId: parseVideoId(message.videoId),
+      videoId,
     });
   },
 

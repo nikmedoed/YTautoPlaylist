@@ -1,56 +1,6 @@
 // Inline queue item renderer. Builds one queue row with metadata, progress, active state, and action buttons.
-const INLINE_QUEUE_DURATION_PATTERN = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/;
-
-const inlineQueueDateFormatter = new Intl.DateTimeFormat("ru-RU", {
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-
-function parseInlineQueueDuration(duration) {
-  if (duration == null) {
-    return null;
-  }
-  if (typeof duration === "number" && Number.isFinite(duration)) {
-    return Math.max(0, duration);
-  }
-  const match = INLINE_QUEUE_DURATION_PATTERN.exec(String(duration));
-  if (!match) {
-    return null;
-  }
-  const hours = Number(match[1] || 0);
-  const minutes = Number(match[2] || 0);
-  const seconds = Number(match[3] || 0);
-  return hours * 3600 + minutes * 60 + seconds;
-}
-
-function formatInlineQueueDuration(duration) {
-  const seconds = parseInlineQueueDuration(duration);
-  if (seconds == null) {
-    return "";
-  }
-  const total = Math.max(0, Math.round(seconds));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const secs = total % 60;
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-  }
-  return `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-}
-
-function formatInlineQueueDate(value) {
-  if (!value) {
-    return "";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-  return inlineQueueDateFormatter.format(date);
-}
+import { formatDateTime, formatDuration } from "../../time.js";
+import { resolveThumbnailUrl } from "../../utils.js";
 
 function createInlineQueueDetailContainer(parts) {
   const details = document.createElement("div");
@@ -119,38 +69,11 @@ function buildInlineQueueDetails(entry) {
       textClassName: "video-detail__text yta-inline-queue__detail-link",
     });
   }
-  const published = formatInlineQueueDate(entry?.publishedAt);
+  const published = formatDateTime(entry?.publishedAt);
   if (published) {
     parts.push({ text: published, textClassName: "video-detail__text" });
   }
   return createInlineQueueDetailContainer(parts);
-}
-
-function resolveInlineQueueThumbnail(entry) {
-  if (!entry) {
-    return "";
-  }
-  if (typeof entry.thumbnail === "string" && entry.thumbnail) {
-    return entry.thumbnail;
-  }
-  if (entry.thumbnail && typeof entry.thumbnail === "object") {
-    if (typeof entry.thumbnail.url === "string" && entry.thumbnail.url) {
-      return entry.thumbnail.url;
-    }
-    if (
-      typeof entry.thumbnail.fallback === "string" &&
-      entry.thumbnail.fallback
-    ) {
-      return entry.thumbnail.fallback;
-    }
-    if (typeof entry.thumbnail.defaultSrc === "string" && entry.thumbnail.defaultSrc) {
-      return entry.thumbnail.defaultSrc;
-    }
-  }
-  if (entry.id) {
-    return `https://i.ytimg.com/vi/${entry.id}/mqdefault.jpg`;
-  }
-  return "";
 }
 
 function createInlineQueueActionButton(className, textContent, title) {
@@ -230,14 +153,17 @@ export function createInlineQueueItem(entry, index, isCurrent, options = {}) {
   thumb.className = "video-thumb";
   thumb.decoding = "async";
   thumb.loading = "lazy";
-  const thumbUrl = resolveInlineQueueThumbnail(entry);
+  const thumbUrl = resolveThumbnailUrl(
+    entry,
+    entry.id ? `https://i.ytimg.com/vi/${entry.id}/mqdefault.jpg` : ""
+  );
   if (thumbUrl) {
     thumb.src = thumbUrl;
   }
   thumb.alt = baseTitle;
   thumbWrapper.appendChild(thumb);
 
-  const durationText = formatInlineQueueDuration(entry?.duration);
+  const durationText = formatDuration(entry?.duration);
   if (durationText) {
     const durationEl = document.createElement("span");
     durationEl.className = "video-thumb__duration";

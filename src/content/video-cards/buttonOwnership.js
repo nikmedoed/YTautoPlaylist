@@ -1,9 +1,9 @@
 // Video-card button ownership helpers. Prevents duplicate buttons and protects inline queue rows from card overlays.
 import {
   ADD_BUTTON_CLASS,
-  parseVideoId,
   VIDEO_CARD_SELECTOR,
 } from "../core/base.js";
+import { parseVideoId } from "../../utils.js";
 import { clearPlaylistSuccessTimer } from "./addFlow.js";
 
 // Tracks which enhanced card owns an inline add button so recycled YouTube DOM nodes do not keep stale controls.

@@ -50,21 +50,6 @@ function getListStorageKey(id) {
   return `${LIST_CONTENT_PREFIX}${id}`;
 }
 
-// src/store/state/autoCollectTimestamp.js
-var SECOND_TS_MIN = 1e9;
-var SECOND_TS_MAX = 1e10;
-function normalizeAutoCollectTimestamp(value) {
-  let ts = Number(value);
-  if (!Number.isFinite(ts) || ts <= 0) {
-    return 0;
-  }
-  ts = Math.trunc(ts);
-  if (ts >= SECOND_TS_MIN && ts < SECOND_TS_MAX) {
-    ts *= 1e3;
-  }
-  return ts;
-}
-
 // src/progress.js
 function clampProgressPercent(value) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -220,15 +205,21 @@ function applyVideoProgress(state, videoId, percent, options = {}) {
   enforceVideoProgressLimit(state);
   return !existing || existing.percent !== clamped || timestamp !== existing.updatedAt;
 }
-function cloneVideoProgress(state) {
-  if (!state || typeof state !== "object") {
-    return {};
-  }
-  const sanitized = sanitizeVideoProgressMap(state.videoProgress);
-  return JSON.parse(JSON.stringify(sanitized));
-}
 
 // src/store/state/sanitizers.js
+var SECOND_TS_MIN = 1e9;
+var SECOND_TS_MAX = 1e10;
+function normalizeAutoCollectTimestamp(value) {
+  let ts = Number(value);
+  if (!Number.isFinite(ts) || ts <= 0) {
+    return 0;
+  }
+  ts = Math.trunc(ts);
+  if (ts >= SECOND_TS_MIN && ts < SECOND_TS_MAX) {
+    ts *= 1e3;
+  }
+  return ts;
+}
 function sanitizeAutoCollectSeenIds(raw) {
   const source = Array.isArray(raw) ? raw : [];
   const seen = /* @__PURE__ */ new Set();
@@ -315,9 +306,6 @@ function ensureDefaultList(state) {
   if (!state.currentListId || !state.lists[state.currentListId]) {
     state.currentListId = DEFAULT_LIST_ID;
   }
-  if (!state.lists[state.currentListId]) {
-    state.currentListId = DEFAULT_LIST_ID;
-  }
   return state;
 }
 function sanitizeList(rawList, id) {
@@ -334,7 +322,7 @@ function sanitizeList(rawList, id) {
   const list = {
     id: rawList.id || id,
     name: rawList.name || (id === DEFAULT_LIST_ID ? DEFAULT_LIST_NAME : "\u0421\u043F\u0438\u0441\u043E\u043A"),
-    freeze: id === DEFAULT_LIST_ID ? false : Boolean(rawList.freeze && id !== DEFAULT_LIST_ID),
+    freeze: id === DEFAULT_LIST_ID ? false : Boolean(rawList.freeze),
     queue: Array.isArray(rawList.queue) ? rawList.queue.map((item) => {
       try {
         return sanitizeEntry(item);
@@ -420,15 +408,102 @@ function ensureListExists(state, listId) {
   }
 }
 
-// src/store/state/utils.js
-function deepClone(value) {
-  if (value === null || value === void 0) {
-    return value;
+// src/utils.js
+var YOUTUBE_ID_PATTERN = /[\w-]{11}/;
+var PLAYLIST_ID_PATTERN = /[\w-]{13,64}/;
+var THUMBNAIL_PRIORITY = ["maxres", "standard", "high", "medium", "default"];
+function logMessage(level, context, count, message) {
+  const text = `[${context}] item ${count}: ${message}`;
+  if (level === "warn") {
+    console.warn(text);
+  } else {
+    console.error(text);
   }
-  if (typeof value !== "object") {
+}
+function deepClone(value) {
+  if (value == null) {
     return value;
   }
   return JSON.parse(JSON.stringify(value));
+}
+function parseVideoId(input) {
+  if (!input) return "";
+  const str = String(input).trim();
+  if (/^[\w-]{11}$/.test(str)) return str;
+  try {
+    const baseUrl = typeof globalThis?.location?.href === "string" ? globalThis.location.href : null;
+    const url = baseUrl ? new URL(str, baseUrl) : new URL(str);
+    if (url.hostname.includes("youtu.be")) {
+      const id = url.pathname.split("/").filter(Boolean)[0];
+      if (/^[\w-]{11}$/.test(id)) return id;
+    }
+    const candidate = url.searchParams.get("v");
+    if (candidate && /^[\w-]{11}$/.test(candidate)) return candidate;
+    const segments = url.pathname.split("/");
+    for (const segment of segments) {
+      if (/^[\w-]{11}$/.test(segment)) return segment;
+    }
+  } catch {
+  }
+  const match = str.match(YOUTUBE_ID_PATTERN);
+  return match ? match[0] : "";
+}
+function parsePlaylistId(input) {
+  if (!input) return "";
+  const str = String(input).trim();
+  if (str.length === 11) {
+    return "";
+  }
+  if (/^[\w-]{13,64}$/.test(str)) {
+    return str;
+  }
+  try {
+    const url = new URL(str, "https://www.youtube.com");
+    const listParam = url.searchParams.get("list");
+    if (listParam && listParam.length !== 11 && /^[\w-]{13,64}$/.test(listParam)) {
+      return listParam;
+    }
+    const segments = url.pathname.split("/");
+    for (const segment of segments) {
+      if (segment.length !== 11 && /^[\w-]{13,64}$/.test(segment)) {
+        return segment;
+      }
+    }
+  } catch {
+  }
+  const match = String(input).replace(/content-id-/gi, "").match(PLAYLIST_ID_PATTERN);
+  if (!match) {
+    return "";
+  }
+  const candidate = match[0];
+  return candidate.length === 11 ? "" : candidate;
+}
+function pickThumbnailValue(value) {
+  if (typeof value === "string" && value) {
+    return value;
+  }
+  if (!value || typeof value !== "object") {
+    return "";
+  }
+  return value.url || value.fallback || value.defaultSrc || "";
+}
+function pickThumbnailSet(thumbnails) {
+  if (!thumbnails || typeof thumbnails !== "object") {
+    return "";
+  }
+  for (const key of THUMBNAIL_PRIORITY) {
+    const url = pickThumbnailValue(thumbnails[key]);
+    if (url) {
+      return url;
+    }
+  }
+  return "";
+}
+function resolveThumbnailUrl(entry, fallback = "") {
+  if (!entry || typeof entry !== "object") {
+    return fallback || "";
+  }
+  return pickThumbnailValue(entry.thumbnail) || pickThumbnailSet(entry.thumbnails) || fallback || "";
 }
 
 // src/store/state/serialization.js
@@ -530,6 +605,13 @@ function splitStateForStorage(state) {
 // src/store/state/storage.js
 var hasChromeStorage = typeof chrome !== "undefined" && chrome?.storage?.local;
 var memoryState = null;
+var stateWriteQueue = Promise.resolve();
+function enqueueStateWrite(operation) {
+  const result = stateWriteQueue.then(operation, operation);
+  stateWriteQueue = result.catch(() => {
+  });
+  return result;
+}
 async function loadRawState() {
   if (!hasChromeStorage) {
     const source = memoryState ?? defaultState;
@@ -694,19 +776,23 @@ async function getState() {
   return sanitizeState(raw);
 }
 async function replaceState(newState) {
-  const sanitized = sanitizeState(newState);
-  await persistState(sanitized);
-  return sanitized;
+  return enqueueStateWrite(async () => {
+    const sanitized = sanitizeState(newState);
+    await persistState(sanitized);
+    return sanitized;
+  });
 }
 async function mutateState(mutator) {
-  const current = await getState();
-  const updated = await Promise.resolve(mutator(current));
-  if (!updated || typeof updated !== "object") {
-    throw new TypeError("State mutator must return updated state");
-  }
-  const sanitized = sanitizeState(updated);
-  await persistState(sanitized);
-  return sanitized;
+  return enqueueStateWrite(async () => {
+    const current = await getState();
+    const updated = await Promise.resolve(mutator(current));
+    if (!updated || typeof updated !== "object") {
+      throw new TypeError("State mutator must return updated state");
+    }
+    const sanitized = sanitizeState(updated);
+    await persistState(sanitized);
+    return sanitized;
+  });
 }
 
 // src/store/actions/core.js
@@ -890,23 +976,17 @@ function generateListId() {
 }
 
 // src/store/actions/autoCollect.js
-async function markAutoCollectRunStarted(startTime = Date.now()) {
-  const ts = toTimestamp(startTime);
-  const effective = ts === null ? Date.now() : ts;
-  const state = await withState((state2) => {
-    const meta2 = ensureAutoCollectMeta(state2);
-    meta2.lastRunAt = effective;
-    return state2;
-  });
-  const meta = ensureAutoCollectMeta(state);
-  return cloneAutoCollectMeta(meta);
-}
 async function setAutoCollectStartDate(value) {
   const ts = toTimestamp(value);
   if (ts === null) {
     return getAutoCollectMeta();
   }
-  return markAutoCollectRunStarted(ts);
+  const state = await withState((state2) => {
+    const meta = ensureAutoCollectMeta(state2);
+    meta.lastRunAt = ts;
+    return state2;
+  });
+  return cloneAutoCollectMeta(ensureAutoCollectMeta(state));
 }
 async function shouldAutoRefreshDefault() {
   const state = await getState();
@@ -1256,42 +1336,58 @@ async function reorderQueue(videoId, targetIndex, listId = null) {
     return state;
   });
 }
+function moveVideoInState(state, videoId, targetListId) {
+  ensureListExists(state, targetListId);
+  const located = findVideo(state, videoId);
+  if (!located) return false;
+  const { list, index } = located;
+  if (list.id === targetListId) return false;
+  const [entry] = list.queue.splice(index, 1);
+  adjustIndexAfterRemoval(list, index);
+  bumpListRevision(list);
+  if (list.id === DEFAULT_LIST_ID) {
+    ensureDefaultRefreshFlag(state);
+  } else if (!list.queue.length) {
+    markListEmpty(state, list);
+  }
+  const target = state.lists[targetListId];
+  const existingIdx = target.queue.findIndex((item) => item.id === videoId);
+  if (existingIdx !== -1) {
+    target.queue.splice(existingIdx, 1);
+    adjustIndexAfterRemoval(target, existingIdx);
+    bumpListRevision(target);
+  }
+  if (list.id === DEFAULT_LIST_ID || target.id === DEFAULT_LIST_ID) {
+    rememberAutoCollectSeenIds(state, [entry.id]);
+  }
+  target.queue.push(entry);
+  bumpListRevision(target);
+  if (target.currentIndex === null) {
+    target.currentIndex = 0;
+  }
+  if (target.id === DEFAULT_LIST_ID) {
+    ensureDefaultRefreshFlag(state);
+  }
+  if (state.currentListId === list.id && state.currentVideoId === videoId) {
+    state.currentVideoId = null;
+  }
+  return true;
+}
 async function moveVideoToList(videoId, targetListId) {
   if (!videoId || !targetListId) return getState();
   return withState((state) => {
-    ensureListExists(state, targetListId);
-    const located = findVideo(state, videoId);
-    if (!located) return state;
-    const { list, index } = located;
-    if (list.id === targetListId) return state;
-    const [entry] = list.queue.splice(index, 1);
-    adjustIndexAfterRemoval(list, index);
-    bumpListRevision(list);
-    if (list.id === DEFAULT_LIST_ID) {
-      ensureDefaultRefreshFlag(state);
-    } else if (!list.queue.length) {
-      markListEmpty(state, list);
-    }
-    const target = state.lists[targetListId];
-    const existingIdx = target.queue.findIndex((item) => item.id === videoId);
-    if (existingIdx !== -1) {
-      target.queue.splice(existingIdx, 1);
-      adjustIndexAfterRemoval(target, existingIdx);
-      bumpListRevision(target);
-    }
-    if (list.id === DEFAULT_LIST_ID || target.id === DEFAULT_LIST_ID) {
-      rememberAutoCollectSeenIds(state, [entry.id]);
-    }
-    target.queue.push(entry);
-    bumpListRevision(target);
-    if (target.currentIndex === null) {
-      target.currentIndex = 0;
-    }
-    if (target.id === DEFAULT_LIST_ID) {
-      ensureDefaultRefreshFlag(state);
-    }
-    if (state.currentListId === list.id && state.currentVideoId === videoId) {
-      state.currentVideoId = null;
+    moveVideoInState(state, videoId, targetListId);
+    return state;
+  });
+}
+async function moveVideosToList(videoIds, targetListId) {
+  const ids = Array.isArray(videoIds) ? videoIds : [videoIds];
+  if (!ids.length || !targetListId) return getState();
+  return withState((state) => {
+    for (const videoId of ids) {
+      if (typeof videoId === "string" && videoId) {
+        moveVideoInState(state, videoId, targetListId);
+      }
     }
     return state;
   });
@@ -1612,7 +1708,7 @@ async function getPresentationState() {
     activeListId: state.currentListId,
     currentVideoId: state.currentVideoId,
     currentTabId: state.currentTabId,
-    videoProgress: cloneVideoProgress(state),
+    videoProgress: sanitizeVideoProgressMap(state.videoProgress),
     currentQueue: currentList ? {
       id: currentList.id,
       name: currentList.name,
@@ -1630,69 +1726,6 @@ async function getPresentationState() {
       cooldownMs: AUTO_COLLECT_COOLDOWN_MS
     }
   };
-}
-
-// src/utils.js
-var YOUTUBE_ID_PATTERN = /[\w-]{11}/;
-var PLAYLIST_ID_PATTERN = /[\w-]{13,64}/;
-function logMessage(level, context, count, message) {
-  const text = `[${context}] item ${count}: ${message}`;
-  if (level === "warn") {
-    console.warn(text);
-  } else {
-    console.error(text);
-  }
-}
-function parseVideoId(input) {
-  if (!input) return "";
-  const str = String(input).trim();
-  if (/^[\w-]{11}$/.test(str)) return str;
-  try {
-    const url = new URL(str);
-    if (url.hostname.includes("youtu.be")) {
-      const id = url.pathname.split("/").filter(Boolean)[0];
-      if (/^[\w-]{11}$/.test(id)) return id;
-    }
-    const candidate = url.searchParams.get("v");
-    if (candidate && /^[\w-]{11}$/.test(candidate)) return candidate;
-    const segments = url.pathname.split("/");
-    for (const segment of segments) {
-      if (/^[\w-]{11}$/.test(segment)) return segment;
-    }
-  } catch {
-  }
-  const match = str.match(YOUTUBE_ID_PATTERN);
-  return match ? match[0] : "";
-}
-function parsePlaylistId(input) {
-  if (!input) return "";
-  const str = String(input).trim();
-  if (str.length === 11) {
-    return "";
-  }
-  if (/^[\w-]{13,64}$/.test(str)) {
-    return str;
-  }
-  try {
-    const url = new URL(str, "https://www.youtube.com");
-    const listParam = url.searchParams.get("list");
-    if (listParam && listParam.length !== 11 && /^[\w-]{13,64}$/.test(listParam)) {
-      return listParam;
-    }
-    const segments = url.pathname.split("/");
-    for (const segment of segments) {
-      if (segment.length !== 11 && /^[\w-]{13,64}$/.test(segment)) {
-        return segment;
-      }
-    }
-  } catch {
-  }
-  const match = String(input).replace(/content-id-/gi, "").match(PLAYLIST_ID_PATTERN);
-  if (!match) {
-    return "";
-  }
-  const candidate = match[0];
-  return candidate.length === 11 ? "" : candidate;
 }
 
 // src/auth.js
@@ -1793,7 +1826,7 @@ async function defaultCallApi(path, params = {}, method = "GET", body = null, re
     err.body = text;
     try {
       err.error = JSON.parse(text);
-    } catch (_) {
+    } catch {
       err.error = text;
     }
     throw err;
@@ -1854,12 +1887,8 @@ async function addListToWL(playlistId, list, options = {}) {
     }
   };
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  async function step(count) {
-    if (count === total) {
-      console.log("OK, added: " + count);
-      notifyProgress({ added: count, status: "complete" });
-      return count;
-    }
+  let count = 0;
+  while (count < total) {
     const targetVideo = list[count];
     if (!targetVideo) {
       notifyProgress({ added: count, status: "complete" });
@@ -1870,20 +1899,20 @@ async function addListToWL(playlistId, list, options = {}) {
       console.log(`OK: ${targetVideo.id}, count ${count}/${list.length}`);
       const next = count + 1;
       notifyProgress({ added: next, status: "added", videoId: targetVideo.id });
-      return step(next);
+      count = next;
     } catch (err) {
       const reason = err.error?.errors?.[0]?.reason || "";
       const status = err.status;
       switch (reason) {
         case "videoAlreadyInPlaylist": {
           logMessage("warn", targetVideo.id, count, err.error.message);
-          const next = count + 1;
+          count += 1;
           notifyProgress({
-            added: next,
+            added: count,
             status: "skipped",
             videoId: targetVideo.id
           });
-          return step(next);
+          break;
         }
         case "backendError":
         case "internalError": {
@@ -1901,7 +1930,7 @@ async function addListToWL(playlistId, list, options = {}) {
             delayMs: 60 * 1e3
           });
           await wait(60 * 1e3);
-          return step(count);
+          break;
         }
         case "rateLimitExceeded": {
           logMessage(
@@ -1918,7 +1947,7 @@ async function addListToWL(playlistId, list, options = {}) {
             delayMs: 8 * 60 * 1e3 + 500
           });
           await wait(8 * 60 * 1e3 + 500);
-          return step(count);
+          break;
         }
         case "quotaExceeded": {
           logMessage("error", targetVideo.id, count, "Quota exceeded");
@@ -1945,7 +1974,7 @@ async function addListToWL(playlistId, list, options = {}) {
             delayMs: 60 * 1e3
           });
           await wait(60 * 1e3);
-          return step(count);
+          break;
         }
         default: {
           if (status >= 500) {
@@ -1963,7 +1992,7 @@ async function addListToWL(playlistId, list, options = {}) {
               delayMs: 60 * 1e3
             });
             await wait(60 * 1e3);
-            return step(count);
+            break;
           }
           logMessage(
             "error",
@@ -1982,7 +2011,9 @@ async function addListToWL(playlistId, list, options = {}) {
       }
     }
   }
-  return step(0);
+  console.log("OK, added: " + count);
+  notifyProgress({ added: count, status: "complete" });
+  return count;
 }
 async function createPlayList(title) {
   return callApi("playlists", { part: "snippet,status" }, "POST", {
@@ -2199,10 +2230,6 @@ async function getVideoInfo(idList, nextPage) {
 }
 
 // src/background/collector.js
-function pickThumbnail(thumbnails) {
-  if (!thumbnails) return "";
-  return thumbnails?.medium?.url || thumbnails?.high?.url || thumbnails?.standard?.url || thumbnails?.maxres?.url || thumbnails?.default?.url || "";
-}
 function normalizeLiveStreamingDetails(details) {
   if (!details || typeof details !== "object") {
     return null;
@@ -2226,7 +2253,7 @@ function toQueueEntry(video, overrides = {}) {
     title: video.title || "",
     channelId: video.channelId || "",
     channelTitle: video.channelTitle || "",
-    thumbnail: overrides.thumbnail ?? pickThumbnail(video.thumbnails),
+    thumbnail: overrides.thumbnail ?? resolveThumbnailUrl(video),
     publishedAt: published,
     duration: video.duration || null,
     addedAt: Date.now(),
@@ -2254,9 +2281,7 @@ async function fetchVideoEntries(videoIds) {
     chunk.forEach((id) => {
       const data = map.get(id);
       if (data) {
-        result.push(
-          toQueueEntry(data, { thumbnail: pickThumbnail(data.thumbnails) })
-        );
+        result.push(toQueueEntry(data));
       }
     });
   }
@@ -2836,31 +2861,6 @@ async function collectVideos(startDate = new Date(Date.now() - 6048e5), progress
 // src/background/collectionSync.js
 var defaultAutoCollectRunning = false;
 var defaultAutoCollectPromise = null;
-function resolveThumbnail(entry) {
-  if (!entry || typeof entry !== "object") {
-    return "";
-  }
-  if (typeof entry.thumbnail === "string" && entry.thumbnail) {
-    return entry.thumbnail;
-  }
-  const thumbnails = entry.thumbnails;
-  if (!thumbnails || typeof thumbnails !== "object") {
-    return "";
-  }
-  const candidates = [
-    thumbnails?.maxres?.url,
-    thumbnails?.standard?.url,
-    thumbnails?.high?.url,
-    thumbnails?.medium?.url,
-    thumbnails?.default?.url
-  ];
-  for (const url of candidates) {
-    if (typeof url === "string" && url) {
-      return url;
-    }
-  }
-  return "";
-}
 function addEntryIds(target, entries) {
   if (!(target instanceof Set) || !Array.isArray(entries)) {
     return target;
@@ -2915,7 +2915,7 @@ async function dispatchNotifications() {
 }
 async function resolveCollectionStartDate() {
   const meta = await getAutoCollectMeta();
-  const cursorTs = normalizeAutoCollectTimestamp(meta?.lastRunAt);
+  const cursorTs = meta?.lastRunAt || 0;
   if (cursorTs > 0) {
     const dt = new Date(cursorTs);
     if (!Number.isNaN(dt.getTime())) {
@@ -2951,7 +2951,7 @@ async function collectAndAppendSubscriptions({ origin = "auto" } = {}) {
         continue;
       }
       existingIds.add(entry.id);
-      const thumbnail = resolveThumbnail(entry);
+      const thumbnail = resolveThumbnailUrl(entry);
       uniqueEntries.push({ ...entry, thumbnail });
     }
     sendCollectionProgress({
@@ -3065,9 +3065,7 @@ async function ensureDefaultQueueFilled(options = {}) {
 function normalizeVideoIdList(values) {
   const source = Array.isArray(values) ? values : [];
   return Array.from(
-    new Set(
-      source.map((value) => parseVideoId(value)).filter((id) => typeof id === "string" && id.length === 11)
-    )
+    new Set(source.map((value) => parseVideoId(value)).filter(Boolean))
   );
 }
 function normalizeStringIdList(values) {
@@ -3079,7 +3077,7 @@ function normalizeStringIdList(values) {
   );
 }
 function resolveAddTargetListId(state, requestedListId) {
-  const lists = state && typeof state === "object" && state.lists && typeof state.lists === "object" ? state.lists : {};
+  const lists = state?.lists || {};
   if (requestedListId && lists[requestedListId]) {
     return requestedListId;
   }
@@ -3094,18 +3092,10 @@ function resolveAddTargetListId(state, requestedListId) {
 }
 function countAddedEntriesInQueue(nextState, listId, beforeState) {
   const previousIds = new Set(
-    (beforeState?.lists?.[listId]?.queue || []).map((entry) => entry && typeof entry === "object" ? entry.id : null).filter((id) => typeof id === "string" && id.length > 0)
+    (beforeState?.lists?.[listId]?.queue || []).map((entry) => entry.id)
   );
   const list = nextState?.lists?.[listId];
-  const queue = Array.isArray(list?.queue) ? list.queue : [];
-  let added = 0;
-  for (const entry of queue) {
-    const id = entry && typeof entry === "object" && typeof entry.id === "string" ? entry.id : null;
-    if (id && !previousIds.has(id)) {
-      added += 1;
-    }
-  }
-  return added;
+  return (list?.queue || []).filter((entry) => !previousIds.has(entry.id)).length;
 }
 async function applyMutation(mutator, options = {}) {
   const {
@@ -3139,7 +3129,7 @@ async function addEntries(entries, listId = null, options = {}) {
     ensureDefault
   });
 }
-async function handleAddByIds(message) {
+async function handleAddByIds(message, sender = null) {
   const uniqueIds = normalizeVideoIdList(message?.videoIds);
   if (!uniqueIds.length) {
     const state2 = await getPresentationState();
@@ -3152,14 +3142,17 @@ async function handleAddByIds(message) {
     };
   }
   const beforeState = await getState();
-  const targetListId = resolveAddTargetListId(beforeState, message?.listId || null);
+  const requestedListId = sender?.tab ? null : message?.listId || null;
+  const targetListId = resolveAddTargetListId(beforeState, requestedListId);
   const entries = await fetchVideoEntries(uniqueIds);
   const fetchedIds = new Set(entries.map((entry) => entry?.id).filter(Boolean));
   const missing = uniqueIds.filter((id) => !fetchedIds.has(id)).length;
-  const state = await addEntries(entries, message?.listId || null, {
+  const afterState = await applyMutation(() => addVideos(entries, targetListId), {
+    dispatch: true,
     ensureDefault: Boolean(message?.ensureDefault)
   });
-  const added = countAddedEntriesInQueue(state, targetListId, beforeState);
+  const state = await getPresentationState();
+  const added = countAddedEntriesInQueue(afterState, targetListId, beforeState);
   return {
     state,
     requested: uniqueIds.length,
@@ -3187,11 +3180,7 @@ async function handleMoveVideos(videoIds, targetListId) {
     return getPresentationState();
   }
   return mutateAndPresent(
-    async () => {
-      for (const id of ids) {
-        await moveVideoToList(id, targetListId);
-      }
-    },
+    () => moveVideosToList(ids, targetListId),
     { dispatch: true, ensureDefault: true }
   );
 }
@@ -3360,9 +3349,6 @@ var collectionHandlers = {
     const info = await handleVideoMetadata(message);
     if (info.error) return info;
     return { info };
-  },
-  async getLogs() {
-    return { logs: [] };
   }
 };
 
@@ -3542,23 +3528,6 @@ var optionsHandlers = {
   }
 };
 
-// src/background/tabs.js
-async function ensureTab(tabId) {
-  if (typeof tabId !== "number" || !Number.isInteger(tabId)) return null;
-  try {
-    return await chrome.tabs.get(tabId);
-  } catch {
-    return null;
-  }
-}
-async function resolvePreferredTab(preferredIds = []) {
-  for (const id of preferredIds) {
-    const tab = await ensureTab(id);
-    if (tab) return tab;
-  }
-  return null;
-}
-
 // src/background/playback.js
 function buildWatchUrl(videoId) {
   return `https://www.youtube.com/watch?v=${videoId}`;
@@ -3593,6 +3562,21 @@ function isYouTubeUrl(url) {
 function isSameVideoInTab(tab, videoId) {
   const currentId = parseVideoId(extractTabUrl(tab));
   return Boolean(currentId && currentId === videoId);
+}
+async function ensureTab(tabId) {
+  if (typeof tabId !== "number" || !Number.isInteger(tabId)) return null;
+  try {
+    return await chrome.tabs.get(tabId);
+  } catch {
+    return null;
+  }
+}
+async function resolvePreferredTab(preferredIds = []) {
+  for (const id of preferredIds) {
+    const tab = await ensureTab(id);
+    if (tab) return tab;
+  }
+  return null;
 }
 function findVideoLocation(state, videoId) {
   if (!state || !videoId || !state.lists) {
@@ -3856,6 +3840,13 @@ async function postponeCurrent(options = {}) {
 }
 
 // src/background/handlers/playback.js
+async function rejectInvalidVideo() {
+  return {
+    handled: false,
+    reason: "INVALID_VIDEO",
+    state: await getPresentationState()
+  };
+}
 var playbackHandlers = {
   async "playlist:play"(message, sender) {
     if (!message?.videoId) {
@@ -3876,9 +3867,13 @@ var playbackHandlers = {
     return getPresentationState();
   },
   async "playlist:playNext"(message) {
+    const videoId = parseVideoId(message?.videoId);
+    if (!videoId) {
+      return rejectInvalidVideo();
+    }
     return advanceToNext({
       tabId: message.tabId,
-      videoId: message.videoId
+      videoId
     });
   },
   async "playlist:postpone"(message) {
@@ -3975,6 +3970,10 @@ var playbackHandlers = {
     return { ok: true, changed };
   },
   async "player:videoEnded"(message, sender) {
+    const videoId = parseVideoId(message.videoId);
+    if (!videoId) {
+      return rejectInvalidVideo();
+    }
     const tabId = sender?.tab?.id;
     let state = await getState();
     const hasSenderTabId = typeof tabId === "number" && Number.isInteger(tabId);
@@ -3996,7 +3995,7 @@ var playbackHandlers = {
     }
     return advanceToNext({
       tabId,
-      videoId: parseVideoId(message.videoId)
+      videoId
     });
   },
   async "player:videoUnavailable"(message, sender) {
@@ -4034,10 +4033,14 @@ var playbackHandlers = {
     return { ...response, skipped: true };
   },
   async "player:requestNext"(message, sender) {
+    const videoId = parseVideoId(message.videoId);
+    if (!videoId) {
+      return rejectInvalidVideo();
+    }
     const tabId = sender?.tab?.id;
     return advanceToNext({
       tabId,
-      videoId: parseVideoId(message.videoId)
+      videoId
     });
   },
   async "player:requestPrevious"(message, sender) {
@@ -4098,8 +4101,10 @@ var queueHandlers = {
     if (!message?.listId) return getPresentationState();
     return mutateAndPresent(() => setCurrentList(message.listId));
   },
-  "playlist:addByIds": handleAddByIds,
-  async "playlist:addPlaylist"(message) {
+  async "playlist:addByIds"(message, sender) {
+    return handleAddByIds(message, sender);
+  },
+  async "playlist:addPlaylist"(message, sender) {
     const rawId = message?.playlistId || message?.id || message?.listId || message?.videoId;
     const playlistId = parsePlaylistId(rawId);
     if (!playlistId) {
@@ -4125,7 +4130,7 @@ var queueHandlers = {
           added: 0
         };
       }
-      return handleAddByIds({ ...message, videoIds: ids, playlistId });
+      return handleAddByIds({ ...message, videoIds: ids, playlistId }, sender);
     } catch (err) {
       console.warn("Failed to add playlist", playlistId, err);
       return {

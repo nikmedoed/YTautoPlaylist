@@ -57,13 +57,8 @@ export async function addListToWL(playlistId, list, options = {}) {
   };
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  // Inserts one batch and retries the same batch after transient API failures.
-  async function step(count) {
-    if (count === total) {
-      console.log("OK, added: " + count);
-      notifyProgress({ added: count, status: "complete" });
-      return count;
-    }
+  let count = 0;
+  while (count < total) {
     const targetVideo = list[count];
     if (!targetVideo) {
       notifyProgress({ added: count, status: "complete" });
@@ -74,20 +69,20 @@ export async function addListToWL(playlistId, list, options = {}) {
       console.log(`OK: ${targetVideo.id}, count ${count}/${list.length}`);
       const next = count + 1;
       notifyProgress({ added: next, status: "added", videoId: targetVideo.id });
-      return step(next);
+      count = next;
     } catch (err) {
       const reason = err.error?.errors?.[0]?.reason || "";
       const status = err.status;
       switch (reason) {
         case "videoAlreadyInPlaylist": {
           logMessage("warn", targetVideo.id, count, err.error.message);
-          const next = count + 1;
+          count += 1;
           notifyProgress({
-            added: next,
+            added: count,
             status: "skipped",
             videoId: targetVideo.id,
           });
-          return step(next);
+          break;
         }
         case "backendError":
         case "internalError": {
@@ -105,7 +100,7 @@ export async function addListToWL(playlistId, list, options = {}) {
             delayMs: 60 * 1000,
           });
           await wait(60 * 1000);
-          return step(count);
+          break;
         }
         case "rateLimitExceeded": {
           logMessage(
@@ -122,7 +117,7 @@ export async function addListToWL(playlistId, list, options = {}) {
             delayMs: 8 * 60 * 1000 + 500,
           });
           await wait(8 * 60 * 1000 + 500);
-          return step(count);
+          break;
         }
         case "quotaExceeded": {
           logMessage("error", targetVideo.id, count, "Quota exceeded");
@@ -149,7 +144,7 @@ export async function addListToWL(playlistId, list, options = {}) {
             delayMs: 60 * 1000,
           });
           await wait(60 * 1000);
-          return step(count);
+          break;
         }
         default: {
           if (status >= 500) {
@@ -167,7 +162,7 @@ export async function addListToWL(playlistId, list, options = {}) {
               delayMs: 60 * 1000,
             });
             await wait(60 * 1000);
-            return step(count);
+            break;
           }
           logMessage(
             "error",
@@ -187,7 +182,9 @@ export async function addListToWL(playlistId, list, options = {}) {
     }
   }
 
-  return step(0);
+  console.log("OK, added: " + count);
+  notifyProgress({ added: count, status: "complete" });
+  return count;
 }
 
 export async function createPlayList(title) {
@@ -197,7 +194,7 @@ export async function createPlayList(title) {
   });
 }
 
-export async function addVideoToWL(videoId, playlistId) {
+async function addVideoToWL(videoId, playlistId) {
   return callApi("playlistItems", { part: "snippet" }, "POST", {
     snippet: {
       playlistId,

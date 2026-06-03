@@ -4,9 +4,9 @@ import {
 } from "../core/base.js";
 import {
   refreshInlinePlaylistState,
-  syncInlineButtonState,
   updateInlinePlaylistState,
 } from "../inline-queue/index.js";
+import { syncInlineButtonState } from "../inline-queue/state.js";
 import {
   showPageActionStatus,
 } from "../page-actions/index.js";
@@ -40,9 +40,6 @@ function maybeShowPlaylistSuccessNotification(metrics, durationMs) {
     typeof durationMs !== "number" ||
     durationMs < PLAYLIST_SUCCESS_NOTIFICATION_THRESHOLD
   ) {
-    return;
-  }
-  if (typeof showPageActionStatus !== "function") {
     return;
   }
   const { added, requested, missing } = normalizeAddResponse(metrics);
@@ -85,15 +82,13 @@ export function showPlaylistSuccess(
   maybeShowPlaylistSuccessNotification(metrics, durationMs);
 }
 
-export async function sendInlineAddRequest({ playlistId, videoId, listId }) {
+export async function sendInlineAddRequest({ playlistId, videoId }) {
   const payload = playlistId
     ? {
         playlistId,
-        listId: listId || undefined,
       }
     : {
         videoIds: [videoId],
-        listId: listId || undefined,
       };
   return playlistId
     ? sendMessage("playlist:addPlaylist", payload)

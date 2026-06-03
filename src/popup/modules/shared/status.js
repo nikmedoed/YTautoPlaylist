@@ -63,17 +63,6 @@ export function createStatusController({
   let timeoutHandle = null;
   let hideTimer = null;
 
-  const clearTimers = () => {
-    if (timeoutHandle) {
-      clearTimeout(timeoutHandle);
-      timeoutHandle = null;
-    }
-    if (hideTimer) {
-      clearTimeout(hideTimer);
-      hideTimer = null;
-    }
-  };
-
   const finalizeHide = () => {
     hideTimer = null;
     applyStatusProgress(progressEl, progressBarEl, null);

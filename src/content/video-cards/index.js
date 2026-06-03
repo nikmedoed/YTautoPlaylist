@@ -1,15 +1,7 @@
-// Video-card feature entrypoint. Finds YouTube cards, extracts targets, installs overlays, and refreshes progress state.
-import {
-  CARD_MARK,
-} from "../core/base.js";
-import {
-  syncVideoCardProgress as syncVideoCardProgressImpl,
-} from "./progress.js";
+// Video-card feature entrypoint. Finds YouTube cards, extracts targets, and installs overlays.
 import { createVideoCardOverlayController } from "./overlays.js";
 import { createPreviewOverlayController } from "./previewOverlay.js";
 import { createVideoCardDecorationController } from "./decorations.js";
-
-export { findVideoIdInCard } from "./targets.js";
 
 const playlistSuccessTimers = new WeakMap();
 const inlineOverlayObservers = new WeakMap();
@@ -34,7 +26,3 @@ const decorations = createVideoCardDecorationController({
 
 export const enhanceVideoCards = decorations.enhanceVideoCards;
 export const resetVideoCardDecorations = decorations.resetVideoCardDecorations;
-
-export function syncVideoCardProgress(root = document) {
-  syncVideoCardProgressImpl(root, CARD_MARK);
-}

@@ -2,7 +2,7 @@
 import { getFilters, saveFilters } from "../../filter.js";
 import { parseTime } from "../shared/format.js";
 
-export function collectFiltersFromSections(documentRef = document) {
+function collectFiltersFromSections(documentRef = document) {
   const sections = documentRef.querySelectorAll(".filter-card:not(.add-card)");
   const result = { global: {}, channels: {} };
   sections.forEach((sec) => {
@@ -98,7 +98,7 @@ export function bindFilterPersistence({
       try {
         const obj = JSON.parse(reader.result);
         saveFilters(obj).then(() => window.location.reload());
-      } catch (e) {
+      } catch {
         alert("Invalid JSON");
       }
     };

@@ -3,10 +3,10 @@ import {
   canHandlePlaybackActions,
   getCurrentVideoId,
   inlinePlaylistState,
-  parseVideoId,
   sendMessage,
   state,
 } from "../core/base.js";
+import { parseVideoId } from "../../utils.js";
 import {
   updateInlinePlaylistState,
   updateInlineQueueUI,
@@ -39,11 +39,9 @@ import {
   markPlaybackStarted,
   maybeFinalizeVideoEndedBeforeNavigation as maybeFinalizeVideoEndedBeforeNavigationBase,
   maybeSendVideoProgress,
-  resetPlaybackWatchdog,
   resetProgressTracker,
   resetVideoEndFallbackMatch,
   resetVideoEndState,
-  stopPlaybackWatchdog,
 } from "./progressWatchdog.js";
 import {
   clearQueueEndAnnouncement,
@@ -52,12 +50,6 @@ import {
   maybeShowQueueEndAnnouncement,
   queueQueueEndAnnouncement,
 } from "./queueEnd.js";
-
-export { hidePlaybackNotification } from "./notification.js";
-export {
-  handleCollectionProgressEvent,
-} from "../collection/progressNotification.js";
-export { resetPlaybackWatchdog, stopPlaybackWatchdog };
 
 const playerErrorContext = {
   handlePlaybackAdvanceResponse,
@@ -77,49 +69,36 @@ const playerControlsViewContext = {
   requestStartPlayback,
 };
 
-function detectUnavailableWatchState() {
-  return detectUnavailableWatchStateBase(playerErrorContext);
-}
-
 function handleVideoUnavailable(details = {}) {
   return handleVideoUnavailableBase(details, playerErrorContext);
 }
 
-function ensurePlayerErrorMonitoring() {
-  return ensurePlayerErrorMonitoringBase(playerErrorContext);
-}
+const playbackProgressContext = {
+  handleVideoEnded,
+  hasRecentUserAction,
+};
+
+const playbackWatchdogContext = {
+  ...playbackProgressContext,
+  detectUnavailableWatchState: () =>
+    detectUnavailableWatchStateBase(playerErrorContext),
+  handleVideoUnavailable,
+};
 
 export function ensurePlaybackWatchdog() {
-  ensurePlaybackWatchdogBase({
-    detectUnavailableWatchState,
-    handleVideoEnded,
-    handleVideoUnavailable,
-    hasRecentUserAction,
-  });
+  ensurePlaybackWatchdogBase(playbackWatchdogContext);
 }
 
 export function maybeFinalizeVideoEndedBeforeNavigation() {
-  maybeFinalizeVideoEndedBeforeNavigationBase({
-    handleVideoEnded,
-    hasRecentUserAction,
-  });
+  maybeFinalizeVideoEndedBeforeNavigationBase(playbackProgressContext);
 }
 
 function handleVideoProgressUpdate() {
-  handleVideoProgressUpdateBase({
-    handleVideoEnded,
-    hasRecentUserAction,
-  });
+  handleVideoProgressUpdateBase(playbackProgressContext);
 }
 
 function handleVideoSeeked() {
-  handleVideoProgressUpdateBase(
-    {
-      handleVideoEnded,
-      hasRecentUserAction,
-    },
-    { source: "seeked" }
-  );
+  handleVideoProgressUpdateBase(playbackProgressContext, { source: "seeked" });
 }
 
 function handlePlaybackAdvanceResponse(response, context = {}) {
@@ -317,7 +296,7 @@ function attachVideoListeners(video) {
 }
 
 export function scanForVideo() {
-  ensurePlayerErrorMonitoring();
+  ensurePlayerErrorMonitoringBase(playerErrorContext);
   const video = document.querySelector("video");
   if (video) {
     attachVideoListeners(video);
@@ -325,7 +304,7 @@ export function scanForVideo() {
     ensurePlaybackWatchdog();
     return true;
   }
-  detectUnavailableWatchState();
+  detectUnavailableWatchStateBase(playerErrorContext);
   ensurePlaybackWatchdog();
   return false;
 }

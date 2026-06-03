@@ -125,7 +125,7 @@ export function createHistoryController({
         ? "Восстановить в список"
         : "Вернуть в очередь";
 
-      const { element } = createVideoItem(entry, {
+      const element = createVideoItem(entry, {
         tag: "li",
         classes: ["video-item--static"],
         dataset,

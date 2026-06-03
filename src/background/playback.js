@@ -9,7 +9,6 @@ import {
   setCurrentVideo,
 } from "../store/index.js";
 import { parseVideoId } from "../utils.js";
-import { resolvePreferredTab } from "./tabs.js";
 import { notifyState } from "./channel.js";
 import { dispatchNotifications, ensureDefaultQueueFilled } from "./collectionSync.js";
 
@@ -51,6 +50,23 @@ function isSameVideoInTab(tab, videoId) {
   return Boolean(currentId && currentId === videoId);
 }
 
+async function ensureTab(tabId) {
+  if (typeof tabId !== "number" || !Number.isInteger(tabId)) return null;
+  try {
+    return await chrome.tabs.get(tabId);
+  } catch {
+    return null;
+  }
+}
+
+async function resolvePreferredTab(preferredIds = []) {
+  for (const id of preferredIds) {
+    const tab = await ensureTab(id);
+    if (tab) return tab;
+  }
+  return null;
+}
+
 function findVideoLocation(state, videoId) {
   if (!state || !videoId || !state.lists) {
     return null;
@@ -65,6 +81,8 @@ function findVideoLocation(state, videoId) {
   return null;
 }
 
+// Opens or reuses a YouTube tab, records playback ownership, and avoids
+// navigating when the chosen tab is already on the requested video.
 async function openVideo(videoId, options = {}) {
   const stateHint = options.stateHint || null;
   const forceNewTab = Boolean(options.forceNewTab);

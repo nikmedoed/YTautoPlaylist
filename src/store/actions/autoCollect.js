@@ -14,24 +14,17 @@ import {
   withState,
 } from "./core.js";
 
-export async function markAutoCollectRunStarted(startTime = Date.now()) {
-  const ts = toTimestamp(startTime);
-  const effective = ts === null ? Date.now() : ts;
-  const state = await withState((state) => {
-    const meta = ensureAutoCollectMeta(state);
-    meta.lastRunAt = effective;
-    return state;
-  });
-  const meta = ensureAutoCollectMeta(state);
-  return cloneAutoCollectMeta(meta);
-}
-
 export async function setAutoCollectStartDate(value) {
   const ts = toTimestamp(value);
   if (ts === null) {
     return getAutoCollectMeta();
   }
-  return markAutoCollectRunStarted(ts);
+  const state = await withState((state) => {
+    const meta = ensureAutoCollectMeta(state);
+    meta.lastRunAt = ts;
+    return state;
+  });
+  return cloneAutoCollectMeta(ensureAutoCollectMeta(state));
 }
 
 export async function shouldAutoRefreshDefault() {

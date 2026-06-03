@@ -46,7 +46,7 @@ export function sanitizeVideoProgressMap(raw) {
   return map;
 }
 
-export function ensureVideoProgress(state) {
+function ensureVideoProgress(state) {
   if (!state || typeof state !== "object") {
     throw new TypeError("State is required to ensure video progress");
   }
@@ -160,12 +160,4 @@ export function applyVideoProgress(state, videoId, percent, options = {}) {
   progressMap[videoId] = { percent: clamped, updatedAt: timestamp };
   enforceVideoProgressLimit(state);
   return !existing || existing.percent !== clamped || timestamp !== existing.updatedAt;
-}
-
-export function cloneVideoProgress(state) {
-  if (!state || typeof state !== "object") {
-    return {};
-  }
-  const sanitized = sanitizeVideoProgressMap(state.videoProgress);
-  return JSON.parse(JSON.stringify(sanitized));
 }

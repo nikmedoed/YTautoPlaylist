@@ -325,7 +325,7 @@ export function createDragReorderController({
 
     try {
       handle.setPointerCapture?.(event.pointerId);
-    } catch (_) {}
+    } catch {}
 
     updateDropIndicatorAt(event.clientY);
     doc.addEventListener("pointermove", manualMove, { capture: true });
@@ -355,7 +355,7 @@ export function createDragReorderController({
   function endManualDrag() {
     try {
       state.manualHandleEl?.releasePointerCapture?.(state.manualPointerId);
-    } catch (_) {}
+    } catch {}
     doc.removeEventListener("pointermove", manualMove, { capture: true });
     doc.removeEventListener("pointerup", manualUp, { capture: true });
     if (state.manualHandleEl) state.manualHandleEl.draggable = true;

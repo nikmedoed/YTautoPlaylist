@@ -60,7 +60,7 @@ function readPlayerResponseCandidates() {
         if (parsed && typeof parsed === "object") {
           candidates.push(parsed);
         }
-      } catch (_) {
+      } catch {
         /* ignore malformed player_response */
       }
     }
@@ -100,6 +100,8 @@ function isElementVisible(element) {
   return rect.width > 0 && rect.height > 0;
 }
 
+// Detects YouTube watch pages that cannot play the current video and tells the
+// background queue to skip only when that unavailable video is still active.
 export function detectUnavailableWatchState(context = {}) {
   const run = () => {
     if (determinePageContext() !== "watch") {
@@ -172,10 +174,7 @@ export function detectUnavailableWatchState(context = {}) {
     }
     return false;
   };
-  if (typeof ytaDiagMeasure === "function") {
-    return ytaDiagMeasure("player.detectUnavailableWatchState", run);
-  }
-  return run();
+  return ytaDiagMeasure("player.detectUnavailableWatchState", run);
 }
 
 export function handleVideoUnavailable(details = {}, context = {}) {
@@ -214,7 +213,7 @@ function teardownPlayerErrorObserver() {
   if (playerErrorObserverState.observer) {
     try {
       playerErrorObserverState.observer.disconnect();
-    } catch (_) {
+    } catch {
       /* ignore */
     }
   }

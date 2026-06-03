@@ -5,7 +5,8 @@ function parseVideoId(input) {
   const str = String(input).trim();
   if (/^[\w-]{11}$/.test(str)) return str;
   try {
-    const url = new URL(str);
+    const baseUrl = typeof globalThis?.location?.href === "string" ? globalThis.location.href : null;
+    const url = baseUrl ? new URL(str, baseUrl) : new URL(str);
     if (url.hostname.includes("youtu.be")) {
       const id = url.pathname.split("/").filter(Boolean)[0];
       if (/^[\w-]{11}$/.test(id)) return id;
@@ -150,7 +151,7 @@ async function defaultCallApi(path, params = {}, method = "GET", body = null, re
     err.body = text;
     try {
       err.error = JSON.parse(text);
-    } catch (_) {
+    } catch {
       err.error = text;
     }
     throw err;
@@ -323,37 +324,29 @@ function isShortVideo(info) {
 }
 
 // src/settings/shared/runtime.js
-function getSubscriptionsMeta() {
+function sendRuntimeMessage(message) {
   return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ type: "subscriptions:getMeta" }, (res) => {
-      resolve(res?.meta || {});
-    });
+    chrome.runtime.sendMessage(message, resolve);
   });
+}
+function getSubscriptionsMeta() {
+  return sendRuntimeMessage({ type: "subscriptions:getMeta" }).then(
+    (res) => res?.meta || {}
+  );
 }
 function setStartDate(date) {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage(
-      { type: "setStartDate", date: date.toISOString() },
-      (res) => {
-        resolve(Boolean(res?.ok));
-      }
-    );
-  });
+  return sendRuntimeMessage({
+    type: "setStartDate",
+    date: date.toISOString()
+  }).then((res) => Boolean(res?.ok));
 }
 function getVideoDate(videoId) {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage(
-      { type: "videoDate", videoId },
-      (response) => {
-        resolve(response?.date || null);
-      }
-    );
-  });
+  return sendRuntimeMessage({ type: "videoDate", videoId }).then(
+    (response) => response?.date || null
+  );
 }
 function getVideoInfo2(videoId) {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ type: "videoInfo", videoId }, resolve);
-  });
+  return sendRuntimeMessage({ type: "videoInfo", videoId });
 }
 
 // src/settings/shared/saveUi.js
@@ -1148,7 +1141,7 @@ function bindFilterPersistence({
       try {
         const obj = JSON.parse(reader.result);
         saveFilters(obj).then(() => window.location.reload());
-      } catch (e) {
+      } catch {
         alert("Invalid JSON");
       }
     };
@@ -1935,7 +1928,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   saveBtn?.addEventListener("click", () => {
     const val = startInput.value;
     const dt = new Date(val);
-    if (String(dt) !== "Invalid Date") {
+    if (!Number.isNaN(dt.getTime())) {
       setStartDate(dt).then((ok) => {
         if (ok) {
           startInput.value = toLocalInputValue(dt);

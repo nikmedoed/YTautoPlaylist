@@ -11,21 +11,14 @@ export function clampProgressPercent(value) {
   return percent >= 100 ? 100 : percent;
 }
 
-export function normalizeProgressPercent(entry) {
-  const percent = clampProgressPercent(entry?.percent);
+// Reads a progress entry from the persisted plain-object progress map.
+export function getProgressPercent(progressById, videoId) {
+  if (!videoId || !progressById) {
+    return null;
+  }
+  if (typeof progressById !== "object") {
+    return null;
+  }
+  const percent = clampProgressPercent(progressById[videoId]?.percent);
   return percent && percent > 0 ? percent : null;
-}
-
-export function resolveProgressPercentFromMap(progressMap, videoId) {
-  if (!videoId || !(progressMap instanceof Map)) {
-    return null;
-  }
-  return normalizeProgressPercent(progressMap.get(videoId));
-}
-
-export function resolveProgressPercentFromObject(progressById, videoId) {
-  if (!videoId || !progressById || typeof progressById !== "object") {
-    return null;
-  }
-  return normalizeProgressPercent(progressById[videoId]);
 }

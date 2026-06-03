@@ -72,7 +72,7 @@ function isContinuationSpinnerActive(spinner) {
       return false;
     }
     return Number.parseFloat(style.opacity || "1") > 0.01;
-  } catch (_) {
+  } catch {
     return true;
   }
 }
@@ -188,7 +188,7 @@ export async function collectPageVideosWithContinuation(options = {}) {
           behavior: "smooth",
           block: scrollIndex < cards.length - 1 ? "center" : "end",
         });
-      } catch (_) {
+      } catch {
         target.scrollIntoView();
       }
     }
@@ -198,7 +198,7 @@ export async function collectPageVideosWithContinuation(options = {}) {
         top: document.documentElement.scrollHeight,
         behavior: "smooth",
       });
-    } catch (_) {
+    } catch {
       window.scrollTo(0, document.documentElement.scrollHeight);
     }
     const loadTriggered = attemptLoadMoreContinuations();
@@ -226,7 +226,7 @@ export async function collectPageVideosWithContinuation(options = {}) {
 
   try {
     window.scrollTo({ top: initialScroll || 0 });
-  } catch (_) {
+  } catch {
     window.scrollTo(0, initialScroll || 0);
   }
   return {

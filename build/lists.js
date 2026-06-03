@@ -444,7 +444,7 @@ function createDragReorderController({
     }
     try {
       handle.setPointerCapture?.(event.pointerId);
-    } catch (_) {
+    } catch {
     }
     updateDropIndicatorAt(event.clientY);
     doc.addEventListener("pointermove", manualMove, { capture: true });
@@ -471,7 +471,7 @@ function createDragReorderController({
   function endManualDrag() {
     try {
       state.manualHandleEl?.releasePointerCapture?.(state.manualPointerId);
-    } catch (_) {
+    } catch {
     }
     doc.removeEventListener("pointermove", manualMove, { capture: true });
     doc.removeEventListener("pointerup", manualUp, { capture: true });
@@ -556,16 +556,6 @@ function createStatusController({
   }
   let timeoutHandle = null;
   let hideTimer = null;
-  const clearTimers = () => {
-    if (timeoutHandle) {
-      clearTimeout(timeoutHandle);
-      timeoutHandle = null;
-    }
-    if (hideTimer) {
-      clearTimeout(hideTimer);
-      hideTimer = null;
-    }
-  };
   const finalizeHide = () => {
     hideTimer = null;
     applyStatusProgress(progressEl, progressBarEl, null);
@@ -573,7 +563,7 @@ function createStatusController({
     statusBox.removeAttribute("data-kind");
     statusText.textContent = "";
   };
-  const hideStatus2 = (immediate = false) => {
+  const hideStatus = (immediate = false) => {
     clearTimeout(hideTimer);
     statusBox.dataset.visible = "0";
     if (immediate) {
@@ -588,7 +578,7 @@ function createStatusController({
   };
   const setStatus2 = (text, kind = "info", timeout = DEFAULT_TIMEOUT, options = {}) => {
     if (!text) {
-      hideStatus2(true);
+      hideStatus(true);
       return;
     }
     clearTimeout(hideTimer);
@@ -603,7 +593,7 @@ function createStatusController({
     }
     if (timeout && timeout > 0) {
       timeoutHandle = window.setTimeout(() => {
-        hideStatus2();
+        hideStatus();
       }, timeout);
     } else {
       timeoutHandle = null;
@@ -614,9 +604,9 @@ function createStatusController({
     progressEl.hidden = true;
   }
   statusBox.addEventListener("click", () => {
-    hideStatus2(true);
+    hideStatus(true);
   });
-  return { setStatus: setStatus2, hideStatus: hideStatus2 };
+  return { setStatus: setStatus2, hideStatus };
 }
 
 // src/popup/modules/manager/selection.js
@@ -739,12 +729,14 @@ function createSelectionController({
 
 // src/utils.js
 var YOUTUBE_ID_PATTERN = /[\w-]{11}/;
+var THUMBNAIL_PRIORITY = ["maxres", "standard", "high", "medium", "default"];
 function parseVideoId(input) {
   if (!input) return "";
   const str = String(input).trim();
   if (/^[\w-]{11}$/.test(str)) return str;
   try {
-    const url = new URL(str);
+    const baseUrl = typeof globalThis?.location?.href === "string" ? globalThis.location.href : null;
+    const url = baseUrl ? new URL(str, baseUrl) : new URL(str);
     if (url.hostname.includes("youtu.be")) {
       const id = url.pathname.split("/").filter(Boolean)[0];
       if (/^[\w-]{11}$/.test(id)) return id;
@@ -759,6 +751,33 @@ function parseVideoId(input) {
   }
   const match = str.match(YOUTUBE_ID_PATTERN);
   return match ? match[0] : "";
+}
+function pickThumbnailValue(value) {
+  if (typeof value === "string" && value) {
+    return value;
+  }
+  if (!value || typeof value !== "object") {
+    return "";
+  }
+  return value.url || value.fallback || value.defaultSrc || "";
+}
+function pickThumbnailSet(thumbnails) {
+  if (!thumbnails || typeof thumbnails !== "object") {
+    return "";
+  }
+  for (const key of THUMBNAIL_PRIORITY) {
+    const url = pickThumbnailValue(thumbnails[key]);
+    if (url) {
+      return url;
+    }
+  }
+  return "";
+}
+function resolveThumbnailUrl(entry, fallback = "") {
+  if (!entry || typeof entry !== "object") {
+    return fallback || "";
+  }
+  return pickThumbnailValue(entry.thumbnail) || pickThumbnailSet(entry.thumbnails) || fallback || "";
 }
 
 // src/popup/modules/manager/runtime.js
@@ -1494,6 +1513,16 @@ function registerManagerBulkActions({
   updateRemoveWatchedButton: updateRemoveWatchedButton2
 }) {
   const { bulkDeleteBtn, bulkMoveBtn, clearListBtn, removeWatchedBtn } = buttons;
+  async function removeFromSelectedList(videoIds) {
+    const selectedListDetails2 = getSelectedListDetails();
+    if (!selectedListDetails2?.id || !videoIds.length) return false;
+    await sendMessage3("playlist:remove", {
+      listId: selectedListDetails2.id,
+      videoIds
+    });
+    await loadState();
+    return true;
+  }
   if (removeWatchedBtn) {
     removeWatchedBtn.addEventListener("click", async () => {
       const selectedListDetails2 = getSelectedListDetails();
@@ -1514,11 +1543,7 @@ function registerManagerBulkActions({
       }
       removeWatchedBtn.disabled = true;
       try {
-        await sendMessage3("playlist:remove", {
-          listId: selectedListDetails2.id,
-          videoIds
-        });
-        await loadState();
+        await removeFromSelectedList(videoIds);
         setStatus2(
           count === 1 ? "\u041F\u0440\u043E\u0441\u043C\u043E\u0442\u0440\u0435\u043D\u043D\u043E\u0435 \u0432\u0438\u0434\u0435\u043E \u0443\u0434\u0430\u043B\u0435\u043D\u043E" : `\u0423\u0434\u0430\u043B\u0435\u043D\u043E ${count} \u043F\u0440\u043E\u0441\u043C\u043E\u0442\u0440\u0435\u043D\u043D\u044B\u0445 \u0432\u0438\u0434\u0435\u043E`,
           "success",
@@ -1547,11 +1572,7 @@ function registerManagerBulkActions({
       if (videoIds.length === 0) return;
       const count = videoIds.length;
       try {
-        await sendMessage3("playlist:remove", {
-          listId: selectedListDetails2.id,
-          videoIds
-        });
-        await loadState();
+        await removeFromSelectedList(videoIds);
         clearSelection2();
         setStatus2(count > 1 ? `\u0423\u0434\u0430\u043B\u0435\u043D\u043E ${count} \u0432\u0438\u0434\u0435\u043E` : "\u0412\u0438\u0434\u0435\u043E \u0443\u0434\u0430\u043B\u0435\u043D\u043E", "success", 2500);
       } catch (err) {
@@ -1571,11 +1592,7 @@ function registerManagerBulkActions({
       if (!videoIds.length) return;
       clearListBtn.disabled = true;
       try {
-        await sendMessage3("playlist:remove", {
-          listId: selectedListDetails2.id,
-          videoIds
-        });
-        await loadState();
+        await removeFromSelectedList(videoIds);
         clearSelection2();
         setStatus2("\u0421\u043F\u0438\u0441\u043E\u043A \u043E\u0447\u0438\u0449\u0435\u043D", "success", 2500);
       } catch (err) {
@@ -1601,25 +1618,33 @@ function clampProgressPercent(value) {
   if (percent <= 0) return 0;
   return percent >= 100 ? 100 : percent;
 }
-function normalizeProgressPercent(entry) {
-  const percent = clampProgressPercent(entry?.percent);
-  return percent && percent > 0 ? percent : null;
-}
-function resolveProgressPercentFromObject(progressById, videoId) {
-  if (!videoId || !progressById || typeof progressById !== "object") {
+function getProgressPercent(progressById, videoId) {
+  if (!videoId || !progressById) {
     return null;
   }
-  return normalizeProgressPercent(progressById[videoId]);
+  if (typeof progressById !== "object") {
+    return null;
+  }
+  const percent = clampProgressPercent(progressById[videoId]?.percent);
+  return percent && percent > 0 ? percent : null;
 }
 
 // src/popup/modules/manager/detailHelpers.js
+function getLength(list, fallback = 0) {
+  return Number.isFinite(list?.length) ? Number(list.length) : fallback;
+}
+function haveSameListMeta(previous, next, previousLength, nextLength) {
+  const previousRevision = Number.isFinite(previous?.revision) ? Number(previous.revision) : 0;
+  const nextRevision = Number.isFinite(next?.revision) ? Number(next.revision) : 0;
+  return Boolean(previous && next) && previous?.id === next?.id && (previous?.name || "") === (next?.name || "") && Boolean(previous?.freeze) === Boolean(next?.freeze) && previousRevision === nextRevision && previousLength === nextLength;
+}
 function getWatchedVideoIds(details, videoProgress) {
   const queue = Array.isArray(details?.queue) ? details.queue : [];
   const watchedIds = [];
   for (const video of queue) {
     const id = typeof video?.id === "string" ? video.id : "";
     if (!id) continue;
-    const progress = resolveProgressPercentFromObject(videoProgress, id);
+    const progress = getProgressPercent(videoProgress, id);
     if (typeof progress === "number" && progress > 95) {
       watchedIds.push(id);
     }
@@ -1653,23 +1678,7 @@ function haveListMetaChanged(previous, next) {
   for (let index = 0; index < curr.length; index += 1) {
     const a = prev[index];
     const b = curr[index];
-    if (!a || !b || a.id !== b.id) {
-      return true;
-    }
-    if ((a.name || "") !== (b.name || "")) {
-      return true;
-    }
-    if (Boolean(a.freeze) !== Boolean(b.freeze)) {
-      return true;
-    }
-    const aRevision = Number.isFinite(a.revision) ? Number(a.revision) : 0;
-    const bRevision = Number.isFinite(b.revision) ? Number(b.revision) : 0;
-    if (aRevision !== bRevision) {
-      return true;
-    }
-    const aLength = Number.isFinite(a.length) ? Number(a.length) : 0;
-    const bLength = Number.isFinite(b.length) ? Number(b.length) : 0;
-    if (aLength !== bLength) {
+    if (!haveSameListMeta(a, b, getLength(a), getLength(b))) {
       return true;
     }
   }
@@ -1686,20 +1695,13 @@ function shouldReloadSelectedDetails(state, selectedListId2, selectedDetails) {
   if (!selectedDetails || selectedDetails.id !== selectedListId2) {
     return true;
   }
-  if ((selectedDetails.name || "") !== (meta.name || "")) {
-    return true;
-  }
-  if (Boolean(selectedDetails.freeze) !== Boolean(meta.freeze)) {
-    return true;
-  }
-  const currentRevision = Number.isFinite(selectedDetails.revision) ? Number(selectedDetails.revision) : 0;
-  const metaRevision = Number.isFinite(meta.revision) ? Number(meta.revision) : 0;
-  if (currentRevision !== metaRevision) {
-    return true;
-  }
-  const currentLength = Array.isArray(selectedDetails.queue) ? selectedDetails.queue.length : 0;
-  const metaLength = Number.isFinite(meta.length) ? Number(meta.length) : 0;
-  return currentLength !== metaLength;
+  const detailLength = Array.isArray(selectedDetails.queue) ? selectedDetails.queue.length : 0;
+  return !haveSameListMeta(
+    selectedDetails,
+    meta,
+    detailLength,
+    getLength(meta)
+  );
 }
 
 // src/time.js
@@ -1876,52 +1878,32 @@ function createHandle(doc, options = {}) {
   }
   return button;
 }
-function createDetailNode(doc, part) {
-  if (!part) return null;
-  if (part instanceof Node) return part;
-  if (typeof part === "string") {
-    const span = doc.createElement("span");
-    span.textContent = part;
-    return span;
-  }
-  if (part.node instanceof Node) {
-    return part.node;
-  }
-  if (typeof part === "object" && part !== null) {
-    const text = typeof part.text === "string" ? part.text : "";
-    if (!text && !part.icon) {
-      return null;
-    }
-    const span = doc.createElement("span");
-    if (part.className) span.classList.add(part.className);
-    if (part.title) span.title = part.title;
-    if (part.icon) {
-      const iconSpan = doc.createElement("span");
-      iconSpan.className = part.iconClassName || "video-detail__icon";
-      iconSpan.textContent = part.icon;
-      iconSpan.setAttribute("aria-hidden", "true");
-      span.appendChild(iconSpan);
-    }
-    if (text) {
-      if (part.icon) {
-        const textSpan = doc.createElement("span");
-        textSpan.className = part.textClassName || "video-detail__text";
-        textSpan.textContent = text;
-        span.appendChild(textSpan);
-      } else {
-        span.textContent = text;
-      }
-    }
-    return span;
-  }
-  return null;
-}
 function createDetails(doc, parts, className = "video-details") {
   const details = doc.createElement("div");
   details.className = className;
   for (const part of parts || []) {
-    const node = createDetailNode(doc, part);
-    if (!node) continue;
+    const text = typeof part?.text === "string" ? part.text : "";
+    if (!text && !part?.icon) continue;
+    const node = doc.createElement("span");
+    if (part.className) node.className = part.className;
+    if (part.title) node.title = part.title;
+    if (part.icon) {
+      const icon = doc.createElement("span");
+      icon.className = part.iconClassName || "video-detail__icon";
+      icon.textContent = part.icon;
+      icon.setAttribute("aria-hidden", "true");
+      node.appendChild(icon);
+    }
+    if (text) {
+      if (part.icon) {
+        const textNode = doc.createElement("span");
+        textNode.className = part.textClassName || "video-detail__text";
+        textNode.textContent = text;
+        node.appendChild(textNode);
+      } else {
+        node.textContent = text;
+      }
+    }
     const skipSeparator = typeof part === "object" && part !== null && part.noSeparator;
     if (details.childNodes.length && !skipSeparator) {
       const separator = doc.createElement("span");
@@ -1936,15 +1918,8 @@ function createDetails(doc, parts, className = "video-details") {
 }
 function createActionButton(doc, descriptor) {
   if (!descriptor) return null;
-  if (typeof descriptor.element === "function") {
-    const node = descriptor.element(doc);
-    return node instanceof Node ? node : null;
-  }
-  const tag = descriptor.tag || "button";
-  const element = doc.createElement(tag);
-  if (tag === "button") {
-    element.type = descriptor.type || "button";
-  }
+  const element = doc.createElement("button");
+  element.type = "button";
   if (descriptor.className) {
     element.className = descriptor.className;
   }
@@ -1955,20 +1930,12 @@ function createActionButton(doc, descriptor) {
     element.title = descriptor.title;
   }
   applyDataset(element, descriptor.dataset);
-  applyAttributes(element, descriptor.attrs);
   if (typeof descriptor.ariaLabel === "string") {
     element.setAttribute("aria-label", descriptor.ariaLabel);
+  } else if (descriptor.title) {
+    element.setAttribute("aria-label", descriptor.title);
   }
   return element;
-}
-function resolveThumbnail(entry, fallback) {
-  if (entry && typeof entry.thumbnail === "string" && entry.thumbnail) {
-    return entry.thumbnail;
-  }
-  if (entry?.thumbnail?.url) {
-    return entry.thumbnail.url;
-  }
-  return fallback || "";
 }
 function resolveThumbnailDuration(video, thumbnailOptions = {}) {
   if (!thumbnailOptions || thumbnailOptions.showDuration === false) {
@@ -1977,19 +1944,10 @@ function resolveThumbnailDuration(video, thumbnailOptions = {}) {
   if (typeof thumbnailOptions.duration === "string") {
     return thumbnailOptions.duration.trim();
   }
-  let rawDuration = null;
-  if (typeof thumbnailOptions.durationExtractor === "function") {
-    rawDuration = thumbnailOptions.durationExtractor(video, thumbnailOptions);
-  } else if (thumbnailOptions.durationKey && typeof thumbnailOptions.durationKey === "string") {
-    rawDuration = video?.[thumbnailOptions.durationKey];
-  } else {
-    rawDuration = video?.duration;
-  }
-  if (rawDuration == null || rawDuration === "") {
+  if (video?.duration == null || video.duration === "") {
     return "";
   }
-  const formatter = typeof thumbnailOptions.formatDuration === "function" ? thumbnailOptions.formatDuration : formatDuration;
-  const formatted = formatter(rawDuration);
+  const formatted = formatDuration(video.duration);
   return typeof formatted === "string" ? formatted.trim() : "";
 }
 function createVideoItem(video, options = {}) {
@@ -1998,7 +1956,6 @@ function createVideoItem(video, options = {}) {
     tag = "li",
     classes = [],
     dataset,
-    attrs,
     draggable = false,
     handle,
     thumbnail = {},
@@ -2008,7 +1965,6 @@ function createVideoItem(video, options = {}) {
     detailsClass = "video-details",
     details = [],
     actions = [],
-    sanitize = sanitizeText,
     progress: progressOption = null,
     progressClassName = "video-thumb__progress",
     progressBarClassName = "video-thumb__progress-bar"
@@ -2024,7 +1980,6 @@ function createVideoItem(video, options = {}) {
     element.draggable = true;
   }
   applyDataset(element, dataset);
-  applyAttributes(element, attrs);
   let handleElement = null;
   if (handle) {
     handleElement = createHandle(doc, handle);
@@ -2033,13 +1988,12 @@ function createVideoItem(video, options = {}) {
   if (!handleElement) {
     element.classList.add("video-item--no-handle");
   }
-  let thumbnailElement = null;
   if (thumbnail !== false) {
     const thumbWrapper = doc.createElement("div");
     thumbWrapper.className = thumbnail.wrapperClassName || "video-thumb-wrapper";
     const thumb = doc.createElement("img");
     thumb.className = thumbnail.className || "video-thumb";
-    thumb.src = thumbnail.src || resolveThumbnail(video, thumbnail.fallback || thumbnail.defaultSrc);
+    thumb.src = thumbnail.src || resolveThumbnailUrl(video, thumbnail.fallback || thumbnail.defaultSrc);
     const titleText = typeof titleOptions.text === "string" ? titleOptions.text : video?.title;
     thumb.alt = thumbnail.alt || (titleText ? sanitizeText(titleText) : DEFAULT_ALT) || DEFAULT_ALT;
     thumb.loading = thumbnail.loading || "lazy";
@@ -2079,39 +2033,25 @@ function createVideoItem(video, options = {}) {
       thumbWrapper.appendChild(progressContainer);
     }
     element.appendChild(thumbWrapper);
-    thumbnailElement = thumb;
   }
   const body = doc.createElement("div");
   body.className = bodyClass;
   const titleNode = doc.createElement("div");
   titleNode.className = titleClass;
   const rawTitle = typeof titleOptions.text === "string" ? titleOptions.text : video?.title || DEFAULT_TITLE;
-  const resolvedTitle = sanitize ? sanitize(rawTitle) : rawTitle;
+  const resolvedTitle = sanitizeText(rawTitle);
   titleNode.textContent = resolvedTitle || DEFAULT_TITLE;
-  if (titleOptions.titleAttr) {
-    titleNode.title = titleOptions.titleAttr;
-  }
   body.appendChild(titleNode);
   const detailsNode = createDetails(doc, details, detailsClass);
   body.appendChild(detailsNode);
   element.appendChild(body);
-  const actionNodes = [];
   for (const action of actions) {
     const node = createActionButton(doc, action);
     if (node) {
       element.appendChild(node);
-      actionNodes.push(node);
     }
   }
-  return {
-    element,
-    handle: handleElement,
-    thumbnail: thumbnailElement,
-    body,
-    title: titleNode,
-    details: detailsNode,
-    actions: actionNodes
-  };
+  return element;
 }
 
 // src/popup/modules/manager/videoRow.js
@@ -2178,8 +2118,8 @@ function createManagerVideoRow({
       dataset: postponeDataset
     });
   }
-  const progressPercent = resolveProgressPercentFromObject(videoProgress, video.id);
-  const { element: card } = createVideoItem(video, {
+  const progressPercent = getProgressPercent(videoProgress, video.id);
+  const card = createVideoItem(video, {
     tag: "div",
     classes: [
       "manage-video-item",
@@ -2496,9 +2436,7 @@ function positionMenu(root, anchor, { offset, padding }) {
 function createMoveMenu({
   document: doc = globalThis.document,
   headerText = "\u041F\u0435\u0440\u0435\u043D\u0435\u0441\u0442\u0438 \u0432:",
-  emptyMessage = "\u041D\u0435\u0442 \u0434\u0440\u0443\u0433\u0438\u0445 \u0441\u043F\u0438\u0441\u043A\u043E\u0432",
   cancelLabel = "\u041E\u0442\u043C\u0435\u043D\u0430",
-  emptyCancelLabel = "\u0417\u0430\u043A\u0440\u044B\u0442\u044C",
   className = "move-menu",
   messageClass = "move-menu__message",
   buttonsClass = "move-menu__buttons",
@@ -3025,51 +2963,6 @@ function createCollectionSummary() {
         break;
     }
   }
-  function getHeaderParts() {
-    const parts = [];
-    if (data.channelCount) {
-      parts.push(`\u041A\u0430\u043D\u0430\u043B\u044B ${formatCount(data.channelCount)}`);
-    }
-    if (data.playlistsTotal) {
-      const current = Math.max(data.playlistCurrent, data.playlistsDone);
-      parts.push(
-        `\u041F\u043B\u0435\u0439\u043B\u0438\u0441\u0442\u044B ${formatCount(Math.min(current, data.playlistsTotal))}/${formatCount(
-          data.playlistsTotal
-        )}`
-      );
-    }
-    const totalVideos = data.completeTarget || data.readyPotential || data.filterTotal || data.fetched;
-    if (totalVideos) {
-      const processed = Math.max(
-        data.added || 0,
-        data.ready || 0,
-        data.filtered || 0,
-        data.filterProcessed || 0,
-        data.filterTotals?.passed || 0
-      );
-      if (processed) {
-        parts.push(
-          `\u0412\u0438\u0434\u0435\u043E ${formatCount(Math.min(processed, totalVideos))}/${formatCount(
-            totalVideos
-          )}`
-        );
-      } else {
-        parts.push(`\u0412\u0438\u0434\u0435\u043E ${formatCount(totalVideos)}`);
-      }
-    } else if (data.fetched) {
-      parts.push(`\u0412\u0438\u0434\u0435\u043E ${formatCount(data.fetched)}`);
-    }
-    if (data.ready) {
-      const skipped = data.skippedExisting ? ` (\u0443\u0436\u0435 ${formatCount(data.skippedExisting)})` : "";
-      parts.push(`\u0413\u043E\u0442\u043E\u0432\u043E ${formatCount(data.ready)}${skipped}`);
-    }
-    if (data.added) {
-      parts.push(`\u0414\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E ${formatCount(data.added)}`);
-    } else if (data.adding) {
-      parts.push(`\u0414\u043E\u0431\u0430\u0432\u043B\u044F\u0435\u0442\u0441\u044F ${formatCount(data.adding)}`);
-    }
-    return parts;
-  }
   function getMetrics() {
     const metrics = [];
     const playlistTotal = data.playlistsTotal || 0;
@@ -3113,7 +3006,6 @@ function createCollectionSummary() {
     data,
     reset,
     update,
-    getHeaderParts,
     getMetrics
   };
 }
@@ -3425,8 +3317,6 @@ function createStageLogManager({ logEl, collapsed = true } = {}) {
     return {
       clear() {
       },
-      setCollapsed() {
-      },
       applyUpdate() {
         return null;
       },
@@ -3436,7 +3326,7 @@ function createStageLogManager({ logEl, collapsed = true } = {}) {
       }
     };
   }
-  let isCollapsed = Boolean(collapsed);
+  const isCollapsed = Boolean(collapsed);
   const stages = /* @__PURE__ */ new Map();
   function clear() {
     stages.forEach((entry) => entry.container?.remove());
@@ -3623,18 +3513,8 @@ function createStageLogManager({ logEl, collapsed = true } = {}) {
       }
     });
   }
-  function setCollapsed(collapsedValue) {
-    isCollapsed = Boolean(collapsedValue);
-    stages.forEach((entry) => {
-      if (!entry.details) return;
-      if (isCollapsed || entry.container.classList.contains("completed")) {
-        entry.details.open = false;
-      }
-    });
-  }
   return {
     clear,
-    setCollapsed,
     applyUpdate,
     markCompleted,
     openStage
@@ -3849,7 +3729,7 @@ function createCollectionController({
   };
 }
 
-// src/popup/modules/collection/cooldown.js
+// src/popup/modules/collection/availability.js
 function readAutoCollectMeta(state) {
   const meta = state?.autoCollect || {};
   const cooldownMs = Number(meta.cooldownMs) || 0;
@@ -3892,8 +3772,6 @@ function formatCooldownMessage(remainingMs, targetTime) {
   const timeLabel = formatTimeOfDay(targetTime);
   return timeLabel ? `\u0421\u0431\u043E\u0440 \u0431\u0443\u0434\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0447\u0435\u0440\u0435\u0437 ${parts.join(" ")} (\u2248 ${timeLabel})` : `\u0421\u0431\u043E\u0440 \u0431\u0443\u0434\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D \u0447\u0435\u0440\u0435\u0437 ${parts.join(" ")}`;
 }
-
-// src/popup/modules/collection/availability.js
 function createCollectionAvailabilityController({
   applyState,
   collectBtn,
@@ -4048,12 +3926,6 @@ function createCollectionAvailabilityController({
   }
   return {
     collectSubscriptions,
-    get collecting() {
-      return isCollecting;
-    },
-    get controller() {
-      return collectionController2;
-    },
     handleProgressMessage,
     teardown: stopCollectionCooldownTimer,
     updateAvailability
@@ -4260,7 +4132,7 @@ var dragController = createDragReorderController({
   getActiveListId: () => selectedListDetails?.id || null,
   onReorder: reorderVideo
 });
-var { setStatus, hideStatus } = createStatusController({
+var { setStatus } = createStatusController({
   statusBox: elements.statusBox,
   statusText: elements.statusText,
   progressEl: elements.statusProgress,

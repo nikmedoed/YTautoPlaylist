@@ -1,4 +1,5 @@
 // Shared content-script state and runtime helpers. Contains URL parsing, page capability state, safe messaging, and initialization utilities.
+import { parseVideoId } from "../../utils.js";
 import { initYtaDiagnostics, ytaDiagMeasure } from "./diagnostics.js";
 
 export { ytaDiagMeasure };
@@ -70,7 +71,7 @@ export const inlinePlaylistState = {
   currentVideoId: null,
   queueEntries: [],
   lists: [],
-  progress: new Map(),
+  progress: {},
 };
 
 export const cardRetryState = new WeakMap();
@@ -126,30 +127,6 @@ initYtaDiagnostics({
 });
 
 installRuntimeInvalidationGuard();
-
-export function parseVideoId(input) {
-  if (!input) return "";
-  const str = String(input).trim();
-  if (/^[\w-]{11}$/.test(str)) return str;
-  try {
-    const url = new URL(str, window.location.href);
-    if (url.hostname.includes("youtu.be")) {
-      const parts = url.pathname.split("/").filter(Boolean);
-      const id = parts[0];
-      if (/^[\w-]{11}$/.test(id)) return id;
-    }
-    const v = url.searchParams.get("v");
-    if (v && /^[\w-]{11}$/.test(v)) return v;
-    const segments = url.pathname.split("/");
-    for (const part of segments) {
-      if (/^[\w-]{11}$/.test(part)) return part;
-    }
-  } catch (_) {
-    /* not a full URL */
-  }
-  const match = str.match(/[\w-]{11}/);
-  return match ? match[0] : "";
-}
 
 export function determinePageContext() {
   const pathname = window.location.pathname || "";

@@ -1,5 +1,4 @@
 // State schema sanitizers. Contains normalization for lists, queue entries, history, deleted history, and full persisted state.
-import { normalizeAutoCollectTimestamp } from "./autoCollectTimestamp.js";
 import {
   AUTO_COLLECT_SEEN_IDS_LIMIT,
   DEFAULT_LIST_ID,
@@ -9,6 +8,21 @@ import {
   defaultState,
 } from "./constants.js";
 import { sanitizeVideoProgressMap } from "./videoProgress.js";
+
+const SECOND_TS_MIN = 1_000_000_000;
+const SECOND_TS_MAX = 10_000_000_000;
+
+export function normalizeAutoCollectTimestamp(value) {
+  let ts = Number(value);
+  if (!Number.isFinite(ts) || ts <= 0) {
+    return 0;
+  }
+  ts = Math.trunc(ts);
+  if (ts >= SECOND_TS_MIN && ts < SECOND_TS_MAX) {
+    ts *= 1000;
+  }
+  return ts;
+}
 
 export function sanitizeAutoCollectSeenIds(raw) {
   const source = Array.isArray(raw) ? raw : [];
@@ -105,13 +119,10 @@ export function ensureDefaultList(state) {
   if (!state.currentListId || !state.lists[state.currentListId]) {
     state.currentListId = DEFAULT_LIST_ID;
   }
-  if (!state.lists[state.currentListId]) {
-    state.currentListId = DEFAULT_LIST_ID;
-  }
   return state;
 }
 
-export function sanitizeList(rawList, id) {
+function sanitizeList(rawList, id) {
   if (!rawList || typeof rawList !== "object") {
     return {
       id,
@@ -130,7 +141,7 @@ export function sanitizeList(rawList, id) {
     freeze:
       id === DEFAULT_LIST_ID
         ? false
-        : Boolean(rawList.freeze && id !== DEFAULT_LIST_ID),
+        : Boolean(rawList.freeze),
     queue: Array.isArray(rawList.queue)
       ? rawList.queue
           .map((item) => {

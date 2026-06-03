@@ -87,7 +87,7 @@ function handleInlineQueueProgressKeyDown(event) {
   }
 }
 
-export function resetInlineQueueUIRefs() {
+function resetInlineQueueUIRefs() {
   inlineQueueUI.container = null;
   inlineQueueUI.brand = null;
   inlineQueueUI.title = null;
@@ -302,7 +302,7 @@ function scrollInlineQueueToCurrentItem(targetVideoId = null) {
   if (typeof currentItem.focus === "function") {
     try {
       currentItem.focus({ preventScroll: true });
-    } catch (_) {
+    } catch {
       currentItem.focus();
     }
   }

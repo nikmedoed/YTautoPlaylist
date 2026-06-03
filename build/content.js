@@ -1,4 +1,57 @@
 (() => {
+  // src/utils.js
+  var YOUTUBE_ID_PATTERN = /[\w-]{11}/;
+  var THUMBNAIL_PRIORITY = ["maxres", "standard", "high", "medium", "default"];
+  function parseVideoId(input) {
+    if (!input) return "";
+    const str = String(input).trim();
+    if (/^[\w-]{11}$/.test(str)) return str;
+    try {
+      const baseUrl = typeof globalThis?.location?.href === "string" ? globalThis.location.href : null;
+      const url = baseUrl ? new URL(str, baseUrl) : new URL(str);
+      if (url.hostname.includes("youtu.be")) {
+        const id = url.pathname.split("/").filter(Boolean)[0];
+        if (/^[\w-]{11}$/.test(id)) return id;
+      }
+      const candidate = url.searchParams.get("v");
+      if (candidate && /^[\w-]{11}$/.test(candidate)) return candidate;
+      const segments = url.pathname.split("/");
+      for (const segment of segments) {
+        if (/^[\w-]{11}$/.test(segment)) return segment;
+      }
+    } catch {
+    }
+    const match = str.match(YOUTUBE_ID_PATTERN);
+    return match ? match[0] : "";
+  }
+  function pickThumbnailValue(value) {
+    if (typeof value === "string" && value) {
+      return value;
+    }
+    if (!value || typeof value !== "object") {
+      return "";
+    }
+    return value.url || value.fallback || value.defaultSrc || "";
+  }
+  function pickThumbnailSet(thumbnails) {
+    if (!thumbnails || typeof thumbnails !== "object") {
+      return "";
+    }
+    for (const key of THUMBNAIL_PRIORITY) {
+      const url = pickThumbnailValue(thumbnails[key]);
+      if (url) {
+        return url;
+      }
+    }
+    return "";
+  }
+  function resolveThumbnailUrl(entry, fallback = "") {
+    if (!entry || typeof entry !== "object") {
+      return fallback || "";
+    }
+    return pickThumbnailValue(entry.thumbnail) || pickThumbnailSet(entry.thumbnails) || fallback || "";
+  }
+
   // src/content/core/diagnostics.js
   var YTA_DIAG_FLAG_KEY = "yta_diag_enabled";
   var ytaDiag = {
@@ -118,7 +171,7 @@
     if (ytaDiag.observers.longTask) {
       try {
         ytaDiag.observers.longTask.disconnect();
-      } catch (_) {
+      } catch {
       }
       ytaDiag.observers.longTask = null;
     }
@@ -155,7 +208,7 @@
         });
         observer2.observe({ entryTypes: ["longtask"] });
         ytaDiag.observers.longTask = observer2;
-      } catch (_) {
+      } catch {
       }
     }
     console.info("[YTA] diagnostics enabled");
@@ -163,7 +216,7 @@
   function ytaDiagStart() {
     try {
       localStorage.setItem(YTA_DIAG_FLAG_KEY, "1");
-    } catch (_) {
+    } catch {
     }
     ytaDiagStartInternal();
   }
@@ -172,14 +225,14 @@
     ytaDiagStopInternal();
     try {
       localStorage.removeItem(YTA_DIAG_FLAG_KEY);
-    } catch (_) {
+    } catch {
     }
     console.info("[YTA] diagnostics disabled");
   }
   function shouldEnableYtaDiagFromStorage() {
     try {
       return localStorage.getItem(YTA_DIAG_FLAG_KEY) === "1";
-    } catch (_) {
+    } catch {
       return false;
     }
   }
@@ -256,7 +309,7 @@
     currentVideoId: null,
     queueEntries: [],
     lists: [],
-    progress: /* @__PURE__ */ new Map()
+    progress: {}
   };
   var cardRetryState = /* @__PURE__ */ new WeakMap();
   var STYLE_ID = "yta-controller-style";
@@ -306,28 +359,6 @@
     getVideoElement: () => state.videoElement
   });
   installRuntimeInvalidationGuard();
-  function parseVideoId(input) {
-    if (!input) return "";
-    const str = String(input).trim();
-    if (/^[\w-]{11}$/.test(str)) return str;
-    try {
-      const url = new URL(str, window.location.href);
-      if (url.hostname.includes("youtu.be")) {
-        const parts = url.pathname.split("/").filter(Boolean);
-        const id = parts[0];
-        if (/^[\w-]{11}$/.test(id)) return id;
-      }
-      const v = url.searchParams.get("v");
-      if (v && /^[\w-]{11}$/.test(v)) return v;
-      const segments = url.pathname.split("/");
-      for (const part of segments) {
-        if (/^[\w-]{11}$/.test(part)) return part;
-      }
-    } catch (_) {
-    }
-    const match = str.match(/[\w-]{11}/);
-    return match ? match[0] : "";
-  }
   function determinePageContext() {
     const pathname = window.location.pathname || "";
     if (pathname.startsWith("/watch") || pathname.startsWith("/shorts/")) {
@@ -1752,7 +1783,7 @@
         return false;
       }
       return Number.parseFloat(style.opacity || "1") > 0.01;
-    } catch (_) {
+    } catch {
       return true;
     }
   }
@@ -1856,7 +1887,7 @@
             behavior: "smooth",
             block: scrollIndex < cards.length - 1 ? "center" : "end"
           });
-        } catch (_) {
+        } catch {
           target.scrollIntoView();
         }
       }
@@ -1866,7 +1897,7 @@
           top: document.documentElement.scrollHeight,
           behavior: "smooth"
         });
-      } catch (_) {
+      } catch {
         window.scrollTo(0, document.documentElement.scrollHeight);
       }
       const loadTriggered = attemptLoadMoreContinuations();
@@ -1893,7 +1924,7 @@
     }
     try {
       window.scrollTo({ top: initialScroll || 0 });
-    } catch (_) {
+    } catch {
       window.scrollTo(0, initialScroll || 0);
     }
     return {
@@ -2573,9 +2604,6 @@
     const payload = {
       videoIds: safeIds
     };
-    if (inlinePlaylistState.currentListId) {
-      payload.listId = inlinePlaylistState.currentListId;
-    }
     const response = await sendMessage("playlist:addByIds", payload);
     const { state: presentation, requested, missing, added } = normalizeAddResponse(
       response
@@ -2785,7 +2813,7 @@
         } else {
           finalize();
         }
-      } catch (_) {
+      } catch {
         finalize();
       }
     });
@@ -2881,9 +2909,9 @@
       createPlayerControls(host, context);
     }
     observePlayerHost(host);
-    updatePlayerControlsUI2(context);
+    updatePlayerControlsUI2();
   }
-  function updatePlayerControlsUI2(context = {}) {
+  function updatePlayerControlsUI2() {
     const queueIds = inlinePlaylistState.orderedVideoIds || [];
     const queueLength = queueIds.length;
     const currentId = getCurrentVideoId();
@@ -2894,7 +2922,6 @@
     const historyAvailable = typeof inlinePlaylistState.historyLength === "number" && inlinePlaylistState.historyLength > 0;
     const queueHasPrevious = typeof inlinePlaylistState.currentIndex === "number" && inlinePlaylistState.currentIndex > 0;
     const hasPrev = videoInQueue && (historyAvailable || queueHasPrevious);
-    const hasNext = videoInQueue && queueLength > 1;
     const shouldShowStart = hasQueue && !videoInQueue;
     const controlsAvailable = canHandlePlaybackActions();
     if (playerControls.addCurrent) {
@@ -3068,7 +3095,7 @@
           if (parsed && typeof parsed === "object") {
             candidates.push(parsed);
           }
-        } catch (_) {
+        } catch {
         }
       }
     }
@@ -3163,10 +3190,7 @@
       }
       return false;
     };
-    if (typeof ytaDiagMeasure === "function") {
-      return ytaDiagMeasure("player.detectUnavailableWatchState", run);
-    }
-    return run();
+    return ytaDiagMeasure("player.detectUnavailableWatchState", run);
   }
   function handleVideoUnavailable(details = {}, context = {}) {
     const videoId = getCurrentVideoId();
@@ -3201,7 +3225,7 @@
     if (playerErrorObserverState.observer) {
       try {
         playerErrorObserverState.observer.disconnect();
-      } catch (_) {
+      } catch {
       }
     }
     playerErrorObserverState.observer = null;
@@ -3422,6 +3446,7 @@
   function requestNext(context = {}) {
     if (!canHandlePlaybackActions()) return;
     const videoId = getCurrentVideoId();
+    if (!videoId) return;
     recordUserAction();
     clearQueueEndAnnouncement();
     sendMessage("player:requestNext", { videoId }).then(
@@ -3479,7 +3504,7 @@
       const url = new URL("/watch", base);
       url.searchParams.set("v", targetId);
       targetUrl = url.toString();
-    } catch (err) {
+    } catch {
       targetUrl = `https://www.youtube.com/watch?v=${targetId}`;
     }
     if (!targetUrl) {
@@ -3494,7 +3519,7 @@
     try {
       window.location.assign(targetUrl);
       return true;
-    } catch (assignError) {
+    } catch {
       try {
         window.location.href = targetUrl;
         return true;
@@ -3600,15 +3625,15 @@
     if (percent <= 0) return 0;
     return percent >= 100 ? 100 : percent;
   }
-  function normalizeProgressPercent(entry) {
-    const percent = clampProgressPercent(entry?.percent);
-    return percent && percent > 0 ? percent : null;
-  }
-  function resolveProgressPercentFromMap(progressMap, videoId) {
-    if (!videoId || !(progressMap instanceof Map)) {
+  function getProgressPercent(progressById, videoId) {
+    if (!videoId || !progressById) {
       return null;
     }
-    return normalizeProgressPercent(progressMap.get(videoId));
+    if (typeof progressById !== "object") {
+      return null;
+    }
+    const percent = clampProgressPercent(progressById[videoId]?.percent);
+    return percent && percent > 0 ? percent : null;
   }
 
   // src/content/playback/progressWatchdog.js
@@ -3720,11 +3745,7 @@
       }
       handleVideoProgressUpdate(context, { source: "watchdog" });
     };
-    if (typeof ytaDiagMeasure === "function") {
-      ytaDiagMeasure("player.playbackWatchdogTick", run);
-      return;
-    }
-    run();
+    ytaDiagMeasure("player.playbackWatchdogTick", run);
   }
   function ensurePlaybackWatchdog(context = {}) {
     if (!shouldMonitorPlayback()) {
@@ -3913,96 +3934,6 @@
     videoEndFallbackState.matchedAt = 0;
   }
 
-  // src/content/collection/progressNotification.js
-  var autoCollectDisplay = {
-    active: false
-  };
-  function formatAutoCollectProgress(event = {}) {
-    switch (event.phase) {
-      case "start":
-        return "\u0418\u0449\u0443 \u043D\u043E\u0432\u044B\u0435 \u0432\u0438\u0434\u0435\u043E...";
-      case "channelsLoaded":
-        return `\u041F\u043E\u0434\u043F\u0438\u0441\u043E\u043A: ${event.channelCount || 0}, \u043F\u043B\u0435\u0439\u043B\u0438\u0441\u0442\u043E\u0432: ${event.playlistCount || 0}`;
-      case "playlistFetch":
-        return `\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043C \u043F\u043B\u0435\u0439\u043B\u0438\u0441\u0442 ${event.index || 0}/${event.total || 0}`;
-      case "playlistFetched":
-        return `\u041F\u043B\u0435\u0439\u043B\u0438\u0441\u0442 ${event.index || 0}/${event.total || 0}: +${event.videoCount || 0}`;
-      case "aggregate":
-        return `\u0421\u043E\u0431\u0440\u0430\u043D\u043E ${event.videoCount || 0} \u0432\u0438\u0434\u0435\u043E`;
-      case "filtering":
-        return `\u0424\u0438\u043B\u044C\u0442\u0440\u0443\u044E ${event.videoCount || 0} \u0432\u0438\u0434\u0435\u043E`;
-      case "filterProgress": {
-        const processed = Number(event.processed) || 0;
-        const total = Number(event.total) || processed;
-        return `\u0424\u0438\u043B\u044C\u0442\u0440\u0443\u044E ${processed}/${total}`;
-      }
-      case "filterStats": {
-        const totals = event.totals || {};
-        const total = Number(event.total) || Number(event.initialCount) || 0;
-        const passed = totals.passed || event.videoCount || 0;
-        return total ? `\u041F\u043E\u0441\u043B\u0435 \u0444\u0438\u043B\u044C\u0442\u0440\u0430 ${passed}/${total}` : `\u041F\u043E\u0441\u043B\u0435 \u0444\u0438\u043B\u044C\u0442\u0440\u0430 ${passed}`;
-      }
-      case "filtered":
-        return `\u041F\u043E\u0441\u043B\u0435 \u0444\u0438\u043B\u044C\u0442\u0440\u0430 \u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C ${event.videoCount || 0}`;
-      case "readyToAdd":
-        return event.skippedExisting ? `\u0413\u043E\u0442\u043E\u0432\u043E \u043A \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u0438\u044E ${event.videoCount || 0} \u0432\u0438\u0434\u0435\u043E (\u0443\u0436\u0435 \u0432 \u043E\u0447\u0435\u0440\u0435\u0434\u0438 ${event.skippedExisting})` : `\u0413\u043E\u0442\u043E\u0432\u043E \u043A \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u0438\u044E ${event.videoCount || 0} \u0432\u0438\u0434\u0435\u043E`;
-      case "adding":
-        return `\u0414\u043E\u0431\u0430\u0432\u043B\u044F\u044E ${event.addCount || 0} \u0432\u0438\u0434\u0435\u043E \u0432 \u043E\u0447\u0435\u0440\u0435\u0434\u044C`;
-      default:
-        return "";
-    }
-  }
-  function handleCollectionProgressEvent(event = {}) {
-    if (!event || event.origin !== "auto") {
-      return;
-    }
-    const phase = event.phase || "";
-    if (phase === "start") {
-      autoCollectDisplay.active = true;
-      showPlaybackNotification({
-        title: "\u0421\u0431\u043E\u0440 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A",
-        body: formatAutoCollectProgress(event) || "\u0417\u0430\u043F\u0443\u0441\u043A\u0430\u044E \u0441\u0431\u043E\u0440 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A...",
-        persist: true
-      });
-      return;
-    }
-    if (!autoCollectDisplay.active) {
-      return;
-    }
-    if (phase === "complete") {
-      autoCollectDisplay.active = false;
-      const added = Number(event.added) || 0;
-      const fetched = Number(event.fetched) || added;
-      const queueLength = Number(event.queueLength) || 0;
-      const summary = added ? `\u0414\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E ${added} \u0438\u0437 ${fetched}` : "\u041D\u043E\u0432\u044B\u0445 \u0432\u0438\u0434\u0435\u043E \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E";
-      const queueLabel = queueLength ? ` \xB7 \u0412 \u043E\u0447\u0435\u0440\u0435\u0434\u0438 ${queueLength}` : "";
-      showPlaybackNotification({
-        title: "\u0421\u0431\u043E\u0440 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A \u0437\u0430\u0432\u0435\u0440\u0448\u0451\u043D",
-        body: `${summary}${queueLabel}`,
-        duration: 6e3
-      });
-      return;
-    }
-    if (phase === "error") {
-      autoCollectDisplay.active = false;
-      const message = event.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0431\u0440\u0430\u0442\u044C \u043F\u043E\u0434\u043F\u0438\u0441\u043A\u0438";
-      showPlaybackNotification({
-        title: "\u0421\u0431\u043E\u0440 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A",
-        body: message,
-        duration: 6e3
-      });
-      return;
-    }
-    const progress = formatAutoCollectProgress(event);
-    if (progress) {
-      showPlaybackNotification({
-        title: "\u0421\u0431\u043E\u0440 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A",
-        body: progress,
-        persist: true
-      });
-    }
-  }
-
   // src/content/playback/controls.js
   var playerErrorContext = {
     handlePlaybackAdvanceResponse,
@@ -4019,43 +3950,29 @@
     requestPrevious: requestPrevious2,
     requestStartPlayback: requestStartPlayback2
   };
-  function detectUnavailableWatchState2() {
-    return detectUnavailableWatchState(playerErrorContext);
-  }
   function handleVideoUnavailable2(details = {}) {
     return handleVideoUnavailable(details, playerErrorContext);
   }
-  function ensurePlayerErrorMonitoring2() {
-    return ensurePlayerErrorMonitoring(playerErrorContext);
-  }
+  var playbackProgressContext = {
+    handleVideoEnded,
+    hasRecentUserAction
+  };
+  var playbackWatchdogContext = {
+    ...playbackProgressContext,
+    detectUnavailableWatchState: () => detectUnavailableWatchState(playerErrorContext),
+    handleVideoUnavailable: handleVideoUnavailable2
+  };
   function ensurePlaybackWatchdog2() {
-    ensurePlaybackWatchdog({
-      detectUnavailableWatchState: detectUnavailableWatchState2,
-      handleVideoEnded,
-      handleVideoUnavailable: handleVideoUnavailable2,
-      hasRecentUserAction
-    });
+    ensurePlaybackWatchdog(playbackWatchdogContext);
   }
   function maybeFinalizeVideoEndedBeforeNavigation2() {
-    maybeFinalizeVideoEndedBeforeNavigation({
-      handleVideoEnded,
-      hasRecentUserAction
-    });
+    maybeFinalizeVideoEndedBeforeNavigation(playbackProgressContext);
   }
   function handleVideoProgressUpdate2() {
-    handleVideoProgressUpdate({
-      handleVideoEnded,
-      hasRecentUserAction
-    });
+    handleVideoProgressUpdate(playbackProgressContext);
   }
   function handleVideoSeeked() {
-    handleVideoProgressUpdate(
-      {
-        handleVideoEnded,
-        hasRecentUserAction
-      },
-      { source: "seeked" }
-    );
+    handleVideoProgressUpdate(playbackProgressContext, { source: "seeked" });
   }
   function handlePlaybackAdvanceResponse(response, context = {}) {
     if (response?.state && typeof response.state === "object") {
@@ -4227,7 +4144,7 @@
     handleVideoStarted();
   }
   function scanForVideo() {
-    ensurePlayerErrorMonitoring2();
+    ensurePlayerErrorMonitoring(playerErrorContext);
     const video = document.querySelector("video");
     if (video) {
       attachVideoListeners(video);
@@ -4235,7 +4152,7 @@
       ensurePlaybackWatchdog2();
       return true;
     }
-    detectUnavailableWatchState2();
+    detectUnavailableWatchState(playerErrorContext);
     ensurePlaybackWatchdog2();
     return false;
   }
@@ -4366,25 +4283,18 @@
   // src/content/video-cards/progress.js
   var PROGRESS_ELEMENT_CLASS = "video-thumb__progress";
   var PROGRESS_BAR_CLASS = "video-thumb__progress-bar";
-  function resolveVideoProgressPercent(videoId) {
-    return resolveProgressPercentFromMap(inlinePlaylistState?.progress, videoId);
-  }
   function applyCardProgress(card, videoId) {
     if (!(card instanceof HTMLElement)) {
       return;
     }
     const hostCandidate = card.querySelector(`.${THUMB_HOST_CLASS}`);
     const host = hostCandidate instanceof HTMLElement ? hostCandidate : card;
-    const percent = resolveVideoProgressPercent(videoId);
+    const percent = getProgressPercent(inlinePlaylistState?.progress, videoId);
     let container = host.querySelector(`.${PROGRESS_ELEMENT_CLASS}`);
     if (!percent) {
       if (container) {
         container.remove();
       }
-      return;
-    }
-    const clamped = clampProgressPercent(percent);
-    if (clamped === null) {
       return;
     }
     if (!container) {
@@ -4401,7 +4311,7 @@
       container.appendChild(bar);
       return bar;
     })();
-    barEl.style.width = `${clamped}%`;
+    barEl.style.width = `${percent}%`;
   }
   function syncVideoCardProgress(root = document, cardMark) {
     const scope = root instanceof Document || root instanceof HTMLElement ? root : document;
@@ -4476,24 +4386,6 @@
     });
     return { normalizedEntries, orderedIds };
   }
-  function buildProgressMap(presentation) {
-    const progressEntries = presentation && typeof presentation === "object" && presentation.videoProgress ? presentation.videoProgress : null;
-    const progressMap = /* @__PURE__ */ new Map();
-    if (progressEntries && typeof progressEntries === "object") {
-      Object.entries(progressEntries).forEach(([id, entry]) => {
-        if (typeof id !== "string" || !id) {
-          return;
-        }
-        const percent = normalizeProgressPercent(entry);
-        if (percent === null) {
-          return;
-        }
-        const updatedAt = Number.isFinite(Number(entry?.updatedAt)) ? Number(entry.updatedAt) : 0;
-        progressMap.set(id, { percent, updatedAt });
-      });
-    }
-    return progressMap;
-  }
   function updateInlinePlaylistState2(rawPresentation, context = {}) {
     const presentation = normalizePresentation(rawPresentation);
     if (!presentation) {
@@ -4540,7 +4432,7 @@
     })).filter((list) => list.id);
     inlinePlaylistState.currentListName = typeof presentation?.currentQueue?.name === "string" ? presentation.currentQueue.name : "";
     inlinePlaylistState.currentVideoId = typeof presentation?.currentVideoId === "string" && presentation.currentVideoId ? presentation.currentVideoId : null;
-    inlinePlaylistState.progress = buildProgressMap(presentation);
+    inlinePlaylistState.progress = presentation.videoProgress && typeof presentation.videoProgress === "object" ? presentation.videoProgress : {};
     if (changed) {
       syncAllInlineButtons();
     }
@@ -5343,7 +5235,7 @@
       if (typeof target.focus === "function") {
         try {
           target.focus({ preventScroll: true });
-        } catch (_) {
+        } catch {
           target.focus();
         }
       }
@@ -5426,7 +5318,7 @@
       event.dataTransfer.effectAllowed = "move";
       try {
         event.dataTransfer.setData("text/plain", videoId);
-      } catch (_) {
+      } catch {
       }
       if (item !== targetItem && item instanceof HTMLElement) {
         setInlineQueueDragImage(event, item);
@@ -5439,10 +5331,10 @@
       const offsetX = typeof event.clientX === "number" ? event.clientX - rect.left : rect.width / 2;
       const offsetY = typeof event.clientY === "number" ? event.clientY - rect.top : rect.height / 2;
       event.dataTransfer.setDragImage(item, offsetX, offsetY);
-    } catch (_) {
+    } catch {
       try {
         event.dataTransfer.setDragImage(item, 0, 0);
-      } catch (__) {
+      } catch {
       }
     }
   }
@@ -5902,7 +5794,7 @@
     if (typeof currentItem.focus === "function") {
       try {
         currentItem.focus({ preventScroll: true });
-      } catch (_) {
+      } catch {
         currentItem.focus();
       }
     }
@@ -5912,55 +5804,74 @@
     return scrollInlineQueueToCurrentItem(targetVideoId);
   }
 
-  // src/content/inline-queue/item.js
-  var INLINE_QUEUE_DURATION_PATTERN = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/;
-  var inlineQueueDateFormatter = new Intl.DateTimeFormat("ru-RU", {
+  // src/time.js
+  var ISO_DURATION_PATTERN = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/;
+  var DISPLAY_DATE_FORMATTER = new Intl.DateTimeFormat("ru-RU", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit"
   });
-  function parseInlineQueueDuration(duration) {
-    if (duration == null) {
-      return null;
+  var STORAGE_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat("ru", {
+    year: "2-digit",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric"
+  });
+  function toDate(value) {
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : new Date(value.getTime());
     }
+    if (typeof value === "number") {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+    if (typeof value === "string" && value) {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+    return null;
+  }
+  function formatHms(totalSeconds) {
+    const seconds = Math.max(0, Math.round(totalSeconds));
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor(seconds % 3600 / 60);
+    const secs = seconds % 60;
+    if (hours) {
+      return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(
+        2,
+        "0"
+      )}:${String(secs).padStart(2, "0")}`;
+    }
+    return `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  }
+  function parseDuration(duration) {
+    if (duration == null) return void 0;
     if (typeof duration === "number" && Number.isFinite(duration)) {
       return Math.max(0, duration);
     }
-    const match = INLINE_QUEUE_DURATION_PATTERN.exec(String(duration));
-    if (!match) {
-      return null;
-    }
+    const match = ISO_DURATION_PATTERN.exec(String(duration));
+    if (!match) return void 0;
     const hours = Number(match[1] || 0);
     const minutes = Number(match[2] || 0);
     const seconds = Number(match[3] || 0);
     return hours * 3600 + minutes * 60 + seconds;
   }
-  function formatInlineQueueDuration(duration) {
-    const seconds = parseInlineQueueDuration(duration);
-    if (seconds == null) {
-      return "";
-    }
-    const total = Math.max(0, Math.round(seconds));
-    const hours = Math.floor(total / 3600);
-    const minutes = Math.floor(total % 3600 / 60);
-    const secs = total % 60;
-    if (hours > 0) {
-      return `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-    }
-    return `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  function formatDuration(duration) {
+    if (duration == null) return "";
+    const seconds = parseDuration(duration);
+    if (seconds == null) return "";
+    return formatHms(seconds);
   }
-  function formatInlineQueueDate(value) {
-    if (!value) {
-      return "";
-    }
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
-      return "";
-    }
-    return inlineQueueDateFormatter.format(date);
+  function formatDateTime(value) {
+    const date = toDate(value);
+    return date ? DISPLAY_DATE_FORMATTER.format(date) : "";
   }
+
+  // src/content/inline-queue/item.js
   function createInlineQueueDetailContainer(parts) {
     const details = document.createElement("div");
     details.className = "video-details";
@@ -6025,34 +5936,11 @@
         textClassName: "video-detail__text yta-inline-queue__detail-link"
       });
     }
-    const published = formatInlineQueueDate(entry?.publishedAt);
+    const published = formatDateTime(entry?.publishedAt);
     if (published) {
       parts.push({ text: published, textClassName: "video-detail__text" });
     }
     return createInlineQueueDetailContainer(parts);
-  }
-  function resolveInlineQueueThumbnail(entry) {
-    if (!entry) {
-      return "";
-    }
-    if (typeof entry.thumbnail === "string" && entry.thumbnail) {
-      return entry.thumbnail;
-    }
-    if (entry.thumbnail && typeof entry.thumbnail === "object") {
-      if (typeof entry.thumbnail.url === "string" && entry.thumbnail.url) {
-        return entry.thumbnail.url;
-      }
-      if (typeof entry.thumbnail.fallback === "string" && entry.thumbnail.fallback) {
-        return entry.thumbnail.fallback;
-      }
-      if (typeof entry.thumbnail.defaultSrc === "string" && entry.thumbnail.defaultSrc) {
-        return entry.thumbnail.defaultSrc;
-      }
-    }
-    if (entry.id) {
-      return `https://i.ytimg.com/vi/${entry.id}/mqdefault.jpg`;
-    }
-    return "";
   }
   function createInlineQueueActionButton(className, textContent, title) {
     const button = document.createElement("button");
@@ -6121,13 +6009,16 @@
     thumb.className = "video-thumb";
     thumb.decoding = "async";
     thumb.loading = "lazy";
-    const thumbUrl = resolveInlineQueueThumbnail(entry);
+    const thumbUrl = resolveThumbnailUrl(
+      entry,
+      entry.id ? `https://i.ytimg.com/vi/${entry.id}/mqdefault.jpg` : ""
+    );
     if (thumbUrl) {
       thumb.src = thumbUrl;
     }
     thumb.alt = baseTitle;
     thumbWrapper.appendChild(thumb);
-    const durationText = formatInlineQueueDuration(entry?.duration);
+    const durationText = formatDuration(entry?.duration);
     if (durationText) {
       const durationEl = document.createElement("span");
       durationEl.className = "video-thumb__duration";
@@ -6268,7 +6159,7 @@
         allowPostpone,
         currentListId: inlinePlaylistState.currentListId,
         onHandlePointerDown: options.handleInlineQueueHandlePointerDown,
-        progressPercent: resolveProgressPercentFromMap(
+        progressPercent: getProgressPercent(
           inlinePlaylistState.progress,
           entry.id
         )
@@ -6583,13 +6474,6 @@
       ensureWatcher,
       hasButton(button) {
         return state2.button === button;
-      },
-      stop() {
-        observer2?.disconnect();
-        observer2 = null;
-        watcherReady = false;
-        syncPending = false;
-        detach();
       }
     };
   }
@@ -6661,9 +6545,6 @@
     if (typeof durationMs !== "number" || durationMs < PLAYLIST_SUCCESS_NOTIFICATION_THRESHOLD) {
       return;
     }
-    if (typeof showPageActionStatus !== "function") {
-      return;
-    }
     const { added, requested, missing } = normalizeAddResponse(metrics);
     if (added || missing || requested !== null) {
       const summary = formatAddResultMessage({
@@ -6693,81 +6574,13 @@
     playlistSuccessTimers2.delete(button);
     maybeShowPlaylistSuccessNotification(metrics, durationMs);
   }
-  async function sendInlineAddRequest({ playlistId, videoId, listId }) {
+  async function sendInlineAddRequest({ playlistId, videoId }) {
     const payload = playlistId ? {
-      playlistId,
-      listId: listId || void 0
+      playlistId
     } : {
-      videoIds: [videoId],
-      listId: listId || void 0
+      videoIds: [videoId]
     };
     return playlistId ? sendMessage("playlist:addPlaylist", payload) : sendMessage("playlist:addByIds", payload);
-  }
-
-  // src/content/video-cards/addButton.js
-  function createAddButtonController({
-    bindButtonTarget,
-    overlays: overlays2,
-    playlistSuccessTimers: playlistSuccessTimers2,
-    resolveFreshTargetForButton
-  }) {
-    async function handleAddButtonClick(event, button) {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      const freshTarget = resolveFreshTargetForButton(button);
-      if (!freshTarget) return;
-      bindButtonTarget(button, freshTarget);
-      const videoId = button.dataset.videoId;
-      const playlistId = button.dataset.playlistId;
-      if (!videoId && !playlistId) return;
-      if (button.dataset.ytaStatus === "pending") return;
-      if (videoId && (button.dataset.ytaStatus === "present" || isVideoInCurrentList(videoId))) {
-        return;
-      }
-      clearPlaylistSuccessTimer(button, playlistSuccessTimers2);
-      const startedAt = playlistId ? Date.now() : 0;
-      let addMetrics = { added: 0, requested: null, missing: 0 };
-      button.dataset.ytaStatus = "pending";
-      button.disabled = true;
-      syncInlineButtonState(button);
-      try {
-        const response = await sendInlineAddRequest({
-          playlistId,
-          videoId,
-          listId: inlinePlaylistState.currentListId || void 0
-        });
-        addMetrics = await applyInlineAddResponse(response);
-      } catch (err) {
-        delete button.dataset.ytaStatus;
-        button.disabled = false;
-        syncInlineButtonState(button);
-        return;
-      }
-      if (playlistId) {
-        showPlaylistSuccess(
-          button,
-          addMetrics,
-          startedAt ? Date.now() - startedAt : 0,
-          playlistSuccessTimers2
-        );
-      } else {
-        delete button.dataset.ytaStatus;
-        syncInlineButtonState(button);
-      }
-    }
-    function createAddButton(overlay, overlayHost) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = ADD_BUTTON_CLASS;
-      button.addEventListener("click", (event) => {
-        void handleAddButtonClick(event, button);
-      }, true);
-      overlay.appendChild(button);
-      overlays2.observeInlineOverlay(overlayHost, button);
-      return button;
-    }
-    return { createAddButton };
   }
 
   // src/content/video-cards/buttonOwnership.js
@@ -6945,11 +6758,7 @@
           }
         });
       };
-      if (typeof ytaDiagMeasure === "function") {
-        ytaDiagMeasure("videoCards.resetVideoCardDecorations", run);
-        return;
-      }
-      run();
+      ytaDiagMeasure("videoCards.resetVideoCardDecorations", run);
     }
     return {
       cleanupInlineQueueAddButtons,
@@ -6958,7 +6767,9 @@
     };
   }
 
-  // src/content/video-cards/retry.js
+  // src/content/video-cards/decorations.js
+  var INLINE_QUEUE_SELECTOR = ".yta-inline-queue";
+  var MAX_CARD_RETRY_ATTEMPTS = 6;
   function clearCardRetryTimeout(card) {
     const retryState = cardRetryState.get(card);
     if (!retryState?.timeout) return;
@@ -6974,7 +6785,7 @@
   function scheduleCardRetry(card, retryCallback) {
     if (!(card instanceof HTMLElement)) return;
     const existing = cardRetryState.get(card) || { attempts: 0, timeout: null };
-    if (existing.timeout || existing.attempts >= 6) return;
+    if (existing.timeout || existing.attempts >= MAX_CARD_RETRY_ATTEMPTS) return;
     const attempts = existing.attempts + 1;
     const delay2 = Math.min(500, 75 * attempts);
     const timeout = window.setTimeout(() => {
@@ -6987,9 +6798,6 @@
     }, delay2);
     cardRetryState.set(card, { attempts, timeout });
   }
-
-  // src/content/video-cards/decorations.js
-  var INLINE_QUEUE_SELECTOR = ".yta-inline-queue";
   function shouldEnhanceVideoCardCandidate({
     insideInlineQueue,
     hasNestedCandidate
@@ -7004,7 +6812,6 @@
     inlineButtonsByVideoId: inlineButtonsByVideoId2,
     inlineButtonOwners: inlineButtonOwners2
   }) {
-    let addButtonController = null;
     const buttonOwnership = createCardButtonOwnership({
       overlays: overlays2,
       previewOverlay: previewOverlay2,
@@ -7036,16 +6843,64 @@
       }
       return null;
     }
-    function getAddButtonController() {
-      if (!addButtonController) {
-        addButtonController = createAddButtonController({
-          bindButtonTarget: buttonOwnership.bindButtonTarget,
-          overlays: overlays2,
-          playlistSuccessTimers: playlistSuccessTimers2,
-          resolveFreshTargetForButton
-        });
+    async function handleAddButtonClick(event, button) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      const freshTarget = resolveFreshTargetForButton(button);
+      if (!freshTarget) return;
+      buttonOwnership.bindButtonTarget(button, freshTarget);
+      const videoId = button.dataset.videoId;
+      const playlistId = button.dataset.playlistId;
+      if (!videoId && !playlistId) return;
+      if (button.dataset.ytaStatus === "pending") return;
+      if (videoId && (button.dataset.ytaStatus === "present" || isVideoInCurrentList(videoId))) {
+        return;
       }
-      return addButtonController;
+      clearPlaylistSuccessTimer(button, playlistSuccessTimers2);
+      const startedAt = playlistId ? Date.now() : 0;
+      let addMetrics = { added: 0, requested: null, missing: 0 };
+      button.dataset.ytaStatus = "pending";
+      button.disabled = true;
+      syncInlineButtonState(button);
+      try {
+        const response = await sendInlineAddRequest({
+          playlistId,
+          videoId
+        });
+        addMetrics = await applyInlineAddResponse(response);
+      } catch {
+        delete button.dataset.ytaStatus;
+        button.disabled = false;
+        syncInlineButtonState(button);
+        return;
+      }
+      if (playlistId) {
+        showPlaylistSuccess(
+          button,
+          addMetrics,
+          startedAt ? Date.now() - startedAt : 0,
+          playlistSuccessTimers2
+        );
+      } else {
+        delete button.dataset.ytaStatus;
+        syncInlineButtonState(button);
+      }
+    }
+    function createAddButton(overlay, overlayHost) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = ADD_BUTTON_CLASS;
+      button.addEventListener(
+        "click",
+        (event) => {
+          void handleAddButtonClick(event, button);
+        },
+        true
+      );
+      overlay.appendChild(button);
+      overlays2.observeInlineOverlay(overlayHost, button);
+      return button;
     }
     function decorateVideoCard(card) {
       if (!(card instanceof HTMLElement)) return;
@@ -7092,7 +6947,7 @@
         overlay.appendChild(button);
       }
       if (!button) {
-        button = getAddButtonController().createAddButton(overlay, overlayHost);
+        button = createAddButton(overlay, overlayHost);
       } else {
         overlays2.observeInlineOverlay(overlayHost, button);
       }
@@ -7138,11 +6993,7 @@
           });
         }
       };
-      if (typeof ytaDiagMeasure === "function") {
-        ytaDiagMeasure("videoCards.enhanceVideoCards", run);
-        return;
-      }
-      run();
+      ytaDiagMeasure("videoCards.enhanceVideoCards", run);
     }
     return {
       enhanceVideoCards: enhanceVideoCards2,
@@ -7179,7 +7030,7 @@
   var pendingUiFrameType = null;
   var pendingUiScan = false;
   function flushScheduledUiUpdate() {
-    const run = () => {
+    ytaDiagMeasure("navigation.flushScheduledUiUpdate", () => {
       pendingUiFrame = null;
       pendingUiFrameType = null;
       const shouldScan = pendingUiScan;
@@ -7189,12 +7040,7 @@
       }
       updatePageActions();
       ensurePlayerControls2();
-    };
-    if (typeof ytaDiagMeasure === "function") {
-      ytaDiagMeasure("navigation.flushScheduledUiUpdate", run);
-      return;
-    }
-    run();
+    });
   }
   function scheduleUiUpdate({ scan = false } = {}) {
     if (scan) {
@@ -7232,88 +7078,64 @@
     pendingUiFrameType = null;
     pendingUiScan = false;
   }
-  var observer = new MutationObserver((mutations) => {
-    const run = () => {
-      let shouldScanVideo = false;
-      const maybeEnhanceCards = (node) => {
-        if (!(node instanceof HTMLElement)) {
-          return;
-        }
-        if (node.closest?.(
-          "#movie_player, .html5-video-player, ytd-player, #player-container-outer"
-        )) {
-          return;
-        }
-        if (typeof ytaDiagMeasure === "function") {
-          ytaDiagMeasure("navigation.enhanceVideoCards.node", () => {
-            enhanceVideoCards(node);
-          });
-        } else {
+  function cancelPageCollection(label) {
+    try {
+      cancelAddAllFromPage({ silent: true });
+    } catch (err) {
+      console.warn(`Failed to cancel page collection on ${label}`, err);
+    }
+  }
+  function enhanceCardsFromMutationNode(node) {
+    if (!(node instanceof HTMLElement)) {
+      if (node && node.nodeType === Node.DOCUMENT_FRAGMENT_NODE && typeof node.querySelector === "function") {
+        ytaDiagMeasure("navigation.enhanceVideoCards.fragment", () => {
           enhanceVideoCards(node);
-        }
-      };
+        });
+        return Boolean(node.querySelector("video"));
+      }
+      return false;
+    }
+    if (node.closest?.(
+      "#movie_player, .html5-video-player, ytd-player, #player-container-outer"
+    )) {
+      return node.tagName === "VIDEO" || Boolean(node.querySelector?.("video"));
+    }
+    ytaDiagMeasure("navigation.enhanceVideoCards.node", () => {
+      enhanceVideoCards(node);
+    });
+    return node.tagName === "VIDEO" || Boolean(node.querySelector?.("video"));
+  }
+  var observer = new MutationObserver((mutations) => {
+    ytaDiagMeasure("navigation.mutationObserver", () => {
+      let shouldScanVideo = false;
       for (const mutation of mutations) {
-        if (mutation.type === "childList") {
-          mutation.addedNodes.forEach((node) => {
-            if (node instanceof HTMLElement) {
-              maybeEnhanceCards(node);
-              if (!shouldScanVideo) {
-                if (node.tagName === "VIDEO" || node.querySelector?.("video")) {
-                  shouldScanVideo = true;
-                }
-              }
-            } else if (node && node.nodeType === Node.DOCUMENT_FRAGMENT_NODE && typeof node.querySelector === "function") {
-              if (typeof ytaDiagMeasure === "function") {
-                ytaDiagMeasure("navigation.enhanceVideoCards.fragment", () => {
-                  enhanceVideoCards(node);
-                });
-              } else {
-                enhanceVideoCards(node);
-              }
-              if (!shouldScanVideo && node.querySelector("video")) {
-                shouldScanVideo = true;
-              }
-            }
-          });
-          mutation.removedNodes.forEach((node) => {
-            if (!(node instanceof HTMLElement)) return;
-            if (node === state.videoElement || node.contains(state.videoElement)) {
-              shouldScanVideo = true;
-            }
-          });
+        if (mutation.type !== "childList") {
+          continue;
         }
+        mutation.addedNodes.forEach((node) => {
+          if (enhanceCardsFromMutationNode(node)) {
+            shouldScanVideo = true;
+          }
+        });
+        mutation.removedNodes.forEach((node) => {
+          if (!(node instanceof HTMLElement)) return;
+          if (node === state.videoElement || node.contains(state.videoElement)) {
+            shouldScanVideo = true;
+          }
+        });
       }
       const needsScan = shouldScanVideo || !state.videoElement || state.videoElement && !document.contains(state.videoElement);
       scheduleUiUpdate({ scan: needsScan });
-    };
-    if (typeof ytaDiagMeasure === "function") {
-      ytaDiagMeasure("navigation.mutationObserver", run);
-      return;
-    }
-    run();
+    });
   });
   function resetStateForNavigation(event = null) {
     const eventType = typeof event?.type === "string" ? event.type : "";
     const isNavigateStart = eventType === "yt-navigate-start";
-    const run = () => {
-      if (typeof maybeFinalizeVideoEndedBeforeNavigation2 === "function") {
-        maybeFinalizeVideoEndedBeforeNavigation2();
-      }
+    ytaDiagMeasure("navigation.resetStateForNavigation", () => {
+      maybeFinalizeVideoEndedBeforeNavigation2();
       if (isNavigateStart) {
         cancelScheduledUiUpdate();
-        if (typeof cancelAddAllFromPage === "function") {
-          try {
-            cancelAddAllFromPage({ silent: true });
-          } catch (err) {
-            console.warn("Failed to cancel page collection on navigation start", err);
-          }
-        } else if (typeof pageActions === "object" && pageActions?.collectAbort) {
-          try {
-            pageActions.collectAbort.abort();
-          } catch (err) {
-            console.warn("Failed to abort page collection controller on navigation start", err);
-          }
-        }
+        cancelPageCollection("navigation start");
         return;
       }
       try {
@@ -7322,42 +7144,22 @@
         console.warn("Failed to reset video card decorations", err);
       }
       cancelScheduledUiUpdate();
-      if (typeof cancelAddAllFromPage === "function") {
-        try {
-          cancelAddAllFromPage({ silent: true });
-        } catch (err) {
-          console.warn("Failed to cancel page collection on navigation", err);
-        }
-      } else if (typeof pageActions === "object" && pageActions?.collectAbort) {
-        try {
-          pageActions.collectAbort.abort();
-        } catch (err) {
-          console.warn("Failed to abort page collection controller", err);
-        }
-      }
+      cancelPageCollection("navigation");
       detachVideoListeners();
       state.controlsActive = false;
       state.currentVideoId = parseVideoId(window.location.href) || null;
       state.lastReportedVideoId = null;
       state.lastUnavailableVideoId = null;
-      if (typeof resetPlaybackWatchdog === "function") {
-        resetPlaybackWatchdog(state.currentVideoId || null);
-      }
-      if (typeof stopPlaybackWatchdog === "function") {
-        stopPlaybackWatchdog();
-      }
-      if (typeof hidePlaybackNotification === "function") {
-        hidePlaybackNotification(true);
-      }
+      resetPlaybackWatchdog(state.currentVideoId || null);
+      stopPlaybackWatchdog();
+      hidePlaybackNotification(true);
       updateMediaSessionHandlers();
       updatePlayerControlsUI();
       updatePageActions();
-      if (typeof teardownInlineQueue === "function") {
-        try {
-          teardownInlineQueue();
-        } catch (err) {
-          console.warn("Failed to reset inline queue UI", err);
-        }
+      try {
+        teardownInlineQueue();
+      } catch (err) {
+        console.warn("Failed to reset inline queue UI", err);
       }
       void refreshInlinePlaylistState();
       setTimeout(() => {
@@ -7366,12 +7168,7 @@
         ensurePlayerControls2();
         updatePageActions();
       }, 0);
-    };
-    if (typeof ytaDiagMeasure === "function") {
-      ytaDiagMeasure("navigation.resetStateForNavigation", run);
-      return;
-    }
-    run();
+    });
   }
 
   // src/content/core/interceptors.js
@@ -7434,6 +7231,96 @@
       },
       true
     );
+  }
+
+  // src/content/collection/progressNotification.js
+  var autoCollectDisplay = {
+    active: false
+  };
+  function formatAutoCollectProgress(event = {}) {
+    switch (event.phase) {
+      case "start":
+        return "\u0418\u0449\u0443 \u043D\u043E\u0432\u044B\u0435 \u0432\u0438\u0434\u0435\u043E...";
+      case "channelsLoaded":
+        return `\u041F\u043E\u0434\u043F\u0438\u0441\u043E\u043A: ${event.channelCount || 0}, \u043F\u043B\u0435\u0439\u043B\u0438\u0441\u0442\u043E\u0432: ${event.playlistCount || 0}`;
+      case "playlistFetch":
+        return `\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043C \u043F\u043B\u0435\u0439\u043B\u0438\u0441\u0442 ${event.index || 0}/${event.total || 0}`;
+      case "playlistFetched":
+        return `\u041F\u043B\u0435\u0439\u043B\u0438\u0441\u0442 ${event.index || 0}/${event.total || 0}: +${event.videoCount || 0}`;
+      case "aggregate":
+        return `\u0421\u043E\u0431\u0440\u0430\u043D\u043E ${event.videoCount || 0} \u0432\u0438\u0434\u0435\u043E`;
+      case "filtering":
+        return `\u0424\u0438\u043B\u044C\u0442\u0440\u0443\u044E ${event.videoCount || 0} \u0432\u0438\u0434\u0435\u043E`;
+      case "filterProgress": {
+        const processed = Number(event.processed) || 0;
+        const total = Number(event.total) || processed;
+        return `\u0424\u0438\u043B\u044C\u0442\u0440\u0443\u044E ${processed}/${total}`;
+      }
+      case "filterStats": {
+        const totals = event.totals || {};
+        const total = Number(event.total) || Number(event.initialCount) || 0;
+        const passed = totals.passed || event.videoCount || 0;
+        return total ? `\u041F\u043E\u0441\u043B\u0435 \u0444\u0438\u043B\u044C\u0442\u0440\u0430 ${passed}/${total}` : `\u041F\u043E\u0441\u043B\u0435 \u0444\u0438\u043B\u044C\u0442\u0440\u0430 ${passed}`;
+      }
+      case "filtered":
+        return `\u041F\u043E\u0441\u043B\u0435 \u0444\u0438\u043B\u044C\u0442\u0440\u0430 \u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C ${event.videoCount || 0}`;
+      case "readyToAdd":
+        return event.skippedExisting ? `\u0413\u043E\u0442\u043E\u0432\u043E \u043A \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u0438\u044E ${event.videoCount || 0} \u0432\u0438\u0434\u0435\u043E (\u0443\u0436\u0435 \u0432 \u043E\u0447\u0435\u0440\u0435\u0434\u0438 ${event.skippedExisting})` : `\u0413\u043E\u0442\u043E\u0432\u043E \u043A \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u0438\u044E ${event.videoCount || 0} \u0432\u0438\u0434\u0435\u043E`;
+      case "adding":
+        return `\u0414\u043E\u0431\u0430\u0432\u043B\u044F\u044E ${event.addCount || 0} \u0432\u0438\u0434\u0435\u043E \u0432 \u043E\u0447\u0435\u0440\u0435\u0434\u044C`;
+      default:
+        return "";
+    }
+  }
+  function handleCollectionProgressEvent(event = {}) {
+    if (!event || event.origin !== "auto") {
+      return;
+    }
+    const phase = event.phase || "";
+    if (phase === "start") {
+      autoCollectDisplay.active = true;
+      showPlaybackNotification({
+        title: "\u0421\u0431\u043E\u0440 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A",
+        body: formatAutoCollectProgress(event) || "\u0417\u0430\u043F\u0443\u0441\u043A\u0430\u044E \u0441\u0431\u043E\u0440 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A...",
+        persist: true
+      });
+      return;
+    }
+    if (!autoCollectDisplay.active) {
+      return;
+    }
+    if (phase === "complete") {
+      autoCollectDisplay.active = false;
+      const added = Number(event.added) || 0;
+      const fetched = Number(event.fetched) || added;
+      const queueLength = Number(event.queueLength) || 0;
+      const summary = added ? `\u0414\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E ${added} \u0438\u0437 ${fetched}` : "\u041D\u043E\u0432\u044B\u0445 \u0432\u0438\u0434\u0435\u043E \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E";
+      const queueLabel = queueLength ? ` \xB7 \u0412 \u043E\u0447\u0435\u0440\u0435\u0434\u0438 ${queueLength}` : "";
+      showPlaybackNotification({
+        title: "\u0421\u0431\u043E\u0440 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A \u0437\u0430\u0432\u0435\u0440\u0448\u0451\u043D",
+        body: `${summary}${queueLabel}`,
+        duration: 6e3
+      });
+      return;
+    }
+    if (phase === "error") {
+      autoCollectDisplay.active = false;
+      const message = event.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0431\u0440\u0430\u0442\u044C \u043F\u043E\u0434\u043F\u0438\u0441\u043A\u0438";
+      showPlaybackNotification({
+        title: "\u0421\u0431\u043E\u0440 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A",
+        body: message,
+        duration: 6e3
+      });
+      return;
+    }
+    const progress = formatAutoCollectProgress(event);
+    if (progress) {
+      showPlaybackNotification({
+        title: "\u0421\u0431\u043E\u0440 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A",
+        body: progress,
+        persist: true
+      });
+    }
   }
 
   // src/content/core/messages.js
@@ -7524,9 +7411,7 @@
       return false;
     }
     if (message.type === "playlist:collectProgress") {
-      if (typeof handleCollectionProgressEvent === "function") {
-        handleCollectionProgressEvent(message.event || message);
-      }
+      handleCollectionProgressEvent(message.event || message);
       return false;
     }
     if (message.type === "playlist:stateUpdated") {
@@ -7550,15 +7435,10 @@
     injectStyles();
     void refreshInlinePlaylistState();
     ensurePlayerControls2();
-    if (typeof ytaDiagMeasure === "function") {
-      ytaDiagMeasure("init.enhanceVideoCards.document", () => {
-        enhanceVideoCards(document);
-      });
-    } else {
+    ytaDiagMeasure("init.enhanceVideoCards.document", () => {
       enhanceVideoCards(document);
-    }
+    });
     updatePageActions();
-    ensurePlayerControls2();
     scanForVideo();
     observer.observe(document.documentElement || document.body, {
       childList: true,
@@ -7573,13 +7453,9 @@
         return;
       }
       setTimeout(() => {
-        if (typeof ytaDiagMeasure === "function") {
-          ytaDiagMeasure("init.ytPageDataUpdated.enhanceDocument", () => {
-            enhanceVideoCards(document);
-          });
-        } else {
+        ytaDiagMeasure("init.ytPageDataUpdated.enhanceDocument", () => {
           enhanceVideoCards(document);
-        }
+        });
       }, 0);
     });
   }

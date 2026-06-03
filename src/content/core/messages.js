@@ -11,8 +11,8 @@ import {
 } from "../collection/collectors.js";
 import {
   handleCollectionProgressEvent,
-  setControlsActive,
-} from "../playback/controls.js";
+} from "../collection/progressNotification.js";
+import { setControlsActive } from "../playback/controls.js";
 import { updateInlinePlaylistState } from "../inline-queue/index.js";
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -117,9 +117,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return false;
   }
   if (message.type === "playlist:collectProgress") {
-    if (typeof handleCollectionProgressEvent === "function") {
-      handleCollectionProgressEvent(message.event || message);
-    }
+    handleCollectionProgressEvent(message.event || message);
     return false;
   }
   if (message.type === "playlist:stateUpdated") {

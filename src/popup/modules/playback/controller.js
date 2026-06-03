@@ -32,14 +32,23 @@ export function createPlaybackController({
     };
   }
 
+  function resetPlaybackStatus() {
+    applyPlaybackStatus({ playing: false, hasVideo: false, known: true });
+  }
+
+  function getActivePlaybackTabId(state = getPlaylistState() || {}) {
+    return Boolean(state?.currentListId) &&
+      Boolean(state?.currentVideoId) &&
+      Number.isInteger(state?.currentTabId)
+      ? state.currentTabId
+      : null;
+  }
+
   function updatePlaybackControls() {
     const playlistState = getPlaylistState() || {};
     const meta = computePlaybackMeta(playlistState);
     const queueHasEntries = meta.queueIds.length > 0;
-    const activeListId = playlistState?.currentListId || null;
-    const hasKnownVideo = Boolean(activeListId) && Boolean(playlistState?.currentVideoId);
-    const hasActiveTab = Boolean(activeListId) && Number.isInteger(playlistState?.currentTabId);
-    const hasPlaybackContext = hasActiveTab && hasKnownVideo;
+    const hasPlaybackContext = getActivePlaybackTabId(playlistState) !== null;
     const hasActivePlayback = hasPlaybackContext && meta.controlling;
     const shouldShowStart = queueHasEntries && !hasPlaybackContext;
     let showPlaybackCluster = false;
@@ -152,13 +161,13 @@ export function createPlaybackController({
       }
       if (response?.reason === "NO_ACTIVE_TAB" || response?.reason === "TAB_UNREACHABLE") {
         setStatus("Нет активного воспроизведения", "info", 2500);
-        applyPlaybackStatus({ playing: false, hasVideo: false, known: true });
+        resetPlaybackStatus();
         updatePlaybackControls();
         return;
       }
       if (response?.reason === "NO_VIDEO") {
         setStatus("Видео не найдено на вкладке", "info", 2500);
-        applyPlaybackStatus({ playing: false, hasVideo: false, known: true });
+        resetPlaybackStatus();
         updatePlaybackControls();
         return;
       }
@@ -179,7 +188,7 @@ export function createPlaybackController({
     } catch (err) {
       console.error("Toggle playback failed", err);
       setStatus("Не удалось управлять воспроизведением", "error", 3500);
-      applyPlaybackStatus({ playing: false, hasVideo: false, known: true });
+      resetPlaybackStatus();
       updatePlaybackControls();
     } finally {
       togglePlaybackBtn.removeAttribute("data-loading");
@@ -189,19 +198,14 @@ export function createPlaybackController({
   }
 
   function hasActivePlaybackTab() {
-    const playlistState = getPlaylistState() || {};
-    return (
-      Boolean(playlistState?.currentListId) &&
-      Boolean(playlistState?.currentVideoId) &&
-      Number.isInteger(playlistState?.currentTabId)
-    );
+    return getActivePlaybackTabId() !== null;
   }
 
   async function refreshPlaybackStatus({ force = false } = {}) {
     if (!hasActivePlaybackTab()) {
       playbackStatusPromise = null;
       lastPlaybackStatusRequest = 0;
-      applyPlaybackStatus({ playing: false, hasVideo: false, known: true });
+      resetPlaybackStatus();
       updatePlaybackControls();
       return;
     }
@@ -231,12 +235,12 @@ export function createPlaybackController({
           return;
         }
         if (response?.reason === "NO_VIDEO" || response?.reason === "TAB_UNREACHABLE") {
-          applyPlaybackStatus({ playing: false, hasVideo: false, known: true });
+          resetPlaybackStatus();
           updatePlaybackControls();
           return;
         }
         if (response?.reason === "NO_ACTIVE_TAB") {
-          applyPlaybackStatus({ playing: false, hasVideo: false, known: true });
+          resetPlaybackStatus();
           updatePlaybackControls();
         }
       })
@@ -245,7 +249,7 @@ export function createPlaybackController({
         if (!err || !/receiving end/i.test(err.message || "")) {
           console.error("Failed to get playback status", err);
         }
-        applyPlaybackStatus({ playing: false, hasVideo: false, known: true });
+        resetPlaybackStatus();
         updatePlaybackControls();
       });
     return playbackStatusPromise;
@@ -322,10 +326,19 @@ export function createPlaybackController({
 
   async function playNext() {
     const playlistState = getPlaylistState() || {};
+    const videoId =
+      typeof playlistState?.currentVideoId === "string"
+        ? playlistState.currentVideoId
+        : null;
+    if (!videoId) {
+      setStatus("Текущее видео не найдено", "info", 3000);
+      return;
+    }
     setLoading(playNextBtn, true);
     setStatus("Переходим к следующему...", "info");
     try {
       const state = await sendMessage("playlist:playNext", {
+        videoId,
         tabId: Number.isInteger(playlistState?.currentTabId)
           ? playlistState.currentTabId
           : undefined,
@@ -350,18 +363,13 @@ export function createPlaybackController({
   }
 
   function syncState(state) {
-    const hasControlledVideo =
-      Boolean(state?.currentListId) && Boolean(state?.currentVideoId);
-    const nextActiveTabId =
-      hasControlledVideo && Number.isInteger(state?.currentTabId)
-        ? state.currentTabId
-        : null;
+    const nextActiveTabId = getActivePlaybackTabId(state);
     const activeTabChanged = nextActiveTabId !== activePlaybackTabId;
     activePlaybackTabId = nextActiveTabId;
     if (!activePlaybackTabId) {
       playbackStatusPromise = null;
       lastPlaybackStatusRequest = 0;
-      applyPlaybackStatus({ playing: false, hasVideo: false, known: true });
+      resetPlaybackStatus();
     } else if (activeTabChanged) {
       applyPlaybackStatus({ playing: true, hasVideo: true, known: false });
     }

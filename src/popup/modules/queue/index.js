@@ -1,5 +1,5 @@
 // Popup queue controller. Renders the current queue, empty state, row actions, active item, and drag integration.
-import { resolveProgressPercentFromObject } from "../../../progress.js";
+import { getProgressPercent } from "../../../progress.js";
 import { createVideoItem } from "../../lib/videoItem.js";
 import { buildDetailParts } from "../../lib/detailParts.js";
 import { openQuickFilter } from "../../lib/quickFilter.js";
@@ -248,7 +248,7 @@ export function createQueueController({
       }
 
       const detailParts = buildDetailParts(entry);
-      const progressPercent = resolveProgressPercentFromObject(
+      const progressPercent = getProgressPercent(
         playlistState?.videoProgress,
         entry.id
       );
@@ -287,7 +287,7 @@ export function createQueueController({
         });
       }
 
-      const { element } = createVideoItem(entry, {
+      const element = createVideoItem(entry, {
         tag: "li",
         classes: ["queue-item", allowPostpone ? "video-item--has-postpone" : null],
         dataset,

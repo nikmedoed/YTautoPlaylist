@@ -13,11 +13,20 @@ import {
 } from "./constants.js";
 import { composeRawState, splitStateForStorage } from "./serialization.js";
 import { sanitizeState } from "./sanitizers.js";
-import { deepClone } from "./utils.js";
+import { deepClone } from "../../utils.js";
 
 const hasChromeStorage =
   typeof chrome !== "undefined" && chrome?.storage?.local;
 let memoryState = null;
+let stateWriteQueue = Promise.resolve();
+
+// Serializes read-modify-write operations so parallel add/remove calls cannot
+// read the same old state and then overwrite each other.
+function enqueueStateWrite(operation) {
+  const result = stateWriteQueue.then(operation, operation);
+  stateWriteQueue = result.catch(() => {});
+  return result;
+}
 
 // Loads every split state key from chrome.storage and falls back to legacy monolithic state when needed.
 async function loadRawState() {
@@ -230,18 +239,22 @@ export async function getState() {
 }
 
 export async function replaceState(newState) {
-  const sanitized = sanitizeState(newState);
-  await persistState(sanitized);
-  return sanitized;
+  return enqueueStateWrite(async () => {
+    const sanitized = sanitizeState(newState);
+    await persistState(sanitized);
+    return sanitized;
+  });
 }
 
 export async function mutateState(mutator) {
-  const current = await getState();
-  const updated = await Promise.resolve(mutator(current));
-  if (!updated || typeof updated !== "object") {
-    throw new TypeError("State mutator must return updated state");
-  }
-  const sanitized = sanitizeState(updated);
-  await persistState(sanitized);
-  return sanitized;
+  return enqueueStateWrite(async () => {
+    const current = await getState();
+    const updated = await Promise.resolve(mutator(current));
+    if (!updated || typeof updated !== "object") {
+      throw new TypeError("State mutator must return updated state");
+    }
+    const sanitized = sanitizeState(updated);
+    await persistState(sanitized);
+    return sanitized;
+  });
 }

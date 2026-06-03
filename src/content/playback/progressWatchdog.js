@@ -133,11 +133,7 @@ function playbackWatchdogTick(context = {}) {
     }
     handleVideoProgressUpdate(context, { source: "watchdog" });
   };
-  if (typeof ytaDiagMeasure === "function") {
-    ytaDiagMeasure("player.playbackWatchdogTick", run);
-    return;
-  }
-  run();
+  ytaDiagMeasure("player.playbackWatchdogTick", run);
 }
 
 export function ensurePlaybackWatchdog(context = {}) {
@@ -162,7 +158,7 @@ export function resetVideoEndState(videoId = null) {
   videoEndFallbackState.matchedAt = 0;
 }
 
-export function markVideoEndHandled(videoId) {
+function markVideoEndHandled(videoId) {
   videoEndState.videoId = videoId;
   videoEndState.handled = true;
   videoEndFallbackState.videoId = videoId;
@@ -183,6 +179,8 @@ export function beginVideoEndHandling(videoId) {
   return true;
 }
 
+// Fallback for missed ended events. It only advances when progress is near the
+// end, the same video is still active, and duplicate handling is suppressed.
 function maybeTriggerVideoEndFallback(percent = null, context = {}, options = {}) {
   const source =
     options && typeof options.source === "string" ? options.source : "unknown";

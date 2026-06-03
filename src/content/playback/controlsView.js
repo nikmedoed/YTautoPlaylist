@@ -8,7 +8,7 @@ import {
   playerControls,
 } from "../core/base.js";
 
-export function destroyPlayerControls() {
+function destroyPlayerControls() {
   if (playerControls.observer) {
     playerControls.observer.disconnect();
     playerControls.observer = null;
@@ -79,7 +79,7 @@ function bindAddCurrentButton(addCurrentBtn, context) {
       } else {
         finalize();
       }
-    } catch (_) {
+    } catch {
       finalize();
     }
   });
@@ -184,10 +184,10 @@ export function ensurePlayerControls(context = {}) {
     createPlayerControls(host, context);
   }
   observePlayerHost(host);
-  updatePlayerControlsUI(context);
+  updatePlayerControlsUI();
 }
 
-export function updatePlayerControlsUI(context = {}) {
+export function updatePlayerControlsUI() {
   const queueIds = inlinePlaylistState.orderedVideoIds || [];
   const queueLength = queueIds.length;
   const currentId = getCurrentVideoId();
@@ -205,7 +205,6 @@ export function updatePlayerControlsUI(context = {}) {
     typeof inlinePlaylistState.currentIndex === "number" &&
     inlinePlaylistState.currentIndex > 0;
   const hasPrev = videoInQueue && (historyAvailable || queueHasPrevious);
-  const hasNext = videoInQueue && queueLength > 1;
   const shouldShowStart = hasQueue && !videoInQueue;
   const controlsAvailable = canHandlePlaybackActions();
   if (playerControls.addCurrent) {
