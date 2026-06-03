@@ -245,27 +245,12 @@ function normalizeSyncTimestamp(value) {
   return Number.isFinite(ts) && ts > 0 ? Math.trunc(ts) : 0;
 }
 
-// src/store/state/settingsSync.js
+// src/store/state/settingsSyncSnapshot.js
 var SETTINGS_SYNC_FORMAT_VERSION = 1;
 var DEFAULT_FILTERS = Object.freeze({
   global: { noShorts: true },
   channels: {}
 });
-function hasChromeStorageArea(area) {
-  return typeof chrome !== "undefined" && chrome?.storage?.[area];
-}
-async function storageGet(area, keys) {
-  return hasChromeStorageArea(area) ? chrome.storage[area].get(keys) : {};
-}
-async function storageSet(area, payload) {
-  if (hasChromeStorageArea(area)) {
-    await chrome.storage[area].set(payload);
-  }
-}
-function createDeviceId() {
-  const random = typeof crypto !== "undefined" && crypto?.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
-  return `device_${Date.now().toString(36)}_${random}`;
-}
 function cloneDefaultFilters() {
   return { global: { ...DEFAULT_FILTERS.global }, channels: {} };
 }
@@ -276,12 +261,11 @@ function normalizeRuleSet(raw = {}) {
     result.noBroadcasts = raw.noBroadcasts;
   }
   ["title", "tags", "playlists"].forEach((key) => {
-    if (Array.isArray(raw[key])) {
-      const values = Array.from(
-        new Set(raw[key].map((value) => String(value).trim()).filter(Boolean))
-      );
-      if (values.length) result[key] = values;
-    }
+    if (!Array.isArray(raw[key])) return;
+    const values = Array.from(
+      new Set(raw[key].map((value) => String(value).trim()).filter(Boolean))
+    );
+    if (values.length) result[key] = values;
   });
   if (Array.isArray(raw.duration)) {
     const duration = raw.duration.map((entry) => ({
@@ -293,9 +277,7 @@ function normalizeRuleSet(raw = {}) {
   return result;
 }
 function normalizeSettingsFilters(raw) {
-  if (!raw || typeof raw !== "object") {
-    return cloneDefaultFilters();
-  }
+  if (!raw || typeof raw !== "object") return cloneDefaultFilters();
   const normalized = cloneDefaultFilters();
   normalized.global = {
     ...normalized.global,
@@ -309,11 +291,14 @@ function normalizeSettingsFilters(raw) {
   }
   return normalized;
 }
-function getSettingsChunkKey(index) {
-  return `${SETTINGS_SYNC_CHUNK_STORAGE_PREFIX}${index}`;
+function defaultSettingsFingerprint() {
+  return settingsFingerprint(DEFAULT_FILTERS);
 }
 function settingsFingerprint(filters) {
   return hashString(JSON.stringify(normalizeSettingsFilters(filters)));
+}
+function getSettingsChunkKey(index) {
+  return `${SETTINGS_SYNC_CHUNK_STORAGE_PREFIX}${index}`;
 }
 function parseSettingsSnapshot(manifest, chunks) {
   if (!manifest || typeof manifest !== "object" || manifest.version !== SETTINGS_SYNC_FORMAT_VERSION || !Number.isInteger(manifest.chunkCount) || manifest.chunkCount <= 0 || manifest.chunkCount > 100 || !Array.isArray(chunks) || chunks.some((chunk) => typeof chunk !== "string")) {
@@ -332,6 +317,23 @@ function parseSettingsSnapshot(manifest, chunks) {
   } catch {
     return null;
   }
+}
+
+// src/store/state/settingsSync.js
+function hasChromeStorageArea(area) {
+  return typeof chrome !== "undefined" && chrome?.storage?.[area];
+}
+async function storageGet(area, keys) {
+  return hasChromeStorageArea(area) ? chrome.storage[area].get(keys) : {};
+}
+async function storageSet(area, payload) {
+  if (hasChromeStorageArea(area)) {
+    await chrome.storage[area].set(payload);
+  }
+}
+function createDeviceId() {
+  const random = typeof crypto !== "undefined" && crypto?.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+  return `device_${Date.now().toString(36)}_${random}`;
 }
 async function readLocalMeta() {
   const stored = await storageGet("local", SETTINGS_SYNC_LOCAL_META_STORAGE_KEY);
@@ -376,13 +378,13 @@ async function writeLocalSettingsFilters(filters) {
     [FILTERS_STORAGE_KEY]: JSON.stringify(normalizeSettingsFilters(filters))
   });
 }
-async function scheduleSettingsSync(filtersInput) {
+async function scheduleSettingsSync(filtersInput, { immediate = false } = {}) {
   if (!hasChromeStorageArea("sync") || !hasChromeStorageArea("local")) return;
   const meta = await readLocalMeta();
   const localHash = settingsFingerprint(filtersInput);
-  if (localHash === meta.localHash) return;
+  if (localHash === meta.localHash && !immediate) return;
   const now = Date.now();
-  const dueAt = now + SYNC_DEBOUNCE_MS;
+  const dueAt = immediate ? now : now + SYNC_DEBOUNCE_MS;
   await writeLocalMeta({
     ...meta,
     deviceId: await ensureDeviceId(meta),
@@ -406,7 +408,7 @@ async function resolveRemoteSettingsSyncFilters(localFiltersInput) {
   }
   const remote = await readRemoteSettingsSyncSnapshot();
   if (!remote) {
-    if (settingsFingerprint(localFilters) !== settingsFingerprint(DEFAULT_FILTERS)) {
+    if (settingsFingerprint(localFilters) !== defaultSettingsFingerprint()) {
       await scheduleSettingsSync(localFilters);
     }
     return { filters: localFilters, imported: false };
@@ -593,6 +595,9 @@ function getSyncStatus() {
 }
 function pullRemoteSync() {
   return sendRuntimeMessage({ type: "sync:pullRemote" });
+}
+function pushLocalSync() {
+  return sendRuntimeMessage({ type: "sync:pushLocal" });
 }
 function replaceLocalFromRemoteSync() {
   return sendRuntimeMessage({ type: "sync:replaceLocalFromRemote" });
@@ -2155,6 +2160,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const addCard = document.getElementById("addChannelCard");
   const floatingSaveBtn = document.getElementById("floatingSave");
   const pullSyncBtn = document.getElementById("pullSync");
+  const pushSyncBtn = document.getElementById("pushSync");
   const replaceFromSyncBtn = document.getElementById("replaceFromSync");
   const syncStatus = document.getElementById("syncStatus");
   const saveButtons = [saveFiltersBtn, floatingSaveBtn].filter(Boolean);
@@ -2176,7 +2182,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     return Number.isNaN(date.getTime()) ? "\u043D\u0435\u0442" : date.toLocaleString();
   }
   function setSyncBusy(busy) {
-    [pullSyncBtn, replaceFromSyncBtn].forEach((button) => {
+    [pullSyncBtn, pushSyncBtn, replaceFromSyncBtn].forEach((button) => {
       if (!button) return;
       button.disabled = busy;
       button.classList.toggle("is-loading", busy);
@@ -2212,15 +2218,30 @@ document.addEventListener("DOMContentLoaded", async () => {
       setSyncBusy(true);
       const result = await pullRemoteSync();
       const changed = result?.playlistImported || result?.settingsImported;
-      await refreshSyncStatus(
-        changed ? "\u0414\u0430\u043D\u043D\u044B\u0435 \u0438\u0437 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430 \u043F\u043E\u0434\u0442\u044F\u043D\u0443\u0442\u044B." : "\u0411\u043E\u043B\u0435\u0435 \u0441\u0432\u0435\u0436\u0438\u0445 \u0434\u0430\u043D\u043D\u044B\u0445 \u0432 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0435 \u043D\u0435\u0442."
-      );
+      await refreshSyncStatus(changed ? "\u0414\u0430\u043D\u043D\u044B\u0435 \u0438\u0437 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430 \u043F\u043E\u0434\u0442\u044F\u043D\u0443\u0442\u044B." : "\u0411\u043E\u043B\u0435\u0435 \u0441\u0432\u0435\u0436\u0438\u0445 \u0434\u0430\u043D\u043D\u044B\u0445 \u0432 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0435 \u043D\u0435\u0442.");
       if (result?.settingsImported) {
         window.setTimeout(() => window.location.reload(), 700);
       }
     } catch (err) {
       console.error("Failed to pull account sync", err);
       showToast("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u0434\u0442\u044F\u043D\u0443\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435 \u0438\u0437 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430", true);
+    } finally {
+      setSyncBusy(false);
+    }
+  });
+  pushSyncBtn?.addEventListener("click", async () => {
+    if (saveFiltersBtn && !saveFiltersBtn.classList.contains("is-hidden")) {
+      showToast("\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u0444\u0438\u043B\u044C\u0442\u0440\u043E\u0432", true);
+      return;
+    }
+    try {
+      setSyncBusy(true);
+      const result = await pushLocalSync();
+      const pushed = result?.playlistPushed || result?.settingsPushed;
+      await refreshSyncStatus(pushed ? "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u044B \u0432 \u0430\u043A\u043A\u0430\u0443\u043D\u0442." : "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435 \u0432 \u0430\u043A\u043A\u0430\u0443\u043D\u0442.");
+    } catch (err) {
+      console.error("Failed to push local account sync", err);
+      showToast("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435 \u0432 \u0430\u043A\u043A\u0430\u0443\u043D\u0442", true);
     } finally {
       setSyncBusy(false);
     }
@@ -2234,9 +2255,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       setSyncBusy(true);
       const result = await replaceLocalFromRemoteSync();
       const changed = result?.playlistImported || result?.settingsImported;
-      await refreshSyncStatus(
-        changed ? "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u0437\u0430\u043C\u0435\u043D\u0435\u043D\u044B \u0438\u0437 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430." : "\u0412 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0435 \u043D\u0435\u0442 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0445 \u0434\u0430\u043D\u043D\u044B\u0445."
-      );
+      await refreshSyncStatus(changed ? "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u0437\u0430\u043C\u0435\u043D\u0435\u043D\u044B \u0438\u0437 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430." : "\u0412 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0435 \u043D\u0435\u0442 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0445 \u0434\u0430\u043D\u043D\u044B\u0445.");
       if (changed) {
         window.setTimeout(() => window.location.reload(), 700);
       }

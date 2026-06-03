@@ -43,8 +43,8 @@ import {
         name: 'Основной',
         freeze: false,
         queue: [
-          { id: 'indexVideo1', title: 'First' },
-          { id: 'indexVideo2', title: 'Second' },
+          { id: 'indexVideo1', title: 'First', addedAt: 1 },
+          { id: 'indexVideo2', title: 'Second', addedAt: 2 },
         ],
         currentIndex: 0,
         revision: 2,
@@ -205,4 +205,29 @@ import {
   assert.ok(snapshot.manifest.chunkCount >= 1);
   assert.strictEqual(snapshot.chunks.length, snapshot.manifest.chunkCount);
   console.log('playlist sync snapshots are split into storage.sync chunks');
+}
+
+{
+  const heavyQueue = Array.from({ length: 250 }, (_, index) => ({
+    id: `heavyVid${String(index).padStart(3, '0')}`,
+    title: `Heavy metadata playlist video ${index}`,
+    thumbnail: `https://i.ytimg.com/vi/heavyVid${index}/maxresdefault.jpg?${'x'.repeat(500)}`,
+    channelTitle: `Channel ${index}`,
+    addedAt: 1000 + index,
+  }));
+  const snapshot = buildSyncSnapshot({
+    lists: {
+      default: {
+        id: 'default',
+        name: 'Основной',
+        freeze: false,
+        queue: heavyQueue,
+        currentIndex: 0,
+        revision: heavyQueue.length,
+      },
+    },
+    listOrder: ['default'],
+  });
+  assert.ok(snapshot.totalBytes < 98 * 1024);
+  console.log('playlist sync snapshots compact heavy video metadata');
 }

@@ -246,13 +246,13 @@ export async function getPlaylistSyncStatus() {
   };
 }
 
-export async function schedulePlaylistSync(stateInput) {
+export async function schedulePlaylistSync(stateInput, { immediate = false } = {}) {
   if (!hasChromeStorageArea("sync") || !hasChromeStorageArea("local")) {
     return;
   }
   const localMeta = await readLocalSyncMeta();
   const localHash = getSyncStateFingerprint(stateInput);
-  if (localHash === localMeta.localHash) {
+  if (localHash === localMeta.localHash && !immediate) {
     if (localMeta.pending) {
       const flushAfter =
         normalizeSyncTimestamp(localMeta.flushAfter) ||
@@ -263,7 +263,7 @@ export async function schedulePlaylistSync(stateInput) {
   }
   const now = Date.now();
   const deviceId = await ensureLocalDeviceId(localMeta);
-  const dueAt = now + SYNC_DEBOUNCE_MS;
+  const dueAt = immediate ? now : now + SYNC_DEBOUNCE_MS;
   await writeLocalSyncMeta({
     ...localMeta,
     deviceId,
@@ -284,7 +284,7 @@ export async function schedulePlaylistSync(stateInput) {
   await scheduleSyncAlarm(dueAt);
 }
 
-export async function writePendingPlaylistSync(stateInput) {
+export async function writePendingPlaylistSync(stateInput, { force = false } = {}) {
   if (!hasChromeStorageArea("sync") || !hasChromeStorageArea("local")) {
     return { wrote: false, reason: "storage-unavailable" };
   }
@@ -294,7 +294,7 @@ export async function writePendingPlaylistSync(stateInput) {
   }
   const now = Date.now();
   const flushAfter = normalizeSyncTimestamp(localMeta.flushAfter);
-  if (flushAfter && flushAfter > now) {
+  if (!force && flushAfter && flushAfter > now) {
     await scheduleSyncAlarm(flushAfter);
     return { wrote: false, reason: "debounced" };
   }
@@ -336,7 +336,7 @@ export async function writePendingPlaylistSync(stateInput) {
   let stateToWrite = stateInput;
   let conflictMerged = false;
   let snapshotUpdatedAt = updatedAt;
-  if (remoteChangedSinceBase || remoteNewerThanLocal) {
+  if (!force && (remoteChangedSinceBase || remoteNewerThanLocal)) {
     stateToWrite = mergeSyncStatesConservatively(stateInput, previousRemote.state);
     conflictMerged = true;
     snapshotUpdatedAt = now;

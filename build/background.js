@@ -614,6 +614,106 @@ function splitStateForStorage(state) {
   };
 }
 
+// src/store/state/syncPayload.js
+var COMPACT_SYNC_VERSION = 2;
+function compactEntry(entry, extraField = null) {
+  const id = typeof entry?.id === "string" ? entry.id.trim() : "";
+  if (!id) return null;
+  const result = [id];
+  if (entry?.addedAt) result.push(entry.addedAt);
+  if (entry?.publishedAt) result.push(entry.publishedAt);
+  if (extraField) result.push(entry?.[extraField] || 0, entry?.listId || null);
+  return result;
+}
+function expandEntry(entry, extraField = null) {
+  const source = Array.isArray(entry) ? entry : [entry?.id];
+  const id = typeof source[0] === "string" ? source[0] : "";
+  if (!id) return null;
+  const expanded = {
+    id,
+    title: "",
+    channelId: "",
+    channelTitle: "",
+    thumbnail: "",
+    publishedAt: typeof source[2] === "string" ? source[2] : null,
+    duration: null,
+    addedAt: source[1] || Date.now()
+  };
+  if (extraField) {
+    expanded[extraField] = source[3] || Date.now();
+    expanded.listId = source[4] || null;
+  }
+  return expanded;
+}
+function compactList(list) {
+  return {
+    n: list.name,
+    f: list.freeze && list.id !== DEFAULT_LIST_ID ? 1 : 0,
+    r: Number.isInteger(list.revision) ? list.revision : 0,
+    q: (list.queue || []).map((entry) => compactEntry(entry)).filter(Boolean)
+  };
+}
+function expandList(id, list) {
+  const queue = Array.isArray(list?.q) ? list.q.map((entry) => expandEntry(entry)).filter(Boolean) : [];
+  return {
+    id,
+    name: list?.n || void 0,
+    freeze: Boolean(list?.f),
+    queue,
+    currentIndex: queue.length ? 0 : null,
+    revision: Number.isInteger(list?.r) ? list.r : 0
+  };
+}
+function compactProgress(progress = {}) {
+  const result = {};
+  Object.entries(progress || {}).forEach(([id, value]) => {
+    result[id] = [Number(value?.percent) || 0, Number(value?.updatedAt) || 0];
+  });
+  return result;
+}
+function expandProgress(progress = {}) {
+  const result = {};
+  Object.entries(progress || {}).forEach(([id, value]) => {
+    const source = Array.isArray(value) ? value : [];
+    result[id] = { percent: Number(source[0]) || 0, updatedAt: Number(source[1]) || 0 };
+  });
+  return result;
+}
+function buildCompactSyncPayload(stateInput) {
+  const state = sanitizeState(stateInput);
+  const lists = {};
+  Object.entries(state.lists || {}).forEach(([id, list]) => {
+    lists[id] = compactList(list);
+  });
+  return {
+    v: COMPACT_SYNC_VERSION,
+    l: lists,
+    o: state.listOrder,
+    h: state.history.map((entry) => compactEntry(entry, "watchedAt")).filter(Boolean),
+    d: state.deletedHistory.map((entry) => compactEntry(entry, "deletedAt")).filter(Boolean),
+    a: state.autoCollect,
+    p: compactProgress(state.videoProgress)
+  };
+}
+function expandCompactSyncPayload(payload) {
+  if (!payload || payload.v !== COMPACT_SYNC_VERSION) return null;
+  const lists = {};
+  Object.entries(payload.l || {}).forEach(([id, list]) => {
+    lists[id] = expandList(id, list);
+  });
+  return sanitizeState({
+    lists,
+    listOrder: Array.isArray(payload.o) ? payload.o : [DEFAULT_LIST_ID],
+    currentListId: DEFAULT_LIST_ID,
+    currentVideoId: null,
+    currentTabId: null,
+    history: Array.isArray(payload.h) ? payload.h.map((entry) => expandEntry(entry, "watchedAt")).filter(Boolean) : [],
+    deletedHistory: Array.isArray(payload.d) ? payload.d.map((entry) => expandEntry(entry, "deletedAt")).filter(Boolean) : [],
+    autoCollect: payload.a || {},
+    videoProgress: expandProgress(payload.p)
+  });
+}
+
 // src/store/state/syncSnapshot.js
 var SYNC_FORMAT_VERSION = 1;
 function byteLength(value) {
@@ -665,7 +765,7 @@ function buildSyncState(stateInput) {
   });
 }
 function getSyncStateFingerprint(stateInput) {
-  return hashString(JSON.stringify(buildSyncState(stateInput)));
+  return hashString(JSON.stringify(buildCompactSyncPayload(buildSyncState(stateInput))));
 }
 function hasSyncableUserData(stateInput) {
   const state = sanitizeState(stateInput);
@@ -857,8 +957,8 @@ function splitStringByStorageBytes(value) {
   return chunks;
 }
 function buildSyncSnapshot(stateInput, { updatedAt, deviceId } = {}) {
-  const state = buildSyncState(stateInput);
-  const json = JSON.stringify(state);
+  const payload = buildCompactSyncPayload(buildSyncState(stateInput));
+  const json = JSON.stringify(payload);
   const hash = hashString(json);
   const chunks = splitStringByStorageBytes(json);
   const manifest = {
@@ -889,9 +989,10 @@ function parseSyncSnapshot(manifest, chunks) {
     return null;
   }
   try {
+    const parsed = JSON.parse(json);
     return {
       manifest,
-      state: buildSyncState(JSON.parse(json)),
+      state: expandCompactSyncPayload(parsed) || buildSyncState(parsed),
       updatedAt: normalizeSyncTimestamp(manifest.updatedAt),
       hash
     };
@@ -900,32 +1001,12 @@ function parseSyncSnapshot(manifest, chunks) {
   }
 }
 
-// src/store/state/settingsSync.js
+// src/store/state/settingsSyncSnapshot.js
 var SETTINGS_SYNC_FORMAT_VERSION = 1;
 var DEFAULT_FILTERS = Object.freeze({
   global: { noShorts: true },
   channels: {}
 });
-function hasChromeStorageArea(area) {
-  return typeof chrome !== "undefined" && chrome?.storage?.[area];
-}
-async function storageGet(area, keys) {
-  return hasChromeStorageArea(area) ? chrome.storage[area].get(keys) : {};
-}
-async function storageSet(area, payload) {
-  if (hasChromeStorageArea(area)) {
-    await chrome.storage[area].set(payload);
-  }
-}
-async function storageRemove(area, keys) {
-  if (hasChromeStorageArea(area) && keys.length) {
-    await chrome.storage[area].remove(keys);
-  }
-}
-function createDeviceId() {
-  const random = typeof crypto !== "undefined" && crypto?.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
-  return `device_${Date.now().toString(36)}_${random}`;
-}
 function cloneDefaultFilters() {
   return { global: { ...DEFAULT_FILTERS.global }, channels: {} };
 }
@@ -936,12 +1017,11 @@ function normalizeRuleSet(raw = {}) {
     result.noBroadcasts = raw.noBroadcasts;
   }
   ["title", "tags", "playlists"].forEach((key) => {
-    if (Array.isArray(raw[key])) {
-      const values = Array.from(
-        new Set(raw[key].map((value) => String(value).trim()).filter(Boolean))
-      );
-      if (values.length) result[key] = values;
-    }
+    if (!Array.isArray(raw[key])) return;
+    const values = Array.from(
+      new Set(raw[key].map((value) => String(value).trim()).filter(Boolean))
+    );
+    if (values.length) result[key] = values;
   });
   if (Array.isArray(raw.duration)) {
     const duration = raw.duration.map((entry) => ({
@@ -953,9 +1033,7 @@ function normalizeRuleSet(raw = {}) {
   return result;
 }
 function normalizeSettingsFilters(raw) {
-  if (!raw || typeof raw !== "object") {
-    return cloneDefaultFilters();
-  }
+  if (!raw || typeof raw !== "object") return cloneDefaultFilters();
   const normalized = cloneDefaultFilters();
   normalized.global = {
     ...normalized.global,
@@ -969,18 +1047,14 @@ function normalizeSettingsFilters(raw) {
   }
   return normalized;
 }
-function parseStoredFilters(raw) {
-  try {
-    return normalizeSettingsFilters(typeof raw === "string" ? JSON.parse(raw) : raw);
-  } catch {
-    return cloneDefaultFilters();
-  }
-}
-function getSettingsChunkKey(index) {
-  return `${SETTINGS_SYNC_CHUNK_STORAGE_PREFIX}${index}`;
+function defaultSettingsFingerprint() {
+  return settingsFingerprint(DEFAULT_FILTERS);
 }
 function settingsFingerprint(filters) {
   return hashString(JSON.stringify(normalizeSettingsFilters(filters)));
+}
+function getSettingsChunkKey(index) {
+  return `${SETTINGS_SYNC_CHUNK_STORAGE_PREFIX}${index}`;
 }
 function splitStringByStorageBytes2(value) {
   const chunks = [];
@@ -1078,6 +1152,35 @@ function mergeFiltersConservatively(localInput, remoteInput) {
     channels
   });
 }
+
+// src/store/state/settingsSync.js
+function hasChromeStorageArea(area) {
+  return typeof chrome !== "undefined" && chrome?.storage?.[area];
+}
+async function storageGet(area, keys) {
+  return hasChromeStorageArea(area) ? chrome.storage[area].get(keys) : {};
+}
+async function storageSet(area, payload) {
+  if (hasChromeStorageArea(area)) {
+    await chrome.storage[area].set(payload);
+  }
+}
+async function storageRemove(area, keys) {
+  if (hasChromeStorageArea(area) && keys.length) {
+    await chrome.storage[area].remove(keys);
+  }
+}
+function createDeviceId() {
+  const random = typeof crypto !== "undefined" && crypto?.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+  return `device_${Date.now().toString(36)}_${random}`;
+}
+function parseStoredFilters(raw) {
+  try {
+    return normalizeSettingsFilters(typeof raw === "string" ? JSON.parse(raw) : raw);
+  } catch {
+    return normalizeSettingsFilters(null);
+  }
+}
 async function readLocalMeta() {
   const stored = await storageGet("local", SETTINGS_SYNC_LOCAL_META_STORAGE_KEY);
   const meta = stored?.[SETTINGS_SYNC_LOCAL_META_STORAGE_KEY];
@@ -1130,13 +1233,13 @@ async function writeLocalSettingsFilters(filters) {
     [FILTERS_STORAGE_KEY]: JSON.stringify(normalizeSettingsFilters(filters))
   });
 }
-async function scheduleSettingsSync(filtersInput) {
+async function scheduleSettingsSync(filtersInput, { immediate = false } = {}) {
   if (!hasChromeStorageArea("sync") || !hasChromeStorageArea("local")) return;
   const meta = await readLocalMeta();
   const localHash = settingsFingerprint(filtersInput);
-  if (localHash === meta.localHash) return;
+  if (localHash === meta.localHash && !immediate) return;
   const now = Date.now();
-  const dueAt = now + SYNC_DEBOUNCE_MS;
+  const dueAt = immediate ? now : now + SYNC_DEBOUNCE_MS;
   await writeLocalMeta({
     ...meta,
     deviceId: await ensureDeviceId(meta),
@@ -1150,7 +1253,7 @@ async function scheduleSettingsSync(filtersInput) {
   });
   await scheduleAlarm(dueAt);
 }
-async function flushPendingSettingsSync() {
+async function flushPendingSettingsSync({ force = false } = {}) {
   if (!hasChromeStorageArea("sync") || !hasChromeStorageArea("local")) {
     return { wrote: false, reason: "storage-unavailable" };
   }
@@ -1158,7 +1261,7 @@ async function flushPendingSettingsSync() {
   if (!meta.pending) return { wrote: false, reason: "not-pending" };
   const now = Date.now();
   const flushAfter = normalizeSyncTimestamp(meta.flushAfter);
-  if (flushAfter && flushAfter > now) {
+  if (!force && flushAfter && flushAfter > now) {
     await scheduleAlarm(flushAfter);
     return { wrote: false, reason: "debounced" };
   }
@@ -1172,7 +1275,7 @@ async function flushPendingSettingsSync() {
   const remote = await readRemoteSettingsSyncSnapshot();
   const remoteFromOther = remote && remote.manifest?.deviceId !== deviceId;
   const baseHash = typeof meta.baseRemoteHash === "string" ? meta.baseRemoteHash : null;
-  const conflict = remoteFromOther && (!baseHash || remote.hash !== baseHash);
+  const conflict = !force && remoteFromOther && (!baseHash || remote.hash !== baseHash);
   const filtersToWrite = conflict ? mergeFiltersConservatively(localFilters, remote.filters) : localFilters;
   const updatedAt = conflict ? now : normalizeSyncTimestamp(meta.localUpdatedAt) || now;
   let snapshot;
@@ -1218,6 +1321,12 @@ async function flushPendingSettingsSync() {
   });
   return { wrote: true, conflictMerged: conflict, updatedAt };
 }
+async function pushLocalSettingsSyncNow() {
+  const filters = await readLocalSettingsFilters();
+  await scheduleSettingsSync(filters, { immediate: true });
+  const result = await flushPendingSettingsSync({ force: true });
+  return { ...result, pushed: Boolean(result?.wrote) };
+}
 async function resolveRemoteSettingsSyncFilters(localFiltersInput) {
   const localFilters = normalizeSettingsFilters(localFiltersInput);
   const meta = await readLocalMeta();
@@ -1228,7 +1337,7 @@ async function resolveRemoteSettingsSyncFilters(localFiltersInput) {
   }
   const remote = await readRemoteSettingsSyncSnapshot();
   if (!remote) {
-    if (settingsFingerprint(localFilters) !== settingsFingerprint(DEFAULT_FILTERS)) {
+    if (settingsFingerprint(localFilters) !== defaultSettingsFingerprint()) {
       await scheduleSettingsSync(localFilters);
     }
     return { filters: localFilters, imported: false };
@@ -1478,13 +1587,13 @@ async function getPlaylistSyncStatus() {
     remoteAvailable: Boolean(remote)
   };
 }
-async function schedulePlaylistSync(stateInput) {
+async function schedulePlaylistSync(stateInput, { immediate = false } = {}) {
   if (!hasChromeStorageArea2("sync") || !hasChromeStorageArea2("local")) {
     return;
   }
   const localMeta = await readLocalSyncMeta();
   const localHash = getSyncStateFingerprint(stateInput);
-  if (localHash === localMeta.localHash) {
+  if (localHash === localMeta.localHash && !immediate) {
     if (localMeta.pending) {
       const flushAfter = normalizeSyncTimestamp(localMeta.flushAfter) || Date.now() + SYNC_DEBOUNCE_MS;
       await scheduleSyncAlarm(flushAfter);
@@ -1493,7 +1602,7 @@ async function schedulePlaylistSync(stateInput) {
   }
   const now = Date.now();
   const deviceId = await ensureLocalDeviceId(localMeta);
-  const dueAt = now + SYNC_DEBOUNCE_MS;
+  const dueAt = immediate ? now : now + SYNC_DEBOUNCE_MS;
   await writeLocalSyncMeta({
     ...localMeta,
     deviceId,
@@ -1508,7 +1617,7 @@ async function schedulePlaylistSync(stateInput) {
   });
   await scheduleSyncAlarm(dueAt);
 }
-async function writePendingPlaylistSync(stateInput) {
+async function writePendingPlaylistSync(stateInput, { force = false } = {}) {
   if (!hasChromeStorageArea2("sync") || !hasChromeStorageArea2("local")) {
     return { wrote: false, reason: "storage-unavailable" };
   }
@@ -1518,7 +1627,7 @@ async function writePendingPlaylistSync(stateInput) {
   }
   const now = Date.now();
   const flushAfter = normalizeSyncTimestamp(localMeta.flushAfter);
-  if (flushAfter && flushAfter > now) {
+  if (!force && flushAfter && flushAfter > now) {
     await scheduleSyncAlarm(flushAfter);
     return { wrote: false, reason: "debounced" };
   }
@@ -1549,7 +1658,7 @@ async function writePendingPlaylistSync(stateInput) {
   let stateToWrite = stateInput;
   let conflictMerged = false;
   let snapshotUpdatedAt = updatedAt;
-  if (remoteChangedSinceBase || remoteNewerThanLocal) {
+  if (!force && (remoteChangedSinceBase || remoteNewerThanLocal)) {
     stateToWrite = mergeSyncStatesConservatively(stateInput, previousRemote.state);
     conflictMerged = true;
     snapshotUpdatedAt = now;
@@ -1835,6 +1944,14 @@ async function replaceLocalPlaylistSyncFromRemote() {
       return { imported: true, state: sanitizeState(resolved.state) };
     }
     return { imported: false, reason: resolved.reason || "no-remote" };
+  });
+}
+async function pushLocalPlaylistSyncNow() {
+  return enqueueStateWrite(async () => {
+    const localRaw = await loadRawState({ checkRemoteSync: false });
+    await schedulePlaylistSync(localRaw, { immediate: true });
+    const result = await writePendingPlaylistSync(localRaw, { force: true });
+    return { ...result, pushed: Boolean(result?.wrote) };
   });
 }
 async function getPlaylistSyncStorageStatus() {
@@ -4605,6 +4722,19 @@ var optionsHandlers = {
       playlistImported: Boolean(playlist?.imported),
       playlistReason: playlist?.reason || null,
       settingsImported: Boolean(settings?.imported),
+      settingsReason: settings?.reason || null
+    };
+  },
+  async "sync:pushLocal"() {
+    const [playlist, settings] = await Promise.all([
+      pushLocalPlaylistSyncNow(),
+      pushLocalSettingsSyncNow()
+    ]);
+    return {
+      ok: true,
+      playlistPushed: Boolean(playlist?.pushed),
+      playlistReason: playlist?.reason || null,
+      settingsPushed: Boolean(settings?.pushed),
       settingsReason: settings?.reason || null
     };
   }

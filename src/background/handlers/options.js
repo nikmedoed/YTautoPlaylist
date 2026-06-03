@@ -4,6 +4,8 @@ import {
   getSettingsSyncStatus,
   importRemotePlaylistSyncIfNewer,
   importRemoteSettingsSync,
+  pushLocalPlaylistSyncNow,
+  pushLocalSettingsSyncNow,
   replaceLocalPlaylistSyncFromRemote,
 } from "../../store/index.js";
 import { parseVideoId } from "../../utils.js";
@@ -80,6 +82,20 @@ export const optionsHandlers = {
       playlistImported: Boolean(playlist?.imported),
       playlistReason: playlist?.reason || null,
       settingsImported: Boolean(settings?.imported),
+      settingsReason: settings?.reason || null,
+    };
+  },
+
+  async "sync:pushLocal"() {
+    const [playlist, settings] = await Promise.all([
+      pushLocalPlaylistSyncNow(),
+      pushLocalSettingsSyncNow(),
+    ]);
+    return {
+      ok: true,
+      playlistPushed: Boolean(playlist?.pushed),
+      playlistReason: playlist?.reason || null,
+      settingsPushed: Boolean(settings?.pushed),
       settingsReason: settings?.reason || null,
     };
   },

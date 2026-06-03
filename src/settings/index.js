@@ -11,6 +11,7 @@ import {
   getVideoDate,
   getVideoInfo,
   pullRemoteSync,
+  pushLocalSync,
   replaceLocalFromRemoteSync,
   setStartDate,
 } from "./shared/runtime.js";
@@ -29,7 +30,6 @@ import { createFilterSection } from "./filters/sections.js";
 import { bindFilterPersistence } from "./filters/persistence.js";
 import { createQuickFilterBuilder } from "./quick-filter/builder.js";
 import { getChannelMap } from "../youtube-api/channels.js";
-
 
 document.addEventListener("DOMContentLoaded", async () => {
   const startInput = document.getElementById("startDate");
@@ -50,11 +50,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   const addCard = document.getElementById("addChannelCard");
   const floatingSaveBtn = document.getElementById("floatingSave");
   const pullSyncBtn = document.getElementById("pullSync");
+  const pushSyncBtn = document.getElementById("pushSync");
   const replaceFromSyncBtn = document.getElementById("replaceFromSync");
   const syncStatus = document.getElementById("syncStatus");
-
   const saveButtons = [saveFiltersBtn, floatingSaveBtn].filter(Boolean);
-
   let globalSec;
   let globalShortsChk;
   let globalBroadcastChk;
@@ -67,16 +66,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     target?.addEventListener("change", markUnsaved, true);
   });
   updateSaveButtons();
-
   function formatSyncDate(value) {
     const ts = Number(value) || 0;
     if (ts <= 0) return "нет";
     const date = new Date(ts);
     return Number.isNaN(date.getTime()) ? "нет" : date.toLocaleString();
   }
-
   function setSyncBusy(busy) {
-    [pullSyncBtn, replaceFromSyncBtn].forEach((button) => {
+    [pullSyncBtn, pushSyncBtn, replaceFromSyncBtn].forEach((button) => {
       if (!button) return;
       button.disabled = busy;
       button.classList.toggle("is-loading", busy);
@@ -115,15 +112,35 @@ document.addEventListener("DOMContentLoaded", async () => {
       setSyncBusy(true);
       const result = await pullRemoteSync();
       const changed = result?.playlistImported || result?.settingsImported;
-      await refreshSyncStatus(
-        changed ? "Данные из аккаунта подтянуты." : "Более свежих данных в аккаунте нет."
-      );
+      await refreshSyncStatus(changed
+        ? "Данные из аккаунта подтянуты."
+        : "Более свежих данных в аккаунте нет.");
       if (result?.settingsImported) {
         window.setTimeout(() => window.location.reload(), 700);
       }
     } catch (err) {
       console.error("Failed to pull account sync", err);
       showToast("Не удалось подтянуть данные из аккаунта", true);
+    } finally {
+      setSyncBusy(false);
+    }
+  });
+
+  pushSyncBtn?.addEventListener("click", async () => {
+    if (saveFiltersBtn && !saveFiltersBtn.classList.contains("is-hidden")) {
+      showToast("Сначала сохраните изменения фильтров", true);
+      return;
+    }
+    try {
+      setSyncBusy(true);
+      const result = await pushLocalSync();
+      const pushed = result?.playlistPushed || result?.settingsPushed;
+      await refreshSyncStatus(pushed
+        ? "Локальные данные отправлены в аккаунт."
+        : "Не удалось отправить данные в аккаунт.");
+    } catch (err) {
+      console.error("Failed to push local account sync", err);
+      showToast("Не удалось отправить данные в аккаунт", true);
     } finally {
       setSyncBusy(false);
     }
@@ -138,9 +155,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       setSyncBusy(true);
       const result = await replaceLocalFromRemoteSync();
       const changed = result?.playlistImported || result?.settingsImported;
-      await refreshSyncStatus(
-        changed ? "Локальные данные заменены из аккаунта." : "В аккаунте нет сохранённых данных."
-      );
+      await refreshSyncStatus(changed
+        ? "Локальные данные заменены из аккаунта."
+        : "В аккаунте нет сохранённых данных.");
       if (changed) {
         window.setTimeout(() => window.location.reload(), 700);
       }

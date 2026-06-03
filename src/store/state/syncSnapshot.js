@@ -11,6 +11,10 @@ import {
 } from "./constants.js";
 import { sanitizeState } from "./sanitizers.js";
 import { deepClone } from "../../utils.js";
+import {
+  buildCompactSyncPayload,
+  expandCompactSyncPayload,
+} from "./syncPayload.js";
 
 export const SYNC_FORMAT_VERSION = 1;
 
@@ -71,7 +75,7 @@ export function buildSyncState(stateInput) {
 }
 
 export function getSyncStateFingerprint(stateInput) {
-  return hashString(JSON.stringify(buildSyncState(stateInput)));
+  return hashString(JSON.stringify(buildCompactSyncPayload(buildSyncState(stateInput))));
 }
 
 export function hasSyncableUserData(stateInput) {
@@ -288,8 +292,8 @@ function splitStringByStorageBytes(value) {
 }
 
 export function buildSyncSnapshot(stateInput, { updatedAt, deviceId } = {}) {
-  const state = buildSyncState(stateInput);
-  const json = JSON.stringify(state);
+  const payload = buildCompactSyncPayload(buildSyncState(stateInput));
+  const json = JSON.stringify(payload);
   const hash = hashString(json);
   const chunks = splitStringByStorageBytes(json);
   const manifest = {
@@ -332,9 +336,10 @@ export function parseSyncSnapshot(manifest, chunks) {
     return null;
   }
   try {
+    const parsed = JSON.parse(json);
     return {
       manifest,
-      state: buildSyncState(JSON.parse(json)),
+      state: expandCompactSyncPayload(parsed) || buildSyncState(parsed),
       updatedAt: normalizeSyncTimestamp(manifest.updatedAt),
       hash,
     };

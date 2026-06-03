@@ -307,6 +307,15 @@ export async function replaceLocalPlaylistSyncFromRemote() {
   });
 }
 
+export async function pushLocalPlaylistSyncNow() {
+  return enqueueStateWrite(async () => {
+    const localRaw = await loadRawState({ checkRemoteSync: false });
+    await schedulePlaylistSync(localRaw, { immediate: true });
+    const result = await writePendingPlaylistSync(localRaw, { force: true });
+    return { ...result, pushed: Boolean(result?.wrote) };
+  });
+}
+
 export async function getPlaylistSyncStorageStatus() {
   return getPlaylistSyncStatus();
 }
