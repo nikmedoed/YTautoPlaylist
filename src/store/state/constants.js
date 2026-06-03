@@ -7,12 +7,19 @@ export const VIDEO_PROGRESS_STORAGE_KEY = "runtimePlaylistProgress";
 export const DELETED_HISTORY_STORAGE_KEY = "runtimePlaylistDeletedHistory";
 export const AUTO_COLLECT_STORAGE_KEY = "subscriptionsCollect";
 export const LEGACY_AUTO_COLLECT_STORAGE_KEY = "runtimePlaylistAutoCollect";
+export const SYNC_LOCAL_META_STORAGE_KEY = "runtimePlaylistSyncLocal";
+export const SYNC_MANIFEST_STORAGE_KEY = "runtimePlaylistSyncManifest";
+export const SYNC_CHUNK_STORAGE_PREFIX = "runtimePlaylistSyncChunk:";
+export const SYNC_ALARM_NAME = "runtimePlaylistSyncFlush";
 const LIST_CONTENT_PREFIX = "runtimePlaylistList:";
 export const HISTORY_LIMIT = 10;
 export const DEFAULT_LIST_ID = "default";
 export const DEFAULT_LIST_NAME = "Основной";
 export const VIDEO_PROGRESS_LIMIT = 500;
 export const AUTO_COLLECT_SEEN_IDS_LIMIT = 2000;
+export const SYNC_DEBOUNCE_MS = 15 * 1000;
+export const SYNC_CHUNK_TARGET_BYTES = 7600;
+export const SYNC_TOTAL_TARGET_BYTES = 98 * 1024;
 
 export const VIDEO_ID_PATTERN = /^[\w-]{11}$/;
 

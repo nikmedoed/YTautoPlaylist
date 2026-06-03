@@ -13,12 +13,18 @@ import {
 } from "./constants.js";
 import { composeRawState, splitStateForStorage } from "./serialization.js";
 import { sanitizeState } from "./sanitizers.js";
+import {
+  resolveRemotePlaylistSyncState,
+  schedulePlaylistSync,
+  writePendingPlaylistSync,
+} from "./sync.js";
 import { deepClone } from "../../utils.js";
 
 const hasChromeStorage =
   typeof chrome !== "undefined" && chrome?.storage?.local;
 let memoryState = null;
 let stateWriteQueue = Promise.resolve();
+let checkedRemotePlaylistSync = false;
 
 // Serializes read-modify-write operations so parallel add/remove calls cannot
 // read the same old state and then overwrite each other.
@@ -29,7 +35,7 @@ function enqueueStateWrite(operation) {
 }
 
 // Loads every split state key from chrome.storage and falls back to legacy monolithic state when needed.
-async function loadRawState() {
+async function loadLocalRawState() {
   if (!hasChromeStorage) {
     const source = memoryState ?? defaultState;
     return deepClone(source);
@@ -186,7 +192,20 @@ async function loadRawState() {
   );
 }
 
-async function persistState(state) {
+async function loadRawState({ checkRemoteSync = true } = {}) {
+  const localRaw = await loadLocalRawState();
+  if (!hasChromeStorage || !checkRemoteSync || checkedRemotePlaylistSync) {
+    return localRaw;
+  }
+  checkedRemotePlaylistSync = true;
+  const resolved = await resolveRemotePlaylistSyncState(localRaw);
+  if (resolved.imported) {
+    await persistState(resolved.state, { scheduleSync: false });
+  }
+  return resolved.state;
+}
+
+async function persistState(state, { scheduleSync = true } = {}) {
   if (!hasChromeStorage) {
     memoryState = deepClone(state);
     return state;
@@ -230,6 +249,9 @@ async function persistState(state) {
   if (LEGACY_AUTO_COLLECT_STORAGE_KEY !== AUTO_COLLECT_STORAGE_KEY) {
     await chrome.storage.local.remove(LEGACY_AUTO_COLLECT_STORAGE_KEY);
   }
+  if (scheduleSync) {
+    await schedulePlaylistSync(state);
+  }
   return state;
 }
 
@@ -256,5 +278,28 @@ export async function mutateState(mutator) {
     const sanitized = sanitizeState(updated);
     await persistState(sanitized);
     return sanitized;
+  });
+}
+
+export async function importRemotePlaylistSyncIfNewer() {
+  return enqueueStateWrite(async () => {
+    const localRaw = await loadLocalRawState();
+    const resolved = await resolveRemotePlaylistSyncState(localRaw);
+    if (resolved.imported) {
+      await persistState(resolved.state, { scheduleSync: false });
+      return sanitizeState(resolved.state);
+    }
+    return sanitizeState(localRaw);
+  });
+}
+
+export async function flushPendingPlaylistSync() {
+  return enqueueStateWrite(async () => {
+    const localRaw = await loadRawState({ checkRemoteSync: false });
+    const result = await writePendingPlaylistSync(localRaw);
+    if (result?.mergedState) {
+      await persistState(result.mergedState, { scheduleSync: false });
+    }
+    return result;
   });
 }
