@@ -14,6 +14,8 @@ import {
 import { composeRawState, splitStateForStorage } from "./serialization.js";
 import { sanitizeState } from "./sanitizers.js";
 import {
+  forceRemotePlaylistSyncState,
+  getPlaylistSyncStatus,
   resolveRemotePlaylistSyncState,
   schedulePlaylistSync,
   writePendingPlaylistSync,
@@ -287,10 +289,26 @@ export async function importRemotePlaylistSyncIfNewer() {
     const resolved = await resolveRemotePlaylistSyncState(localRaw);
     if (resolved.imported) {
       await persistState(resolved.state, { scheduleSync: false });
-      return sanitizeState(resolved.state);
+      return { imported: true, state: sanitizeState(resolved.state) };
     }
-    return sanitizeState(localRaw);
+    return { imported: false, state: sanitizeState(localRaw) };
   });
+}
+
+export async function replaceLocalPlaylistSyncFromRemote() {
+  return enqueueStateWrite(async () => {
+    const localRaw = await loadLocalRawState();
+    const resolved = await forceRemotePlaylistSyncState(localRaw);
+    if (resolved.imported) {
+      await persistState(resolved.state, { scheduleSync: false });
+      return { imported: true, state: sanitizeState(resolved.state) };
+    }
+    return { imported: false, reason: resolved.reason || "no-remote" };
+  });
+}
+
+export async function getPlaylistSyncStorageStatus() {
+  return getPlaylistSyncStatus();
 }
 
 export async function flushPendingPlaylistSync() {

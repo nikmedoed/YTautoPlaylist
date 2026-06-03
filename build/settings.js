@@ -192,16 +192,261 @@ async function isVideoInPlaylist(videoId, playlistId) {
 var COLLECTION_WINDOW_MS = 7 * 24 * 60 * 60 * 1e3;
 var COLLECTION_FETCH_OVERLAP_MS = 48 * 60 * 60 * 1e3;
 
-// src/filterStorage.js
-var STORAGE_KEYS = {
-  filters: "filters",
-  autoCollect: "subscriptionsCollect"
+// src/store/state/constants.js
+var AUTO_COLLECT_STORAGE_KEY = "subscriptionsCollect";
+var FILTERS_STORAGE_KEY = "filters";
+var SETTINGS_SYNC_LOCAL_META_STORAGE_KEY = "runtimeSettingsSyncLocal";
+var SETTINGS_SYNC_MANIFEST_STORAGE_KEY = "runtimeSettingsSyncManifest";
+var SETTINGS_SYNC_CHUNK_STORAGE_PREFIX = "runtimeSettingsSyncChunk:";
+var SYNC_ALARM_NAME = "runtimePlaylistSyncFlush";
+var DEFAULT_LIST_ID = "default";
+var DEFAULT_LIST_NAME = "\u041E\u0441\u043D\u043E\u0432\u043D\u043E\u0439";
+var SYNC_DEBOUNCE_MS = 15 * 1e3;
+var SYNC_TOTAL_TARGET_BYTES = 98 * 1024;
+var SETTINGS_SYNC_TOTAL_TARGET_BYTES = 32 * 1024;
+var defaultState = {
+  lists: {
+    [DEFAULT_LIST_ID]: {
+      id: DEFAULT_LIST_ID,
+      name: DEFAULT_LIST_NAME,
+      freeze: false,
+      queue: [],
+      currentIndex: null,
+      revision: 0
+    }
+  },
+  listOrder: [DEFAULT_LIST_ID],
+  currentListId: DEFAULT_LIST_ID,
+  currentVideoId: null,
+  history: [],
+  deletedHistory: [],
+  currentTabId: null,
+  autoCollect: {
+    lastRunAt: 0,
+    lastAdded: 0,
+    lastFetched: 0,
+    nextAutoCollectAt: 0,
+    seenIds: []
+  },
+  videoProgress: {}
 };
+
+// src/store/state/syncSnapshot.js
+function hashString(value) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+function normalizeSyncTimestamp(value) {
+  const ts = Number(value);
+  return Number.isFinite(ts) && ts > 0 ? Math.trunc(ts) : 0;
+}
+
+// src/store/state/settingsSync.js
+var SETTINGS_SYNC_FORMAT_VERSION = 1;
 var DEFAULT_FILTERS = Object.freeze({
   global: { noShorts: true },
   channels: {}
 });
+function hasChromeStorageArea(area) {
+  return typeof chrome !== "undefined" && chrome?.storage?.[area];
+}
+async function storageGet(area, keys) {
+  return hasChromeStorageArea(area) ? chrome.storage[area].get(keys) : {};
+}
+async function storageSet(area, payload) {
+  if (hasChromeStorageArea(area)) {
+    await chrome.storage[area].set(payload);
+  }
+}
+function createDeviceId() {
+  const random = typeof crypto !== "undefined" && crypto?.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+  return `device_${Date.now().toString(36)}_${random}`;
+}
+function cloneDefaultFilters() {
+  return { global: { ...DEFAULT_FILTERS.global }, channels: {} };
+}
+function normalizeRuleSet(raw = {}) {
+  const result = {};
+  if (typeof raw.noShorts === "boolean") result.noShorts = raw.noShorts;
+  if (typeof raw.noBroadcasts === "boolean") {
+    result.noBroadcasts = raw.noBroadcasts;
+  }
+  ["title", "tags", "playlists"].forEach((key) => {
+    if (Array.isArray(raw[key])) {
+      const values = Array.from(
+        new Set(raw[key].map((value) => String(value).trim()).filter(Boolean))
+      );
+      if (values.length) result[key] = values;
+    }
+  });
+  if (Array.isArray(raw.duration)) {
+    const duration = raw.duration.map((entry) => ({
+      min: Math.max(0, Number(entry?.min) || 0),
+      max: entry?.max === Infinity ? Infinity : Math.max(0, Number(entry?.max) || 0)
+    })).filter((entry) => entry.max === Infinity || entry.max >= entry.min);
+    if (duration.length) result.duration = duration;
+  }
+  return result;
+}
+function normalizeSettingsFilters(raw) {
+  if (!raw || typeof raw !== "object") {
+    return cloneDefaultFilters();
+  }
+  const normalized = cloneDefaultFilters();
+  normalized.global = {
+    ...normalized.global,
+    ...normalizeRuleSet(raw.global || {})
+  };
+  if (raw.channels && typeof raw.channels === "object") {
+    Object.entries(raw.channels).forEach(([channelId, rules]) => {
+      const id = typeof channelId === "string" ? channelId.trim() : "";
+      if (id) normalized.channels[id] = normalizeRuleSet(rules);
+    });
+  }
+  return normalized;
+}
+function getSettingsChunkKey(index) {
+  return `${SETTINGS_SYNC_CHUNK_STORAGE_PREFIX}${index}`;
+}
+function settingsFingerprint(filters) {
+  return hashString(JSON.stringify(normalizeSettingsFilters(filters)));
+}
+function parseSettingsSnapshot(manifest, chunks) {
+  if (!manifest || typeof manifest !== "object" || manifest.version !== SETTINGS_SYNC_FORMAT_VERSION || !Number.isInteger(manifest.chunkCount) || manifest.chunkCount <= 0 || manifest.chunkCount > 100 || !Array.isArray(chunks) || chunks.some((chunk) => typeof chunk !== "string")) {
+    return null;
+  }
+  const json = chunks.join("");
+  const hash = hashString(json);
+  if (hash !== manifest.hash) return null;
+  try {
+    return {
+      manifest,
+      filters: normalizeSettingsFilters(JSON.parse(json)),
+      updatedAt: normalizeSyncTimestamp(manifest.updatedAt),
+      hash
+    };
+  } catch {
+    return null;
+  }
+}
+async function readLocalMeta() {
+  const stored = await storageGet("local", SETTINGS_SYNC_LOCAL_META_STORAGE_KEY);
+  const meta = stored?.[SETTINGS_SYNC_LOCAL_META_STORAGE_KEY];
+  return meta && typeof meta === "object" ? meta : {};
+}
+async function writeLocalMeta(meta) {
+  await storageSet("local", {
+    [SETTINGS_SYNC_LOCAL_META_STORAGE_KEY]: {
+      ...meta,
+      deviceId: typeof meta.deviceId === "string" && meta.deviceId ? meta.deviceId : createDeviceId()
+    }
+  });
+}
+async function ensureDeviceId(meta = null) {
+  const current = meta || await readLocalMeta();
+  if (typeof current.deviceId === "string" && current.deviceId) {
+    return current.deviceId;
+  }
+  const deviceId = createDeviceId();
+  await writeLocalMeta({ ...current, deviceId });
+  return deviceId;
+}
+async function scheduleAlarm(dueAt) {
+  if (typeof chrome !== "undefined" && chrome?.alarms?.create) {
+    chrome.alarms.create(SYNC_ALARM_NAME, { when: dueAt });
+  }
+}
+async function readRemoteSettingsSyncSnapshot() {
+  const storedManifest = await storageGet("sync", SETTINGS_SYNC_MANIFEST_STORAGE_KEY);
+  const manifest = storedManifest?.[SETTINGS_SYNC_MANIFEST_STORAGE_KEY];
+  if (!manifest || !Number.isInteger(manifest.chunkCount)) return null;
+  const keys = Array.from(
+    { length: manifest.chunkCount },
+    (_, index) => getSettingsChunkKey(index)
+  );
+  const storedChunks = await storageGet("sync", keys);
+  return parseSettingsSnapshot(manifest, keys.map((key) => storedChunks?.[key]));
+}
+async function writeLocalSettingsFilters(filters) {
+  await storageSet("local", {
+    [FILTERS_STORAGE_KEY]: JSON.stringify(normalizeSettingsFilters(filters))
+  });
+}
+async function scheduleSettingsSync(filtersInput) {
+  if (!hasChromeStorageArea("sync") || !hasChromeStorageArea("local")) return;
+  const meta = await readLocalMeta();
+  const localHash = settingsFingerprint(filtersInput);
+  if (localHash === meta.localHash) return;
+  const now = Date.now();
+  const dueAt = now + SYNC_DEBOUNCE_MS;
+  await writeLocalMeta({
+    ...meta,
+    deviceId: await ensureDeviceId(meta),
+    localHash,
+    localUpdatedAt: now,
+    baseRemoteHash: meta.pending ? meta.baseRemoteHash || null : meta.remoteHash || meta.syncedHash || null,
+    pending: true,
+    pendingSince: meta.pendingSince || now,
+    flushAfter: dueAt,
+    lastError: null
+  });
+  await scheduleAlarm(dueAt);
+}
+async function resolveRemoteSettingsSyncFilters(localFiltersInput) {
+  const localFilters = normalizeSettingsFilters(localFiltersInput);
+  const meta = await readLocalMeta();
+  if (meta.pending) {
+    await scheduleAlarm(
+      normalizeSyncTimestamp(meta.flushAfter) || Date.now() + SYNC_DEBOUNCE_MS
+    );
+  }
+  const remote = await readRemoteSettingsSyncSnapshot();
+  if (!remote) {
+    if (settingsFingerprint(localFilters) !== settingsFingerprint(DEFAULT_FILTERS)) {
+      await scheduleSettingsSync(localFilters);
+    }
+    return { filters: localFilters, imported: false };
+  }
+  const localUpdatedAt = normalizeSyncTimestamp(meta.localUpdatedAt);
+  const shouldImport = !meta.pending && (localUpdatedAt <= 0 || remote.updatedAt > localUpdatedAt);
+  if (!shouldImport) {
+    await writeLocalMeta({ ...meta, remoteHash: remote.hash, remoteUpdatedAt: remote.updatedAt });
+    return { filters: localFilters, imported: false };
+  }
+  await writeLocalSettingsFilters(remote.filters);
+  await writeLocalMeta({
+    ...meta,
+    localHash: settingsFingerprint(remote.filters),
+    localUpdatedAt: remote.updatedAt,
+    syncedHash: remote.hash,
+    syncedUpdatedAt: remote.updatedAt,
+    remoteHash: remote.hash,
+    remoteUpdatedAt: remote.updatedAt,
+    baseRemoteHash: null,
+    pending: false,
+    lastError: null
+  });
+  return { filters: remote.filters, imported: true };
+}
+
+// src/store/state/storage.js
 var hasChromeStorage = typeof chrome !== "undefined" && chrome?.storage?.local;
+var stateWriteQueue = Promise.resolve();
+
+// src/filterStorage.js
+var STORAGE_KEYS = {
+  filters: FILTERS_STORAGE_KEY,
+  autoCollect: AUTO_COLLECT_STORAGE_KEY
+};
+var DEFAULT_FILTERS2 = Object.freeze({
+  global: { noShorts: true },
+  channels: {}
+});
+var hasChromeStorage2 = typeof chrome !== "undefined" && chrome?.storage?.local;
 var filtersCache = null;
 var autoCollectLastRun = null;
 function asValidDate(value) {
@@ -212,36 +457,26 @@ function updateAutoCollectLastRun(meta) {
   const candidate = meta && typeof meta === "object" ? meta.lastRunAt ?? meta : meta;
   autoCollectLastRun = asValidDate(candidate);
 }
-function cloneDefaultFilters() {
+function cloneDefaultFilters2() {
   return {
-    global: { ...DEFAULT_FILTERS.global },
+    global: { ...DEFAULT_FILTERS2.global },
     channels: {}
   };
 }
 function normalizeFilters(raw) {
-  if (!raw || typeof raw !== "object") {
-    return cloneDefaultFilters();
-  }
-  const normalized = cloneDefaultFilters();
-  if (raw.global && typeof raw.global === "object") {
-    normalized.global = { ...normalized.global, ...raw.global };
-  }
-  if (raw.channels && typeof raw.channels === "object") {
-    normalized.channels = { ...raw.channels };
-  }
-  return normalized;
+  return normalizeSettingsFilters(raw);
 }
 function parseStoredFilters(raw) {
-  if (!raw) return cloneDefaultFilters();
+  if (!raw) return cloneDefaultFilters2();
   try {
     return normalizeFilters(typeof raw === "string" ? JSON.parse(raw) : raw);
   } catch {
-    return cloneDefaultFilters();
+    return cloneDefaultFilters2();
   }
 }
 var chromeGet = (keys) => new Promise((resolve) => chrome.storage.local.get(keys, (data) => resolve(data || {})));
 var chromeSet = (payload) => new Promise((resolve) => chrome.storage.local.set(payload, resolve));
-if (hasChromeStorage && chrome.storage?.onChanged) {
+if (hasChromeStorage2 && chrome.storage?.onChanged) {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
     if (changes[STORAGE_KEYS.filters]) {
@@ -259,12 +494,16 @@ async function getFilters() {
   if (filtersCache) {
     return filtersCache;
   }
-  if (!hasChromeStorage) {
-    filtersCache = cloneDefaultFilters();
+  if (!hasChromeStorage2) {
+    filtersCache = cloneDefaultFilters2();
     return filtersCache;
   }
   const data = await chromeGet([STORAGE_KEYS.filters, STORAGE_KEYS.autoCollect]);
   filtersCache = parseStoredFilters(data?.[STORAGE_KEYS.filters]);
+  const resolved = await resolveRemoteSettingsSyncFilters(filtersCache);
+  if (resolved.imported) {
+    filtersCache = resolved.filters;
+  }
   if (!data?.[STORAGE_KEYS.filters]) {
     await chromeSet({ [STORAGE_KEYS.filters]: JSON.stringify(filtersCache) });
   }
@@ -273,10 +512,11 @@ async function getFilters() {
 }
 async function saveFilters(filters) {
   filtersCache = normalizeFilters(filters);
-  if (!hasChromeStorage) {
+  if (!hasChromeStorage2) {
     return;
   }
   await chromeSet({ [STORAGE_KEYS.filters]: JSON.stringify(filtersCache) });
+  await scheduleSettingsSync(filtersCache);
 }
 
 // src/settings/shared/format.js
@@ -347,6 +587,15 @@ function getVideoDate(videoId) {
 }
 function getVideoInfo2(videoId) {
   return sendRuntimeMessage({ type: "videoInfo", videoId });
+}
+function getSyncStatus() {
+  return sendRuntimeMessage({ type: "sync:getStatus" });
+}
+function pullRemoteSync() {
+  return sendRuntimeMessage({ type: "sync:pullRemote" });
+}
+function replaceLocalFromRemoteSync() {
+  return sendRuntimeMessage({ type: "sync:replaceLocalFromRemote" });
 }
 
 // src/settings/shared/saveUi.js
@@ -1905,6 +2154,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const addChannelBtn = document.getElementById("addChannel");
   const addCard = document.getElementById("addChannelCard");
   const floatingSaveBtn = document.getElementById("floatingSave");
+  const pullSyncBtn = document.getElementById("pullSync");
+  const replaceFromSyncBtn = document.getElementById("replaceFromSync");
+  const syncStatus = document.getElementById("syncStatus");
   const saveButtons = [saveFiltersBtn, floatingSaveBtn].filter(Boolean);
   let globalSec;
   let globalShortsChk;
@@ -1917,6 +2169,85 @@ document.addEventListener("DOMContentLoaded", async () => {
     target?.addEventListener("change", markUnsaved, true);
   });
   updateSaveButtons();
+  function formatSyncDate(value) {
+    const ts = Number(value) || 0;
+    if (ts <= 0) return "\u043D\u0435\u0442";
+    const date = new Date(ts);
+    return Number.isNaN(date.getTime()) ? "\u043D\u0435\u0442" : date.toLocaleString();
+  }
+  function setSyncBusy(busy) {
+    [pullSyncBtn, replaceFromSyncBtn].forEach((button) => {
+      if (!button) return;
+      button.disabled = busy;
+      button.classList.toggle("is-loading", busy);
+    });
+  }
+  function renderSyncStatus(status, message = "") {
+    if (!syncStatus) return;
+    const playlist = status?.playlist || {};
+    const settings = status?.settings || {};
+    const pending = [playlist.pending, settings.pending].some(Boolean);
+    const errors = [playlist.lastError, settings.lastError].filter(Boolean);
+    const parts = [
+      message,
+      `\u041F\u043B\u0435\u0439\u043B\u0438\u0441\u0442\u044B remote: ${playlist.remoteAvailable ? formatSyncDate(playlist.remoteUpdatedAt) : "\u043D\u0435\u0442"}`,
+      `\u0424\u0438\u043B\u044C\u0442\u0440\u044B remote: ${settings.remoteAvailable ? formatSyncDate(settings.remoteUpdatedAt) : "\u043D\u0435\u0442"}`,
+      pending ? "\u0415\u0441\u0442\u044C \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u0432 \u043E\u0447\u0435\u0440\u0435\u0434\u0438 \u043D\u0430 \u043E\u0442\u043F\u0440\u0430\u0432\u043A\u0443." : "",
+      errors.length ? `\u041E\u0448\u0438\u0431\u043A\u0438: ${errors.join("; ")}` : ""
+    ].filter(Boolean);
+    syncStatus.textContent = parts.join(" ");
+    syncStatus.classList.toggle("is-danger", errors.length > 0);
+  }
+  async function refreshSyncStatus(message = "") {
+    try {
+      const status = await getSyncStatus();
+      renderSyncStatus(status, message);
+    } catch (err) {
+      console.error("Failed to load sync status", err);
+      renderSyncStatus(null, "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0441\u0442\u0430\u0442\u0443\u0441 \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u0438.");
+    }
+  }
+  pullSyncBtn?.addEventListener("click", async () => {
+    try {
+      setSyncBusy(true);
+      const result = await pullRemoteSync();
+      const changed = result?.playlistImported || result?.settingsImported;
+      await refreshSyncStatus(
+        changed ? "\u0414\u0430\u043D\u043D\u044B\u0435 \u0438\u0437 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430 \u043F\u043E\u0434\u0442\u044F\u043D\u0443\u0442\u044B." : "\u0411\u043E\u043B\u0435\u0435 \u0441\u0432\u0435\u0436\u0438\u0445 \u0434\u0430\u043D\u043D\u044B\u0445 \u0432 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0435 \u043D\u0435\u0442."
+      );
+      if (result?.settingsImported) {
+        window.setTimeout(() => window.location.reload(), 700);
+      }
+    } catch (err) {
+      console.error("Failed to pull account sync", err);
+      showToast("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u0434\u0442\u044F\u043D\u0443\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435 \u0438\u0437 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430", true);
+    } finally {
+      setSyncBusy(false);
+    }
+  });
+  replaceFromSyncBtn?.addEventListener("click", async () => {
+    const ok = window.confirm(
+      "\u0417\u0430\u043C\u0435\u043D\u0438\u0442\u044C \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u043F\u043B\u0435\u0439\u043B\u0438\u0441\u0442\u044B \u0438 \u0444\u0438\u043B\u044C\u0442\u0440\u044B \u0434\u0430\u043D\u043D\u044B\u043C\u0438 \u0438\u0437 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430?"
+    );
+    if (!ok) return;
+    try {
+      setSyncBusy(true);
+      const result = await replaceLocalFromRemoteSync();
+      const changed = result?.playlistImported || result?.settingsImported;
+      await refreshSyncStatus(
+        changed ? "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u0437\u0430\u043C\u0435\u043D\u0435\u043D\u044B \u0438\u0437 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430." : "\u0412 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0435 \u043D\u0435\u0442 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0445 \u0434\u0430\u043D\u043D\u044B\u0445."
+      );
+      if (changed) {
+        window.setTimeout(() => window.location.reload(), 700);
+      }
+    } catch (err) {
+      console.error("Failed to replace local data from account sync", err);
+      showToast("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u043C\u0435\u043D\u0438\u0442\u044C \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435", true);
+    } finally {
+      setSyncBusy(false);
+    }
+  });
+  refreshSyncStatus();
   getSubscriptionsMeta().then((meta) => {
     const ts = Number(meta?.lastRunAt) || 0;
     if (ts <= 0) return;

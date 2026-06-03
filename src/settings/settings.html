@@ -27,6 +27,19 @@
           Здесь настраиваются правила отбора видео: начальная дата для следуюшей итерации и правила фильтрации.
         </div>
 
+        <h3 class="title is-4 mb-2" id="syncHeader">Синхронизация</h3>
+        <div class="box sync-card mb-4">
+          <div class="sync-actions">
+            <button id="pullSync" class="button is-info" type="button">
+              Подтянуть из аккаунта
+            </button>
+            <button id="replaceFromSync" class="button is-warning" type="button">
+              Заменить локальное из аккаунта
+            </button>
+          </div>
+          <p id="syncStatus" class="help mt-2"></p>
+        </div>
+
         <h3 class="title is-4 mb-2" id="timeHeader">Временные настройки</h3>
         <p class="mb-3">
           Расширение собирает новые видео после указанной даты. При желании дату

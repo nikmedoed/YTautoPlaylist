@@ -6,9 +6,12 @@ import {
   toLocalInputValue,
 } from "./shared/format.js";
 import {
+  getSyncStatus,
   getSubscriptionsMeta,
   getVideoDate,
   getVideoInfo,
+  pullRemoteSync,
+  replaceLocalFromRemoteSync,
   setStartDate,
 } from "./shared/runtime.js";
 import {
@@ -46,6 +49,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const addChannelBtn = document.getElementById("addChannel");
   const addCard = document.getElementById("addChannelCard");
   const floatingSaveBtn = document.getElementById("floatingSave");
+  const pullSyncBtn = document.getElementById("pullSync");
+  const replaceFromSyncBtn = document.getElementById("replaceFromSync");
+  const syncStatus = document.getElementById("syncStatus");
 
   const saveButtons = [saveFiltersBtn, floatingSaveBtn].filter(Boolean);
 
@@ -61,6 +67,92 @@ document.addEventListener("DOMContentLoaded", async () => {
     target?.addEventListener("change", markUnsaved, true);
   });
   updateSaveButtons();
+
+  function formatSyncDate(value) {
+    const ts = Number(value) || 0;
+    if (ts <= 0) return "нет";
+    const date = new Date(ts);
+    return Number.isNaN(date.getTime()) ? "нет" : date.toLocaleString();
+  }
+
+  function setSyncBusy(busy) {
+    [pullSyncBtn, replaceFromSyncBtn].forEach((button) => {
+      if (!button) return;
+      button.disabled = busy;
+      button.classList.toggle("is-loading", busy);
+    });
+  }
+
+  function renderSyncStatus(status, message = "") {
+    if (!syncStatus) return;
+    const playlist = status?.playlist || {};
+    const settings = status?.settings || {};
+    const pending = [playlist.pending, settings.pending].some(Boolean);
+    const errors = [playlist.lastError, settings.lastError].filter(Boolean);
+    const parts = [
+      message,
+      `Плейлисты remote: ${playlist.remoteAvailable ? formatSyncDate(playlist.remoteUpdatedAt) : "нет"}`,
+      `Фильтры remote: ${settings.remoteAvailable ? formatSyncDate(settings.remoteUpdatedAt) : "нет"}`,
+      pending ? "Есть локальные изменения в очереди на отправку." : "",
+      errors.length ? `Ошибки: ${errors.join("; ")}` : "",
+    ].filter(Boolean);
+    syncStatus.textContent = parts.join(" ");
+    syncStatus.classList.toggle("is-danger", errors.length > 0);
+  }
+
+  async function refreshSyncStatus(message = "") {
+    try {
+      const status = await getSyncStatus();
+      renderSyncStatus(status, message);
+    } catch (err) {
+      console.error("Failed to load sync status", err);
+      renderSyncStatus(null, "Не удалось получить статус синхронизации.");
+    }
+  }
+
+  pullSyncBtn?.addEventListener("click", async () => {
+    try {
+      setSyncBusy(true);
+      const result = await pullRemoteSync();
+      const changed = result?.playlistImported || result?.settingsImported;
+      await refreshSyncStatus(
+        changed ? "Данные из аккаунта подтянуты." : "Более свежих данных в аккаунте нет."
+      );
+      if (result?.settingsImported) {
+        window.setTimeout(() => window.location.reload(), 700);
+      }
+    } catch (err) {
+      console.error("Failed to pull account sync", err);
+      showToast("Не удалось подтянуть данные из аккаунта", true);
+    } finally {
+      setSyncBusy(false);
+    }
+  });
+
+  replaceFromSyncBtn?.addEventListener("click", async () => {
+    const ok = window.confirm(
+      "Заменить локальные плейлисты и фильтры данными из аккаунта?"
+    );
+    if (!ok) return;
+    try {
+      setSyncBusy(true);
+      const result = await replaceLocalFromRemoteSync();
+      const changed = result?.playlistImported || result?.settingsImported;
+      await refreshSyncStatus(
+        changed ? "Локальные данные заменены из аккаунта." : "В аккаунте нет сохранённых данных."
+      );
+      if (changed) {
+        window.setTimeout(() => window.location.reload(), 700);
+      }
+    } catch (err) {
+      console.error("Failed to replace local data from account sync", err);
+      showToast("Не удалось заменить локальные данные", true);
+    } finally {
+      setSyncBusy(false);
+    }
+  });
+
+  refreshSyncStatus();
 
   getSubscriptionsMeta().then((meta) => {
     const ts = Number(meta?.lastRunAt) || 0;

@@ -1,4 +1,11 @@
 // Background options message handlers. Contains option-page routing and settings-related runtime actions.
+import {
+  getPlaylistSyncStorageStatus,
+  getSettingsSyncStatus,
+  importRemotePlaylistSyncIfNewer,
+  importRemoteSettingsSync,
+  replaceLocalPlaylistSyncFromRemote,
+} from "../../store/index.js";
 import { parseVideoId } from "../../utils.js";
 
 export const optionsHandlers = {
@@ -40,5 +47,40 @@ export const optionsHandlers = {
       console.error("Failed to open list settings page", err);
       return { error: err?.message || "FAILED_TO_OPEN_LIST_SETTINGS" };
     }
+  },
+
+  async "sync:getStatus"() {
+    const [playlist, settings] = await Promise.all([
+      getPlaylistSyncStorageStatus(),
+      getSettingsSyncStatus(),
+    ]);
+    return { ok: true, playlist, settings };
+  },
+
+  async "sync:pullRemote"() {
+    const [playlist, settings] = await Promise.all([
+      importRemotePlaylistSyncIfNewer(),
+      importRemoteSettingsSync(),
+    ]);
+    return {
+      ok: true,
+      playlistImported: Boolean(playlist?.imported),
+      settingsImported: Boolean(settings?.imported),
+      settingsReason: settings?.reason || null,
+    };
+  },
+
+  async "sync:replaceLocalFromRemote"() {
+    const [playlist, settings] = await Promise.all([
+      replaceLocalPlaylistSyncFromRemote(),
+      importRemoteSettingsSync({ force: true }),
+    ]);
+    return {
+      ok: true,
+      playlistImported: Boolean(playlist?.imported),
+      playlistReason: playlist?.reason || null,
+      settingsImported: Boolean(settings?.imported),
+      settingsReason: settings?.reason || null,
+    };
   },
 };

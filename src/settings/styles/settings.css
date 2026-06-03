@@ -144,12 +144,11 @@
 #filtersButtons .button {
   margin-bottom: 0;
 }
-
 #filtersButtons label.button {
   display: inline-flex;
   align-items: center;
 }
-
+#syncStatus{min-height:1.4rem}.sync-actions{display:flex;flex-wrap:wrap;gap:.5rem}.sync-actions .button{min-width:190px}
 .filter-buttons {
   display: inline-flex;
   flex-wrap: wrap;

@@ -27,3 +27,15 @@ export function getVideoDate(videoId) {
 export function getVideoInfo(videoId) {
   return sendRuntimeMessage({ type: "videoInfo", videoId });
 }
+
+export function getSyncStatus() {
+  return sendRuntimeMessage({ type: "sync:getStatus" });
+}
+
+export function pullRemoteSync() {
+  return sendRuntimeMessage({ type: "sync:pullRemote" });
+}
+
+export function replaceLocalFromRemoteSync() {
+  return sendRuntimeMessage({ type: "sync:replaceLocalFromRemote" });
+}

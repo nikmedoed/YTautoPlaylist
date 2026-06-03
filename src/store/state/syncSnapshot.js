@@ -22,7 +22,7 @@ export function storageItemBytes(key, value) {
   return byteLength(key) + byteLength(JSON.stringify(value));
 }
 
-function hashString(value) {
+export function hashString(value) {
   let hash = 2166136261;
   for (let index = 0; index < value.length; index += 1) {
     hash ^= value.charCodeAt(index);

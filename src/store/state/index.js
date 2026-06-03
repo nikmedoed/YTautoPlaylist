@@ -2,6 +2,7 @@
 export * from "./constants.js";
 export * from "./sanitizers.js";
 export * from "./serialization.js";
+export * from "./settingsSync.js";
 export * from "./storage.js";
 export * from "./sync.js";
 export * from "./videoProgress.js";

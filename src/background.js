@@ -6,8 +6,11 @@ import {
   clearCurrentTab,
   configurePlaylistSyncAccess,
   flushPendingPlaylistSync,
+  flushPendingSettingsSync,
   importRemotePlaylistSyncIfNewer,
+  importRemoteSettingsSync,
   isPlaylistSyncStorageChange,
+  isSettingsSyncStorageChange,
   SYNC_ALARM_NAME,
 } from "./store/index.js";
 
@@ -44,19 +47,29 @@ if (chrome.alarms?.onAlarm) {
     if (alarm?.name !== SYNC_ALARM_NAME) {
       return;
     }
-    flushPendingPlaylistSync().catch((err) => {
-      console.error("Playlist sync flush failed", err);
-    });
+    Promise.all([flushPendingPlaylistSync(), flushPendingSettingsSync()]).catch(
+      (err) => {
+        console.error("Account sync flush failed", err);
+      }
+    );
   });
 }
 
 chrome.storage?.onChanged?.addListener((changes, area) => {
-  if (area !== "sync" || !isPlaylistSyncStorageChange(changes)) {
+  if (area !== "sync") {
     return;
   }
-  importRemotePlaylistSyncIfNewer()
-    .then(() => notifyState())
-    .catch((err) => {
-      console.error("Playlist sync import failed", err);
-    });
+  const tasks = [];
+  if (isPlaylistSyncStorageChange(changes)) {
+    tasks.push(importRemotePlaylistSyncIfNewer().then(() => notifyState()));
+  }
+  if (isSettingsSyncStorageChange(changes)) {
+    tasks.push(importRemoteSettingsSync());
+  }
+  if (!tasks.length) {
+    return;
+  }
+  Promise.all(tasks).catch((err) => {
+    console.error("Account sync import failed", err);
+  });
 });

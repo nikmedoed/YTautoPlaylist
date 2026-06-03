@@ -122,9 +122,7 @@ async function scheduleSyncAlarm(dueAt) {
 }
 
 export async function configurePlaylistSyncAccess() {
-  if (!hasChromeStorageArea("sync")) {
-    return;
-  }
+  if (!hasChromeStorageArea("sync")) return;
   try {
     await chrome.storage.sync.setAccessLevel?.({
       accessLevel: "TRUSTED_CONTEXTS",
@@ -205,6 +203,47 @@ export async function resolveRemotePlaylistSyncState(localStateInput) {
     lastError: null,
   });
   return { state: merged, imported: true, remoteUpdatedAt: remote.updatedAt };
+}
+
+export async function forceRemotePlaylistSyncState(localStateInput) {
+  const localState = sanitizeState(localStateInput);
+  const localMeta = await readLocalSyncMeta();
+  const remote = await readRemotePlaylistSyncSnapshot();
+  if (!remote) {
+    return { state: localState, imported: false, reason: "no-remote" };
+  }
+  const merged = mergeRemoteSyncState(localState, remote.state);
+  await writeLocalSyncMeta({
+    ...localMeta,
+    localUpdatedAt: remote.updatedAt,
+    localHash: getSyncStateFingerprint(merged),
+    syncedUpdatedAt: remote.updatedAt,
+    syncedHash: remote.hash,
+    remoteUpdatedAt: remote.updatedAt,
+    remoteHash: remote.hash,
+    baseRemoteHash: null,
+    baseRemoteUpdatedAt: null,
+    pending: false,
+    pendingSince: null,
+    flushAfter: null,
+    lastError: null,
+  });
+  return { state: merged, imported: true, remoteUpdatedAt: remote.updatedAt };
+}
+
+export async function getPlaylistSyncStatus() {
+  const [meta, remote] = await Promise.all([
+    readLocalSyncMeta(),
+    readRemotePlaylistSyncSnapshot(),
+  ]);
+  return {
+    localUpdatedAt: normalizeSyncTimestamp(meta.localUpdatedAt),
+    remoteUpdatedAt: normalizeSyncTimestamp(remote?.updatedAt),
+    pending: Boolean(meta.pending),
+    lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
+    lastError: meta.lastError || null,
+    remoteAvailable: Boolean(remote),
+  };
 }
 
 export async function schedulePlaylistSync(stateInput) {
