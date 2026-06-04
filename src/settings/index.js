@@ -79,24 +79,26 @@ document.addEventListener("DOMContentLoaded", async () => {
       button.classList.toggle("is-loading", busy);
     });
   }
-
   function renderSyncStatus(status, message = "") {
     if (!syncStatus) return;
     const playlist = status?.playlist || {};
     const settings = status?.settings || {};
     const pending = [playlist.pending, settings.pending].some(Boolean);
     const errors = [playlist.lastError, settings.lastError].filter(Boolean);
+    const manifests = `${status?.hasPlaylistManifest ? "playlist" : "-"} / ${status?.hasSettingsManifest ? "filters" : "-"}`;
     const parts = [
       message,
+      `ID: ${status?.extensionId || "?"}`,
       `Плейлисты remote: ${playlist.remoteAvailable ? formatSyncDate(playlist.remoteUpdatedAt) : "нет"}`,
       `Фильтры remote: ${settings.remoteAvailable ? formatSyncDate(settings.remoteUpdatedAt) : "нет"}`,
+      `Ключи sync: ${status?.syncKeyCount ?? "?"}`,
+      `Manifest: ${manifests}`,
       pending ? "Есть локальные изменения в очереди на отправку." : "",
       errors.length ? `Ошибки: ${errors.join("; ")}` : "",
     ].filter(Boolean);
     syncStatus.textContent = parts.join(" ");
     syncStatus.classList.toggle("is-danger", errors.length > 0);
   }
-
   async function refreshSyncStatus(message = "") {
     try {
       const status = await getSyncStatus();
@@ -343,7 +345,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   globalContainer.appendChild(globalSec);
   globalShortsChk = globalSec.querySelector(".nos");
   globalBroadcastChk = globalSec.querySelector(".nob");
-
   function updateCheckboxVisibility() {
     const hideShorts = globalShortsChk?.checked;
     const hideBroadcasts = globalBroadcastChk?.checked;

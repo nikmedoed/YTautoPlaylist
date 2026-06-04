@@ -7,6 +7,8 @@ import {
   pushLocalPlaylistSyncNow,
   pushLocalSettingsSyncNow,
   replaceLocalPlaylistSyncFromRemote,
+  SETTINGS_SYNC_MANIFEST_STORAGE_KEY,
+  SYNC_MANIFEST_STORAGE_KEY,
 } from "../../store/index.js";
 import { parseVideoId } from "../../utils.js";
 
@@ -56,7 +58,16 @@ export const optionsHandlers = {
       getPlaylistSyncStorageStatus(),
       getSettingsSyncStatus(),
     ]);
-    return { ok: true, playlist, settings };
+    const syncKeys = Object.keys(await chrome.storage.sync.get(null));
+    return {
+      ok: true,
+      extensionId: chrome.runtime.id,
+      playlist,
+      settings,
+      syncKeyCount: syncKeys.length,
+      hasPlaylistManifest: syncKeys.includes(SYNC_MANIFEST_STORAGE_KEY),
+      hasSettingsManifest: syncKeys.includes(SETTINGS_SYNC_MANIFEST_STORAGE_KEY),
+    };
   },
 
   async "sync:pullRemote"() {
