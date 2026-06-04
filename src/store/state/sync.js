@@ -150,26 +150,6 @@ export async function resolveRemotePlaylistSyncState(localStateInput) {
     await scheduleSyncAlarm(flushAfter);
   }
   if (!remote) {
-    if (
-      hasChromeStorageArea("sync") &&
-      !localMeta.localHash &&
-      hasSyncableUserData(localState)
-    ) {
-      const now = Date.now();
-      const dueAt = now + SYNC_DEBOUNCE_MS;
-      const deviceId = await ensureLocalDeviceId(localMeta);
-      await writeLocalSyncMeta({
-        ...localMeta,
-        deviceId,
-        localHash: getSyncStateFingerprint(localState),
-        localUpdatedAt: now,
-        pending: true,
-        pendingSince: now,
-        flushAfter: dueAt,
-        lastError: null,
-      });
-      await scheduleSyncAlarm(dueAt);
-    }
     return { state: localState, imported: false };
   }
 
@@ -252,6 +232,7 @@ export async function schedulePlaylistSync(stateInput, { immediate = false } = {
     return;
   }
   const localMeta = await readLocalSyncMeta();
+  if (!immediate && !localMeta.remoteHash && !localMeta.syncedHash) return;
   const localHash = getSyncStateFingerprint(stateInput);
   if (localHash === localMeta.localHash && !immediate) {
     if (localMeta.pending) {
@@ -322,6 +303,22 @@ export async function writePendingPlaylistSync(stateInput, { force = false } = {
   }
 
   const previousRemote = await readRemotePlaylistSyncSnapshot();
+  if (
+    !force &&
+    !previousRemote &&
+    !localMeta.remoteHash &&
+    !localMeta.syncedHash &&
+    !localMeta.baseRemoteHash
+  ) {
+    await writeLocalSyncMeta({
+      ...localMeta,
+      pending: false,
+      flushAfter: null,
+      lastError: "Remote playlist sync is not initialized",
+      lastErrorAt: now,
+    });
+    return { wrote: false, reason: "remote-not-initialized" };
+  }
   const remoteFromOtherDevice =
     previousRemote && previousRemote.manifest?.deviceId !== deviceId;
   const baseRemoteHash =

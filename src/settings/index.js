@@ -116,8 +116,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       const result = await pullRemoteSync();
       const changed = result?.playlistImported || result?.settingsImported;
       await refreshSyncStatus(changed
-        ? "Данные из аккаунта подтянуты."
-        : "Более свежих данных в аккаунте нет.");
+        ? "Данные из sync-хранилища Chrome подтянуты."
+        : "Более свежих данных в sync-хранилище Chrome не видно.");
       if (result?.settingsImported) {
         window.setTimeout(() => window.location.reload(), 700);
       }
@@ -139,8 +139,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       const result = await pushLocalSync();
       const pushed = result?.playlistPushed || result?.settingsPushed;
       await refreshSyncStatus(pushed
-        ? "Локальные данные отправлены в аккаунт."
-        : "Не удалось отправить данные в аккаунт.");
+        ? "Локальные данные записаны в chrome.storage.sync."
+        : "Не удалось записать данные в chrome.storage.sync.");
     } catch (err) {
       console.error("Failed to push local account sync", err);
       showToast("Не удалось отправить данные в аккаунт", true);
@@ -158,8 +158,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       const result = await replaceLocalFromRemoteSync();
       const changed = result?.playlistImported || result?.settingsImported;
       await refreshSyncStatus(changed
-        ? "Локальные данные заменены из аккаунта."
-        : "В аккаунте нет сохранённых данных.");
+        ? "Локальные данные заменены из sync-хранилища Chrome."
+        : "В sync-хранилище Chrome нет сохранённых данных.");
       if (changed) {
         window.setTimeout(() => window.location.reload(), 700);
       }

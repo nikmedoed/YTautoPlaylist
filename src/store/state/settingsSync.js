@@ -13,7 +13,6 @@ import {
 } from "./syncSnapshot.js";
 import {
   buildSettingsSnapshot,
-  defaultSettingsFingerprint,
   getSettingsChunkKey,
   mergeFiltersConservatively,
   normalizeSettingsFilters,
@@ -124,6 +123,7 @@ async function writeLocalSettingsFilters(filters) {
 export async function scheduleSettingsSync(filtersInput, { immediate = false } = {}) {
   if (!hasChromeStorageArea("sync") || !hasChromeStorageArea("local")) return;
   const meta = await readLocalMeta();
+  if (!immediate && !meta.remoteHash && !meta.syncedHash) return;
   const localHash = settingsFingerprint(filtersInput);
   if (localHash === meta.localHash && !immediate) return;
   const now = Date.now();
@@ -164,6 +164,22 @@ export async function flushPendingSettingsSync({ force = false } = {}) {
   }
   const deviceId = await ensureDeviceId(meta);
   const remote = await readRemoteSettingsSyncSnapshot();
+  if (
+    !force &&
+    !remote &&
+    !meta.remoteHash &&
+    !meta.syncedHash &&
+    !meta.baseRemoteHash
+  ) {
+    await writeLocalMeta({
+      ...meta,
+      pending: false,
+      flushAfter: null,
+      lastError: "Remote settings sync is not initialized",
+      lastErrorAt: now,
+    });
+    return { wrote: false, reason: "remote-not-initialized" };
+  }
   const remoteFromOther = remote && remote.manifest?.deviceId !== deviceId;
   const baseHash = typeof meta.baseRemoteHash === "string" ? meta.baseRemoteHash : null;
   const conflict = !force && remoteFromOther && (!baseHash || remote.hash !== baseHash);
@@ -234,9 +250,6 @@ export async function resolveRemoteSettingsSyncFilters(localFiltersInput) {
   }
   const remote = await readRemoteSettingsSyncSnapshot();
   if (!remote) {
-    if (settingsFingerprint(localFilters) !== defaultSettingsFingerprint()) {
-      await scheduleSettingsSync(localFilters);
-    }
     return { filters: localFilters, imported: false };
   }
   const localUpdatedAt = normalizeSyncTimestamp(meta.localUpdatedAt);

@@ -291,9 +291,6 @@ function normalizeSettingsFilters(raw) {
   }
   return normalized;
 }
-function defaultSettingsFingerprint() {
-  return settingsFingerprint(DEFAULT_FILTERS);
-}
 function settingsFingerprint(filters) {
   return hashString(JSON.stringify(normalizeSettingsFilters(filters)));
 }
@@ -381,6 +378,7 @@ async function writeLocalSettingsFilters(filters) {
 async function scheduleSettingsSync(filtersInput, { immediate = false } = {}) {
   if (!hasChromeStorageArea("sync") || !hasChromeStorageArea("local")) return;
   const meta = await readLocalMeta();
+  if (!immediate && !meta.remoteHash && !meta.syncedHash) return;
   const localHash = settingsFingerprint(filtersInput);
   if (localHash === meta.localHash && !immediate) return;
   const now = Date.now();
@@ -408,9 +406,6 @@ async function resolveRemoteSettingsSyncFilters(localFiltersInput) {
   }
   const remote = await readRemoteSettingsSyncSnapshot();
   if (!remote) {
-    if (settingsFingerprint(localFilters) !== defaultSettingsFingerprint()) {
-      await scheduleSettingsSync(localFilters);
-    }
     return { filters: localFilters, imported: false };
   }
   const localUpdatedAt = normalizeSyncTimestamp(meta.localUpdatedAt);
@@ -2224,7 +2219,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       setSyncBusy(true);
       const result = await pullRemoteSync();
       const changed = result?.playlistImported || result?.settingsImported;
-      await refreshSyncStatus(changed ? "\u0414\u0430\u043D\u043D\u044B\u0435 \u0438\u0437 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430 \u043F\u043E\u0434\u0442\u044F\u043D\u0443\u0442\u044B." : "\u0411\u043E\u043B\u0435\u0435 \u0441\u0432\u0435\u0436\u0438\u0445 \u0434\u0430\u043D\u043D\u044B\u0445 \u0432 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0435 \u043D\u0435\u0442.");
+      await refreshSyncStatus(changed ? "\u0414\u0430\u043D\u043D\u044B\u0435 \u0438\u0437 sync-\u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0430 Chrome \u043F\u043E\u0434\u0442\u044F\u043D\u0443\u0442\u044B." : "\u0411\u043E\u043B\u0435\u0435 \u0441\u0432\u0435\u0436\u0438\u0445 \u0434\u0430\u043D\u043D\u044B\u0445 \u0432 sync-\u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435 Chrome \u043D\u0435 \u0432\u0438\u0434\u043D\u043E.");
       if (result?.settingsImported) {
         window.setTimeout(() => window.location.reload(), 700);
       }
@@ -2244,7 +2239,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       setSyncBusy(true);
       const result = await pushLocalSync();
       const pushed = result?.playlistPushed || result?.settingsPushed;
-      await refreshSyncStatus(pushed ? "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u044B \u0432 \u0430\u043A\u043A\u0430\u0443\u043D\u0442." : "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435 \u0432 \u0430\u043A\u043A\u0430\u0443\u043D\u0442.");
+      await refreshSyncStatus(pushed ? "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u0437\u0430\u043F\u0438\u0441\u0430\u043D\u044B \u0432 chrome.storage.sync." : "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u043F\u0438\u0441\u0430\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435 \u0432 chrome.storage.sync.");
     } catch (err) {
       console.error("Failed to push local account sync", err);
       showToast("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435 \u0432 \u0430\u043A\u043A\u0430\u0443\u043D\u0442", true);
@@ -2261,7 +2256,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       setSyncBusy(true);
       const result = await replaceLocalFromRemoteSync();
       const changed = result?.playlistImported || result?.settingsImported;
-      await refreshSyncStatus(changed ? "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u0437\u0430\u043C\u0435\u043D\u0435\u043D\u044B \u0438\u0437 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430." : "\u0412 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0435 \u043D\u0435\u0442 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0445 \u0434\u0430\u043D\u043D\u044B\u0445.");
+      await refreshSyncStatus(changed ? "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u0437\u0430\u043C\u0435\u043D\u0435\u043D\u044B \u0438\u0437 sync-\u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0430 Chrome." : "\u0412 sync-\u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435 Chrome \u043D\u0435\u0442 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0445 \u0434\u0430\u043D\u043D\u044B\u0445.");
       if (changed) {
         window.setTimeout(() => window.location.reload(), 700);
       }

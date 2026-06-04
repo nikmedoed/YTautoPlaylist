@@ -1047,9 +1047,6 @@ function normalizeSettingsFilters(raw) {
   }
   return normalized;
 }
-function defaultSettingsFingerprint() {
-  return settingsFingerprint(DEFAULT_FILTERS);
-}
 function settingsFingerprint(filters) {
   return hashString(JSON.stringify(normalizeSettingsFilters(filters)));
 }
@@ -1236,6 +1233,7 @@ async function writeLocalSettingsFilters(filters) {
 async function scheduleSettingsSync(filtersInput, { immediate = false } = {}) {
   if (!hasChromeStorageArea("sync") || !hasChromeStorageArea("local")) return;
   const meta = await readLocalMeta();
+  if (!immediate && !meta.remoteHash && !meta.syncedHash) return;
   const localHash = settingsFingerprint(filtersInput);
   if (localHash === meta.localHash && !immediate) return;
   const now = Date.now();
@@ -1273,6 +1271,16 @@ async function flushPendingSettingsSync({ force = false } = {}) {
   }
   const deviceId = await ensureDeviceId(meta);
   const remote = await readRemoteSettingsSyncSnapshot();
+  if (!force && !remote && !meta.remoteHash && !meta.syncedHash && !meta.baseRemoteHash) {
+    await writeLocalMeta({
+      ...meta,
+      pending: false,
+      flushAfter: null,
+      lastError: "Remote settings sync is not initialized",
+      lastErrorAt: now
+    });
+    return { wrote: false, reason: "remote-not-initialized" };
+  }
   const remoteFromOther = remote && remote.manifest?.deviceId !== deviceId;
   const baseHash = typeof meta.baseRemoteHash === "string" ? meta.baseRemoteHash : null;
   const conflict = !force && remoteFromOther && (!baseHash || remote.hash !== baseHash);
@@ -1337,9 +1345,6 @@ async function resolveRemoteSettingsSyncFilters(localFiltersInput) {
   }
   const remote = await readRemoteSettingsSyncSnapshot();
   if (!remote) {
-    if (settingsFingerprint(localFilters) !== defaultSettingsFingerprint()) {
-      await scheduleSettingsSync(localFilters);
-    }
     return { filters: localFilters, imported: false };
   }
   const localUpdatedAt = normalizeSyncTimestamp(meta.localUpdatedAt);
@@ -1507,22 +1512,6 @@ async function resolveRemotePlaylistSyncState(localStateInput) {
     await scheduleSyncAlarm(flushAfter);
   }
   if (!remote) {
-    if (hasChromeStorageArea2("sync") && !localMeta.localHash && hasSyncableUserData(localState)) {
-      const now = Date.now();
-      const dueAt = now + SYNC_DEBOUNCE_MS;
-      const deviceId = await ensureLocalDeviceId(localMeta);
-      await writeLocalSyncMeta({
-        ...localMeta,
-        deviceId,
-        localHash: getSyncStateFingerprint(localState),
-        localUpdatedAt: now,
-        pending: true,
-        pendingSince: now,
-        flushAfter: dueAt,
-        lastError: null
-      });
-      await scheduleSyncAlarm(dueAt);
-    }
     return { state: localState, imported: false };
   }
   const localUpdatedAt = normalizeSyncTimestamp(localMeta.localUpdatedAt);
@@ -1598,6 +1587,7 @@ async function schedulePlaylistSync(stateInput, { immediate = false } = {}) {
     return;
   }
   const localMeta = await readLocalSyncMeta();
+  if (!immediate && !localMeta.remoteHash && !localMeta.syncedHash) return;
   const localHash = getSyncStateFingerprint(stateInput);
   if (localHash === localMeta.localHash && !immediate) {
     if (localMeta.pending) {
@@ -1657,6 +1647,16 @@ async function writePendingPlaylistSync(stateInput, { force = false } = {}) {
     return { wrote: false, reason: "too-large" };
   }
   const previousRemote = await readRemotePlaylistSyncSnapshot();
+  if (!force && !previousRemote && !localMeta.remoteHash && !localMeta.syncedHash && !localMeta.baseRemoteHash) {
+    await writeLocalSyncMeta({
+      ...localMeta,
+      pending: false,
+      flushAfter: null,
+      lastError: "Remote playlist sync is not initialized",
+      lastErrorAt: now
+    });
+    return { wrote: false, reason: "remote-not-initialized" };
+  }
   const remoteFromOtherDevice = previousRemote && previousRemote.manifest?.deviceId !== deviceId;
   const baseRemoteHash = typeof localMeta.baseRemoteHash === "string" && localMeta.baseRemoteHash ? localMeta.baseRemoteHash : null;
   const remoteChangedSinceBase = remoteFromOtherDevice && previousRemote && (baseRemoteHash ? previousRemote.hash !== baseRemoteHash : true);
