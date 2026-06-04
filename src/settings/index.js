@@ -86,6 +86,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const pending = [playlist.pending, settings.pending].some(Boolean);
     const errors = [playlist.lastError, settings.lastError].filter(Boolean);
     const manifests = `${status?.hasPlaylistManifest ? "playlist" : "-"} / ${status?.hasSettingsManifest ? "filters" : "-"}`;
+    const shortId = (id) => (id ? String(id).slice(-8) : "-");
     const parts = [
       message,
       `ID: ${status?.extensionId || "?"}`,
@@ -93,6 +94,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       `Фильтры remote: ${settings.remoteAvailable ? formatSyncDate(settings.remoteUpdatedAt) : "нет"}`,
       `Ключи sync: ${status?.syncKeyCount ?? "?"}`,
       `Manifest: ${manifests}`,
+      `Writer: ${shortId(playlist.remoteDeviceId)} / ${shortId(settings.remoteDeviceId)}`,
       pending ? "Есть локальные изменения в очереди на отправку." : "",
       errors.length ? `Ошибки: ${errors.join("; ")}` : "",
     ].filter(Boolean);
@@ -108,7 +110,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       renderSyncStatus(null, "Не удалось получить статус синхронизации.");
     }
   }
-
   pullSyncBtn?.addEventListener("click", async () => {
     try {
       setSyncBusy(true);
@@ -147,7 +148,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       setSyncBusy(false);
     }
   });
-
   replaceFromSyncBtn?.addEventListener("click", async () => {
     const ok = window.confirm(
       "Заменить локальные плейлисты и фильтры данными из аккаунта?"

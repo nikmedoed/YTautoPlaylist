@@ -300,8 +300,11 @@ export async function getSettingsSyncStatus() {
     readRemoteSettingsSyncSnapshot(),
   ]);
   return {
+    localDeviceId: meta.deviceId || null,
     localUpdatedAt: normalizeSyncTimestamp(meta.localUpdatedAt),
     remoteUpdatedAt: normalizeSyncTimestamp(remote?.updatedAt),
+    remoteDeviceId: remote?.manifest?.deviceId || null,
+    remoteChunkCount: remote?.manifest?.chunkCount || 0,
     pending: Boolean(meta.pending),
     lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
     lastError: meta.lastError || null,

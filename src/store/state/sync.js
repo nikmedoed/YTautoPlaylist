@@ -230,22 +230,23 @@ export async function forceRemotePlaylistSyncState(localStateInput) {
   });
   return { state: merged, imported: true, remoteUpdatedAt: remote.updatedAt };
 }
-
 export async function getPlaylistSyncStatus() {
   const [meta, remote] = await Promise.all([
     readLocalSyncMeta(),
     readRemotePlaylistSyncSnapshot(),
   ]);
   return {
+    localDeviceId: meta.deviceId || null,
     localUpdatedAt: normalizeSyncTimestamp(meta.localUpdatedAt),
     remoteUpdatedAt: normalizeSyncTimestamp(remote?.updatedAt),
+    remoteDeviceId: remote?.manifest?.deviceId || null,
+    remoteChunkCount: remote?.manifest?.chunkCount || 0,
     pending: Boolean(meta.pending),
     lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
     lastError: meta.lastError || null,
     remoteAvailable: Boolean(remote),
   };
 }
-
 export async function schedulePlaylistSync(stateInput, { immediate = false } = {}) {
   if (!hasChromeStorageArea("sync") || !hasChromeStorageArea("local")) {
     return;
