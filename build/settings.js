@@ -91,7 +91,7 @@ function signInUser() {
     });
   });
 }
-function getToken() {
+function getToken({ interactive = true } = {}) {
   if (typeof chrome === "undefined") {
     return Promise.reject(new Error("chrome API unavailable"));
   }
@@ -99,6 +99,10 @@ function getToken() {
   return new Promise((resolve, reject) => {
     chrome.identity.getAuthToken({ interactive: false }, async (token) => {
       if (chrome.runtime.lastError || !token) {
+        if (!interactive) {
+          reject(chrome.runtime.lastError || new Error("Auth token unavailable"));
+          return;
+        }
         try {
           const t = await signInUser();
           resolve(t);
@@ -244,6 +248,10 @@ function normalizeSyncTimestamp(value) {
   const ts = Number(value);
   return Number.isFinite(ts) && ts > 0 ? Math.trunc(ts) : 0;
 }
+
+// src/store/state/storage.js
+var hasChromeStorage = typeof chrome !== "undefined" && chrome?.storage?.local;
+var stateWriteQueue = Promise.resolve();
 
 // src/store/state/settingsSyncSnapshot.js
 var SETTINGS_SYNC_FORMAT_VERSION = 1;
@@ -429,10 +437,6 @@ async function resolveRemoteSettingsSyncFilters(localFiltersInput) {
   });
   return { filters: remote.filters, imported: true };
 }
-
-// src/store/state/storage.js
-var hasChromeStorage = typeof chrome !== "undefined" && chrome?.storage?.local;
-var stateWriteQueue = Promise.resolve();
 
 // src/filterStorage.js
 var STORAGE_KEYS = {
@@ -2187,8 +2191,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!syncStatus) return;
     const playlist = status?.playlist || {};
     const settings = status?.settings || {};
+    const drive = status?.drive || {};
     const pending = [playlist.pending, settings.pending].some(Boolean);
-    const errors = [playlist.lastError, settings.lastError].filter(Boolean);
+    const errors = [playlist.lastError, settings.lastError, drive.lastError].filter(Boolean);
     const manifests = `${status?.hasPlaylistManifest ? "playlist" : "-"} / ${status?.hasSettingsManifest ? "filters" : "-"}`;
     const shortId = (id) => id ? String(id).slice(-8) : "-";
     const parts = [
@@ -2196,9 +2201,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       `ID: ${status?.extensionId || "?"}`,
       `\u041F\u043B\u0435\u0439\u043B\u0438\u0441\u0442\u044B remote: ${playlist.remoteAvailable ? formatSyncDate(playlist.remoteUpdatedAt) : "\u043D\u0435\u0442"}`,
       `\u0424\u0438\u043B\u044C\u0442\u0440\u044B remote: ${settings.remoteAvailable ? formatSyncDate(settings.remoteUpdatedAt) : "\u043D\u0435\u0442"}`,
+      `Drive: ${drive.remoteAvailable ? formatSyncDate(drive.remoteUpdatedAt) : "\u043D\u0435\u0442"}`,
       `\u041A\u043B\u044E\u0447\u0438 sync: ${status?.syncKeyCount ?? "?"}`,
       `Manifest: ${manifests}`,
-      `Writer: ${shortId(playlist.remoteDeviceId)} / ${shortId(settings.remoteDeviceId)}`,
+      `Writer: ${shortId(playlist.remoteDeviceId)} / ${shortId(settings.remoteDeviceId)} / ${shortId(drive.remoteDeviceId)}`,
       pending ? "\u0415\u0441\u0442\u044C \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u0432 \u043E\u0447\u0435\u0440\u0435\u0434\u0438 \u043D\u0430 \u043E\u0442\u043F\u0440\u0430\u0432\u043A\u0443." : "",
       errors.length ? `\u041E\u0448\u0438\u0431\u043A\u0438: ${errors.join("; ")}` : ""
     ].filter(Boolean);
@@ -2219,7 +2225,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       setSyncBusy(true);
       const result = await pullRemoteSync();
       const changed = result?.playlistImported || result?.settingsImported;
-      await refreshSyncStatus(changed ? "\u0414\u0430\u043D\u043D\u044B\u0435 \u0438\u0437 sync-\u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0430 Chrome \u043F\u043E\u0434\u0442\u044F\u043D\u0443\u0442\u044B." : "\u0411\u043E\u043B\u0435\u0435 \u0441\u0432\u0435\u0436\u0438\u0445 \u0434\u0430\u043D\u043D\u044B\u0445 \u0432 sync-\u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435 Chrome \u043D\u0435 \u0432\u0438\u0434\u043D\u043E.");
+      await refreshSyncStatus(changed ? "\u0414\u0430\u043D\u043D\u044B\u0435 \u043F\u043E\u0434\u0442\u044F\u043D\u0443\u0442\u044B \u0438\u0437 Drive/sync-\u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0430." : "\u0423\u0434\u0430\u043B\u0451\u043D\u043D\u044B\u0445 \u0434\u0430\u043D\u043D\u044B\u0445 \u0432 Drive/sync-\u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435 \u043D\u0435 \u0432\u0438\u0434\u043D\u043E.");
       if (result?.settingsImported) {
         window.setTimeout(() => window.location.reload(), 700);
       }
@@ -2238,8 +2244,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     try {
       setSyncBusy(true);
       const result = await pushLocalSync();
-      const pushed = result?.playlistPushed || result?.settingsPushed;
-      await refreshSyncStatus(pushed ? "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u0437\u0430\u043F\u0438\u0441\u0430\u043D\u044B \u0432 chrome.storage.sync." : "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u043F\u0438\u0441\u0430\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435 \u0432 chrome.storage.sync.");
+      const pushed = result?.drivePushed || result?.playlistPushed || result?.settingsPushed;
+      const message = result?.drivePushed ? "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u0437\u0430\u043F\u0438\u0441\u0430\u043D\u044B \u0432 Drive \u0438 chrome.storage.sync." : pushed ? "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u0437\u0430\u043F\u0438\u0441\u0430\u043D\u044B \u0442\u043E\u043B\u044C\u043A\u043E \u0432 chrome.storage.sync." : "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u043F\u0438\u0441\u0430\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435 \u0432 \u0443\u0434\u0430\u043B\u0451\u043D\u043D\u043E\u0435 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435.";
+      await refreshSyncStatus(message);
     } catch (err) {
       console.error("Failed to push local account sync", err);
       showToast("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435 \u0432 \u0430\u043A\u043A\u0430\u0443\u043D\u0442", true);
@@ -2256,7 +2263,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       setSyncBusy(true);
       const result = await replaceLocalFromRemoteSync();
       const changed = result?.playlistImported || result?.settingsImported;
-      await refreshSyncStatus(changed ? "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u0437\u0430\u043C\u0435\u043D\u0435\u043D\u044B \u0438\u0437 sync-\u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0430 Chrome." : "\u0412 sync-\u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435 Chrome \u043D\u0435\u0442 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0445 \u0434\u0430\u043D\u043D\u044B\u0445.");
+      await refreshSyncStatus(changed ? "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u0437\u0430\u043C\u0435\u043D\u0435\u043D\u044B \u0438\u0437 Drive/sync-\u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0430." : "\u0412 Drive/sync-\u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435 \u043D\u0435\u0442 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0445 \u0434\u0430\u043D\u043D\u044B\u0445.");
       if (changed) {
         window.setTimeout(() => window.location.reload(), 700);
       }

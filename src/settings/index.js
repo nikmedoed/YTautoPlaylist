@@ -2,9 +2,7 @@
 import { parseVideoId } from "../utils.js";
 import { parseDuration } from "../time.js";
 import { getFilters } from "../filter.js";
-import {
-  toLocalInputValue,
-} from "./shared/format.js";
+import { toLocalInputValue } from "./shared/format.js";
 import {
   getSyncStatus,
   getSubscriptionsMeta,
@@ -15,11 +13,7 @@ import {
   replaceLocalFromRemoteSync,
   setStartDate,
 } from "./shared/runtime.js";
-import {
-  createSaveUiState,
-  showToast,
-  updateLastSaveDisplay,
-} from "./shared/saveUi.js";
+import { createSaveUiState, showToast, updateLastSaveDisplay } from "./shared/saveUi.js";
 import { renderCheckVideoResult } from "./video-check/resultView.js";
 import {
   addDurationFilterToSection,
@@ -83,8 +77,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!syncStatus) return;
     const playlist = status?.playlist || {};
     const settings = status?.settings || {};
+    const drive = status?.drive || {};
     const pending = [playlist.pending, settings.pending].some(Boolean);
-    const errors = [playlist.lastError, settings.lastError].filter(Boolean);
+    const errors = [playlist.lastError, settings.lastError, drive.lastError].filter(Boolean);
     const manifests = `${status?.hasPlaylistManifest ? "playlist" : "-"} / ${status?.hasSettingsManifest ? "filters" : "-"}`;
     const shortId = (id) => (id ? String(id).slice(-8) : "-");
     const parts = [
@@ -92,9 +87,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       `ID: ${status?.extensionId || "?"}`,
       `Плейлисты remote: ${playlist.remoteAvailable ? formatSyncDate(playlist.remoteUpdatedAt) : "нет"}`,
       `Фильтры remote: ${settings.remoteAvailable ? formatSyncDate(settings.remoteUpdatedAt) : "нет"}`,
+      `Drive: ${drive.remoteAvailable ? formatSyncDate(drive.remoteUpdatedAt) : "нет"}`,
       `Ключи sync: ${status?.syncKeyCount ?? "?"}`,
       `Manifest: ${manifests}`,
-      `Writer: ${shortId(playlist.remoteDeviceId)} / ${shortId(settings.remoteDeviceId)}`,
+      `Writer: ${shortId(playlist.remoteDeviceId)} / ${shortId(settings.remoteDeviceId)} / ${shortId(drive.remoteDeviceId)}`,
       pending ? "Есть локальные изменения в очереди на отправку." : "",
       errors.length ? `Ошибки: ${errors.join("; ")}` : "",
     ].filter(Boolean);
@@ -116,8 +112,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       const result = await pullRemoteSync();
       const changed = result?.playlistImported || result?.settingsImported;
       await refreshSyncStatus(changed
-        ? "Данные из sync-хранилища Chrome подтянуты."
-        : "Более свежих данных в sync-хранилище Chrome не видно.");
+        ? "Данные подтянуты из Drive/sync-хранилища."
+        : "Удалённых данных в Drive/sync-хранилище не видно.");
       if (result?.settingsImported) {
         window.setTimeout(() => window.location.reload(), 700);
       }
@@ -137,10 +133,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     try {
       setSyncBusy(true);
       const result = await pushLocalSync();
-      const pushed = result?.playlistPushed || result?.settingsPushed;
-      await refreshSyncStatus(pushed
-        ? "Локальные данные записаны в chrome.storage.sync."
-        : "Не удалось записать данные в chrome.storage.sync.");
+      const pushed = result?.drivePushed || result?.playlistPushed || result?.settingsPushed;
+      const message = result?.drivePushed
+        ? "Локальные данные записаны в Drive и chrome.storage.sync."
+        : pushed
+          ? "Локальные данные записаны только в chrome.storage.sync."
+          : "Не удалось записать данные в удалённое хранилище.";
+      await refreshSyncStatus(message);
     } catch (err) {
       console.error("Failed to push local account sync", err);
       showToast("Не удалось отправить данные в аккаунт", true);
@@ -158,8 +157,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       const result = await replaceLocalFromRemoteSync();
       const changed = result?.playlistImported || result?.settingsImported;
       await refreshSyncStatus(changed
-        ? "Локальные данные заменены из sync-хранилища Chrome."
-        : "В sync-хранилище Chrome нет сохранённых данных.");
+        ? "Локальные данные заменены из Drive/sync-хранилища."
+        : "В Drive/sync-хранилище нет сохранённых данных.");
       if (changed) {
         window.setTimeout(() => window.location.reload(), 700);
       }

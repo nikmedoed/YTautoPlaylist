@@ -1,9 +1,12 @@
 // Background options message handlers. Contains option-page routing and settings-related runtime actions.
 import {
+  getDriveSyncStatus,
   getPlaylistSyncStorageStatus,
   getSettingsSyncStatus,
+  importDriveSync,
   importRemotePlaylistSyncIfNewer,
   importRemoteSettingsSync,
+  pushLocalDriveSyncNow,
   pushLocalPlaylistSyncNow,
   pushLocalSettingsSyncNow,
   replaceLocalPlaylistSyncFromRemote,
@@ -54,9 +57,10 @@ export const optionsHandlers = {
   },
 
   async "sync:getStatus"() {
-    const [playlist, settings] = await Promise.all([
+    const [playlist, settings, drive] = await Promise.all([
       getPlaylistSyncStorageStatus(),
       getSettingsSyncStatus(),
+      getDriveSyncStatus(),
     ]);
     const syncKeys = Object.keys(await chrome.storage.sync.get(null));
     return {
@@ -64,6 +68,7 @@ export const optionsHandlers = {
       extensionId: chrome.runtime.id,
       playlist,
       settings,
+      drive,
       syncKeyCount: syncKeys.length,
       hasPlaylistManifest: syncKeys.includes(SYNC_MANIFEST_STORAGE_KEY),
       hasSettingsManifest: syncKeys.includes(SETTINGS_SYNC_MANIFEST_STORAGE_KEY),
@@ -71,12 +76,17 @@ export const optionsHandlers = {
   },
 
   async "sync:pullRemote"() {
-    const [playlist, settings] = await Promise.all([
-      importRemotePlaylistSyncIfNewer(),
-      importRemoteSettingsSync(),
-    ]);
+    const drive = await importDriveSync();
+    const [playlist, settings] = drive.imported
+      ? [{ imported: drive.playlistImported }, { imported: drive.settingsImported }]
+      : await Promise.all([
+        importRemotePlaylistSyncIfNewer(),
+        importRemoteSettingsSync(),
+      ]);
     return {
       ok: true,
+      driveImported: Boolean(drive.imported),
+      driveReason: drive.reason || null,
       playlistImported: Boolean(playlist?.imported),
       settingsImported: Boolean(settings?.imported),
       settingsReason: settings?.reason || null,
@@ -84,12 +94,17 @@ export const optionsHandlers = {
   },
 
   async "sync:replaceLocalFromRemote"() {
-    const [playlist, settings] = await Promise.all([
-      replaceLocalPlaylistSyncFromRemote(),
-      importRemoteSettingsSync({ force: true }),
-    ]);
+    const drive = await importDriveSync({ force: true });
+    const [playlist, settings] = drive.imported
+      ? [{ imported: drive.playlistImported }, { imported: drive.settingsImported }]
+      : await Promise.all([
+        replaceLocalPlaylistSyncFromRemote(),
+        importRemoteSettingsSync({ force: true }),
+      ]);
     return {
       ok: true,
+      driveImported: Boolean(drive.imported),
+      driveReason: drive.reason || null,
       playlistImported: Boolean(playlist?.imported),
       playlistReason: playlist?.reason || null,
       settingsImported: Boolean(settings?.imported),
@@ -98,12 +113,15 @@ export const optionsHandlers = {
   },
 
   async "sync:pushLocal"() {
-    const [playlist, settings] = await Promise.all([
+    const [playlist, settings, drive] = await Promise.all([
       pushLocalPlaylistSyncNow(),
       pushLocalSettingsSyncNow(),
+      pushLocalDriveSyncNow(),
     ]);
     return {
       ok: true,
+      drivePushed: Boolean(drive?.pushed),
+      driveReason: drive?.reason || null,
       playlistPushed: Boolean(playlist?.pushed),
       playlistReason: playlist?.reason || null,
       settingsPushed: Boolean(settings?.pushed),

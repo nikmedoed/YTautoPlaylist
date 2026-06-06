@@ -15,7 +15,11 @@ import { composeRawState, splitStateForStorage } from "./serialization.js";
 import { sanitizeState } from "./sanitizers.js";
 import {
   forceRemotePlaylistSyncState,
+  buildSyncSnapshot,
   getPlaylistSyncStatus,
+  hasSyncableUserData,
+  mergeRemoteSyncState,
+  mergeSyncStatesConservatively,
   resolveRemotePlaylistSyncState,
   schedulePlaylistSync,
   writePendingPlaylistSync,
@@ -313,6 +317,25 @@ export async function pushLocalPlaylistSyncNow() {
     await schedulePlaylistSync(localRaw, { immediate: true });
     const result = await writePendingPlaylistSync(localRaw, { force: true });
     return { ...result, pushed: Boolean(result?.wrote) };
+  });
+}
+
+export async function buildLocalPlaylistSyncSnapshot(deviceId) {
+  return enqueueStateWrite(async () => {
+    const localRaw = await loadRawState({ checkRemoteSync: false });
+    return buildSyncSnapshot(localRaw, { updatedAt: Date.now(), deviceId });
+  });
+}
+
+export async function importPlaylistSyncSnapshot(snapshot, { force = false } = {}) {
+  return enqueueStateWrite(async () => {
+    if (!snapshot?.state) return { imported: false, reason: "invalid-snapshot" };
+    const localRaw = await loadLocalRawState();
+    const nextState = force || !hasSyncableUserData(localRaw)
+      ? mergeRemoteSyncState(localRaw, snapshot.state)
+      : mergeSyncStatesConservatively(localRaw, snapshot.state);
+    await persistState(nextState, { scheduleSync: false });
+    return { imported: true, state: sanitizeState(nextState) };
   });
 }
 

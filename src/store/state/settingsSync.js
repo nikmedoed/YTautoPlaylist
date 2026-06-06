@@ -240,6 +240,38 @@ export async function pushLocalSettingsSyncNow() {
   return { ...result, pushed: Boolean(result?.wrote) };
 }
 
+export async function buildLocalSettingsSyncSnapshot(deviceId) {
+  const filters = await readLocalSettingsFilters();
+  return buildSettingsSnapshot(filters, { updatedAt: Date.now(), deviceId });
+}
+
+export async function importSettingsSyncSnapshot(snapshot, { force = false } = {}) {
+  if (!snapshot?.filters) return { imported: false, reason: "invalid-snapshot" };
+  const localFilters = await readLocalSettingsFilters();
+  const filters = force
+    ? snapshot.filters
+    : mergeFiltersConservatively(localFilters, snapshot.filters);
+  const now = Date.now();
+  await writeLocalSettingsFilters(filters);
+  await writeLocalMeta({
+    ...(await readLocalMeta()),
+    localHash: settingsFingerprint(filters),
+    localUpdatedAt: force ? snapshot.updatedAt : now,
+    syncedHash: force ? snapshot.hash : settingsFingerprint(filters),
+    syncedUpdatedAt: force ? snapshot.updatedAt : now,
+    remoteHash: snapshot.hash,
+    remoteUpdatedAt: snapshot.updatedAt,
+    baseRemoteHash: null,
+    pending: !force && settingsFingerprint(filters) !== snapshot.hash,
+    flushAfter: !force ? now + SYNC_DEBOUNCE_MS : null,
+    lastError: null,
+  });
+  if (!force && settingsFingerprint(filters) !== snapshot.hash) {
+    await scheduleSettingsSync(filters);
+  }
+  return { imported: true, force, updatedAt: snapshot.updatedAt };
+}
+
 export async function resolveRemoteSettingsSyncFilters(localFiltersInput) {
   const localFilters = normalizeSettingsFilters(localFiltersInput);
   const meta = await readLocalMeta();
