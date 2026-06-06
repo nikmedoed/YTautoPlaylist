@@ -28,8 +28,8 @@ export function getVideoInfo(videoId) {
   return sendRuntimeMessage({ type: "videoInfo", videoId });
 }
 
-export function getSyncStatus() {
-  return sendRuntimeMessage({ type: "sync:getStatus" });
+export function getSyncStatus({ refreshRemote = false } = {}) {
+  return sendRuntimeMessage({ type: "sync:getStatus", refreshRemote });
 }
 
 export function pullRemoteSync() {

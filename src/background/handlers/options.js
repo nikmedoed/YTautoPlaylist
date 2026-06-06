@@ -56,11 +56,11 @@ export const optionsHandlers = {
     }
   },
 
-  async "sync:getStatus"() {
+  async "sync:getStatus"(message = {}) {
     const [playlist, settings, drive] = await Promise.all([
       getPlaylistSyncStorageStatus(),
       getSettingsSyncStatus(),
-      getDriveSyncStatus(),
+      getDriveSyncStatus({ refreshRemote: Boolean(message.refreshRemote) }),
     ]);
     const syncKeys = Object.keys(await chrome.storage.sync.get(null));
     return {

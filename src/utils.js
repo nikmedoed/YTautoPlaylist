@@ -109,9 +109,11 @@ export function resolveThumbnailUrl(entry, fallback = "") {
   if (!entry || typeof entry !== "object") {
     return fallback || "";
   }
+  const id = parseVideoId(entry.id);
   return (
     pickThumbnailValue(entry.thumbnail) ||
     pickThumbnailSet(entry.thumbnails) ||
+    (id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : "") ||
     fallback ||
     ""
   );

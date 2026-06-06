@@ -196,7 +196,7 @@ async function writeDrivePayload(payload, { interactive = true } = {}) {
   return response.json();
 }
 
-export async function pushLocalDriveSyncNow() {
+export async function pushLocalDriveSyncNow({ interactive = true } = {}) {
   const meta = await readLocalMeta();
   const deviceId = await ensureDeviceId(meta);
   const [playlist, settings] = await Promise.all([
@@ -211,13 +211,17 @@ export async function pushLocalDriveSyncNow() {
     settings: encodeSnapshot(settings),
   };
   try {
-    const file = await writeDrivePayload(payload, { interactive: true });
+    const file = await writeDrivePayload(payload, { interactive });
+    const now = Date.now();
     await writeLocalMeta({
       ...meta,
       deviceId,
       fileId: file.id,
       remoteUpdatedAt: payload.updatedAt,
-      lastWriteAt: Date.now(),
+      remoteDeviceId: deviceId,
+      remoteAvailable: true,
+      lastWriteAt: now,
+      lastReadAt: now,
       lastError: null,
     });
     return { pushed: true, updatedAt: payload.updatedAt };
@@ -247,6 +251,7 @@ export async function importDriveSync({ force = false } = {}) {
       fileId: file?.id || meta.fileId || null,
       remoteUpdatedAt: payload.updatedAt,
       remoteDeviceId: payload.deviceId,
+      remoteAvailable: true,
       lastReadAt: Date.now(),
       lastError: null,
     });
@@ -262,10 +267,30 @@ export async function importDriveSync({ force = false } = {}) {
   }
 }
 
-export async function getDriveSyncStatus() {
+export async function getDriveSyncStatus({ refreshRemote = false } = {}) {
   const meta = await readLocalMeta();
+  if (!refreshRemote) {
+    return {
+      remoteAvailable: Boolean(meta.remoteAvailable || meta.remoteUpdatedAt),
+      remoteUpdatedAt: normalizeSyncTimestamp(meta.remoteUpdatedAt),
+      remoteDeviceId: meta.remoteDeviceId || null,
+      lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
+      lastReadAt: normalizeSyncTimestamp(meta.lastReadAt),
+      lastError: null,
+    };
+  }
   try {
     const { file, payload } = await readDrivePayload({ interactive: false });
+    const now = Date.now();
+    await writeLocalMeta({
+      ...meta,
+      fileId: file?.id || meta.fileId || null,
+      remoteAvailable: Boolean(payload),
+      remoteUpdatedAt: normalizeSyncTimestamp(payload?.updatedAt),
+      remoteDeviceId: payload?.deviceId || meta.remoteDeviceId || null,
+      lastReadAt: now,
+      lastError: null,
+    });
     return {
       remoteAvailable: Boolean(payload),
       remoteUpdatedAt: normalizeSyncTimestamp(payload?.updatedAt),
@@ -274,7 +299,7 @@ export async function getDriveSyncStatus() {
       remoteDeviceId: payload?.deviceId || null,
       fileModifiedTime: file?.modifiedTime || null,
       lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
-      lastReadAt: normalizeSyncTimestamp(meta.lastReadAt),
+      lastReadAt: now,
       lastError: meta.lastError || null,
     };
   } catch (err) {

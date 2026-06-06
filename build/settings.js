@@ -589,8 +589,8 @@ function getVideoDate(videoId) {
 function getVideoInfo2(videoId) {
   return sendRuntimeMessage({ type: "videoInfo", videoId });
 }
-function getSyncStatus() {
-  return sendRuntimeMessage({ type: "sync:getStatus" });
+function getSyncStatus({ refreshRemote = false } = {}) {
+  return sendRuntimeMessage({ type: "sync:getStatus", refreshRemote });
 }
 function pullRemoteSync() {
   return sendRuntimeMessage({ type: "sync:pullRemote" });
@@ -669,6 +669,100 @@ function createSaveUiState(saveButtons) {
     setUnsavedChanges,
     updateSaveButtons
   };
+}
+
+// src/settings/shared/syncStatusView.js
+function formatDate(value) {
+  const ts = Number(value) || 0;
+  if (ts <= 0) return "\u043D\u0435\u0442";
+  const date = new Date(ts);
+  return Number.isNaN(date.getTime()) ? "\u043D\u0435\u0442" : date.toLocaleString();
+}
+function maxTimestamp(...values) {
+  return Math.max(...values.map((value) => Number(value) || 0), 0);
+}
+function describeSyncState(localUpdatedAt, remoteUpdatedAt, pending) {
+  if (!remoteUpdatedAt) return "\u041E\u0431\u043B\u0430\u0447\u043D\u043E\u0439 \u0432\u0435\u0440\u0441\u0438\u0438 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442.";
+  if (pending || localUpdatedAt > remoteUpdatedAt + 1e3) {
+    return "\u0415\u0441\u0442\u044C \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F, \u0441\u0442\u043E\u0438\u0442 \u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0438\u0445 \u0432 \u043E\u0431\u043B\u0430\u043A\u043E.";
+  }
+  if (remoteUpdatedAt > localUpdatedAt + 1e3) {
+    return "\u041E\u0431\u043B\u0430\u0447\u043D\u0430\u044F \u0432\u0435\u0440\u0441\u0438\u044F \u0441\u0432\u0435\u0436\u0435\u0435 \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0445 \u0434\u0430\u043D\u043D\u044B\u0445.";
+  }
+  return "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u043E\u0435 \u0441\u043E\u0441\u0442\u043E\u044F\u043D\u0438\u0435 \u0441\u043E\u0432\u043F\u0430\u0434\u0430\u0435\u0442 \u0441 \u043E\u0431\u043B\u0430\u0447\u043D\u043E\u0439 \u0432\u0435\u0440\u0441\u0438\u0435\u0439.";
+}
+function createRow(doc, label, value, className = "") {
+  const row = doc.createElement("div");
+  row.className = `sync-status__row${className ? ` ${className}` : ""}`;
+  const labelEl = doc.createElement("span");
+  labelEl.className = "sync-status__label";
+  labelEl.textContent = label;
+  const valueEl = doc.createElement("span");
+  valueEl.className = "sync-status__value";
+  valueEl.textContent = value;
+  row.append(labelEl, valueEl);
+  return row;
+}
+function friendlyErrors(status) {
+  const raw = [
+    status?.playlist?.lastError,
+    status?.settings?.lastError,
+    status?.drive?.lastError
+  ].filter(Boolean);
+  return raw.map((error) => {
+    const text = String(error);
+    if (text.includes("403")) {
+      return "Google Drive \u043E\u0442\u043A\u043B\u043E\u043D\u0438\u043B \u0434\u043E\u0441\u0442\u0443\u043F. \u041F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 OAuth/Drive API.";
+    }
+    if (text.includes("not initialized")) {
+      return "\u041E\u0431\u043B\u0430\u0447\u043D\u0430\u044F \u0432\u0435\u0440\u0441\u0438\u044F \u0435\u0449\u0451 \u043D\u0435 \u0441\u043E\u0437\u0434\u0430\u043D\u0430.";
+    }
+    return text;
+  });
+}
+function renderSyncStatus(target, status, message = "") {
+  if (!target) return;
+  const doc = target.ownerDocument;
+  const playlist = status?.playlist || {};
+  const settings = status?.settings || {};
+  const drive = status?.drive || {};
+  const localUpdatedAt = maxTimestamp(
+    playlist.localUpdatedAt,
+    settings.localUpdatedAt
+  );
+  const remoteUpdatedAt = Number(drive.remoteUpdatedAt) || 0;
+  const pending = Boolean(playlist.pending || settings.pending);
+  const errors = friendlyErrors(status);
+  target.textContent = "";
+  target.className = `sync-status${errors.length ? " sync-status--error" : ""}`;
+  if (message) {
+    const messageEl = doc.createElement("div");
+    messageEl.className = "sync-status__message";
+    messageEl.textContent = message;
+    target.appendChild(messageEl);
+  }
+  const summary = doc.createElement("div");
+  summary.className = "sync-status__summary";
+  const summaryText = doc.createElement("span");
+  summaryText.textContent = describeSyncState(localUpdatedAt, remoteUpdatedAt, pending);
+  const refresh = doc.createElement("button");
+  refresh.id = "refreshSyncStatus";
+  refresh.type = "button";
+  refresh.className = "sync-status__refresh";
+  refresh.title = "\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0441\u0442\u0430\u0442\u0443\u0441 \u043E\u0431\u043B\u0430\u043A\u0430";
+  refresh.setAttribute("aria-label", refresh.title);
+  refresh.textContent = "\u21BB";
+  summary.append(summaryText, refresh);
+  target.appendChild(summary);
+  target.append(
+    createRow(doc, "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u043E", formatDate(localUpdatedAt)),
+    createRow(doc, "\u041E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u043E", formatDate(drive.lastWriteAt)),
+    createRow(doc, "\u0412 \u043E\u0431\u043B\u0430\u043A\u0435", formatDate(remoteUpdatedAt)),
+    createRow(doc, "\u041F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E", formatDate(drive.lastReadAt))
+  );
+  errors.forEach((error) => {
+    target.appendChild(createRow(doc, "\u041F\u0440\u043E\u0431\u043B\u0435\u043C\u0430", error, "sync-status__row--error"));
+  });
 }
 
 // src/settings/filters/rows.js
@@ -2174,50 +2268,24 @@ document.addEventListener("DOMContentLoaded", async () => {
     target?.addEventListener("change", markUnsaved, true);
   });
   updateSaveButtons();
-  function formatSyncDate(value) {
-    const ts = Number(value) || 0;
-    if (ts <= 0) return "\u043D\u0435\u0442";
-    const date = new Date(ts);
-    return Number.isNaN(date.getTime()) ? "\u043D\u0435\u0442" : date.toLocaleString();
-  }
   function setSyncBusy(busy) {
-    [pullSyncBtn, pushSyncBtn, replaceFromSyncBtn].forEach((button) => {
+    [
+      pullSyncBtn,
+      pushSyncBtn,
+      replaceFromSyncBtn
+    ].forEach((button) => {
       if (!button) return;
       button.disabled = busy;
       button.classList.toggle("is-loading", busy);
     });
   }
-  function renderSyncStatus(status, message = "") {
-    if (!syncStatus) return;
-    const playlist = status?.playlist || {};
-    const settings = status?.settings || {};
-    const drive = status?.drive || {};
-    const pending = [playlist.pending, settings.pending].some(Boolean);
-    const errors = [playlist.lastError, settings.lastError, drive.lastError].filter(Boolean);
-    const manifests = `${status?.hasPlaylistManifest ? "playlist" : "-"} / ${status?.hasSettingsManifest ? "filters" : "-"}`;
-    const shortId = (id) => id ? String(id).slice(-8) : "-";
-    const parts = [
-      message,
-      `ID: ${status?.extensionId || "?"}`,
-      `\u041F\u043B\u0435\u0439\u043B\u0438\u0441\u0442\u044B remote: ${playlist.remoteAvailable ? formatSyncDate(playlist.remoteUpdatedAt) : "\u043D\u0435\u0442"}`,
-      `\u0424\u0438\u043B\u044C\u0442\u0440\u044B remote: ${settings.remoteAvailable ? formatSyncDate(settings.remoteUpdatedAt) : "\u043D\u0435\u0442"}`,
-      `Drive: ${drive.remoteAvailable ? formatSyncDate(drive.remoteUpdatedAt) : "\u043D\u0435\u0442"}`,
-      `\u041A\u043B\u044E\u0447\u0438 sync: ${status?.syncKeyCount ?? "?"}`,
-      `Manifest: ${manifests}`,
-      `Writer: ${shortId(playlist.remoteDeviceId)} / ${shortId(settings.remoteDeviceId)} / ${shortId(drive.remoteDeviceId)}`,
-      pending ? "\u0415\u0441\u0442\u044C \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u0432 \u043E\u0447\u0435\u0440\u0435\u0434\u0438 \u043D\u0430 \u043E\u0442\u043F\u0440\u0430\u0432\u043A\u0443." : "",
-      errors.length ? `\u041E\u0448\u0438\u0431\u043A\u0438: ${errors.join("; ")}` : ""
-    ].filter(Boolean);
-    syncStatus.textContent = parts.join(" ");
-    syncStatus.classList.toggle("is-danger", errors.length > 0);
-  }
-  async function refreshSyncStatus(message = "") {
+  async function refreshSyncStatus(message = "", { refreshRemote = false } = {}) {
     try {
-      const status = await getSyncStatus();
-      renderSyncStatus(status, message);
+      const status = await getSyncStatus({ refreshRemote });
+      renderSyncStatus(syncStatus, status, message);
     } catch (err) {
       console.error("Failed to load sync status", err);
-      renderSyncStatus(null, "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0441\u0442\u0430\u0442\u0443\u0441 \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u0438.");
+      renderSyncStatus(syncStatus, null, "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0441\u0442\u0430\u0442\u0443\u0441 \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u0438.");
     }
   }
   pullSyncBtn?.addEventListener("click", async () => {
@@ -2225,13 +2293,13 @@ document.addEventListener("DOMContentLoaded", async () => {
       setSyncBusy(true);
       const result = await pullRemoteSync();
       const changed = result?.playlistImported || result?.settingsImported;
-      await refreshSyncStatus(changed ? "\u0414\u0430\u043D\u043D\u044B\u0435 \u043F\u043E\u0434\u0442\u044F\u043D\u0443\u0442\u044B \u0438\u0437 Drive/sync-\u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0430." : "\u0423\u0434\u0430\u043B\u0451\u043D\u043D\u044B\u0445 \u0434\u0430\u043D\u043D\u044B\u0445 \u0432 Drive/sync-\u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435 \u043D\u0435 \u0432\u0438\u0434\u043D\u043E.");
+      await refreshSyncStatus(changed ? "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u0441\u043B\u0438\u0442\u044B \u0441 \u043E\u0431\u043B\u0430\u0447\u043D\u043E\u0439 \u0432\u0435\u0440\u0441\u0438\u0435\u0439." : "\u041E\u0431\u043B\u0430\u0447\u043D\u043E\u0439 \u0432\u0435\u0440\u0441\u0438\u0438 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442.");
       if (result?.settingsImported) {
         window.setTimeout(() => window.location.reload(), 700);
       }
     } catch (err) {
       console.error("Failed to pull account sync", err);
-      showToast("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u0434\u0442\u044F\u043D\u0443\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435 \u0438\u0437 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430", true);
+      showToast("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043B\u0438\u044F\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435 \u0441 \u043E\u0431\u043B\u0430\u043A\u043E\u043C", true);
     } finally {
       setSyncBusy(false);
     }
@@ -2245,31 +2313,45 @@ document.addEventListener("DOMContentLoaded", async () => {
       setSyncBusy(true);
       const result = await pushLocalSync();
       const pushed = result?.drivePushed || result?.playlistPushed || result?.settingsPushed;
-      const message = result?.drivePushed ? "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u0437\u0430\u043F\u0438\u0441\u0430\u043D\u044B \u0432 Drive \u0438 chrome.storage.sync." : pushed ? "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u0437\u0430\u043F\u0438\u0441\u0430\u043D\u044B \u0442\u043E\u043B\u044C\u043A\u043E \u0432 chrome.storage.sync." : "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u043F\u0438\u0441\u0430\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435 \u0432 \u0443\u0434\u0430\u043B\u0451\u043D\u043D\u043E\u0435 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435.";
+      const message = result?.drivePushed ? "\u0414\u0430\u043D\u043D\u044B\u0435 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u044B \u0432 \u043E\u0431\u043B\u0430\u043A\u043E." : pushed ? "\u0414\u0430\u043D\u043D\u044B\u0435 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u044B \u0442\u043E\u043B\u044C\u043A\u043E \u0432 \u0440\u0435\u0437\u0435\u0440\u0432\u043D\u043E\u0435 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435 Chrome." : "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435 \u0432 \u043E\u0431\u043B\u0430\u043A\u043E.";
       await refreshSyncStatus(message);
     } catch (err) {
       console.error("Failed to push local account sync", err);
-      showToast("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435 \u0432 \u0430\u043A\u043A\u0430\u0443\u043D\u0442", true);
+      showToast("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435", true);
     } finally {
       setSyncBusy(false);
     }
   });
   replaceFromSyncBtn?.addEventListener("click", async () => {
     const ok = window.confirm(
-      "\u0417\u0430\u043C\u0435\u043D\u0438\u0442\u044C \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u043F\u043B\u0435\u0439\u043B\u0438\u0441\u0442\u044B \u0438 \u0444\u0438\u043B\u044C\u0442\u0440\u044B \u0434\u0430\u043D\u043D\u044B\u043C\u0438 \u0438\u0437 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430?"
+      "\u041F\u043E\u043B\u043D\u043E\u0441\u0442\u044C\u044E \u0437\u0430\u043C\u0435\u043D\u0438\u0442\u044C \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u043E\u0435 \u0441\u043E\u0441\u0442\u043E\u044F\u043D\u0438\u0435 \u0438 \u0441\u043F\u0438\u0441\u043A\u0438 \u043E\u0431\u043B\u0430\u0447\u043D\u043E\u0439 \u0432\u0435\u0440\u0441\u0438\u0435\u0439?"
     );
     if (!ok) return;
     try {
       setSyncBusy(true);
       const result = await replaceLocalFromRemoteSync();
       const changed = result?.playlistImported || result?.settingsImported;
-      await refreshSyncStatus(changed ? "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u0437\u0430\u043C\u0435\u043D\u0435\u043D\u044B \u0438\u0437 Drive/sync-\u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0430." : "\u0412 Drive/sync-\u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435 \u043D\u0435\u0442 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0445 \u0434\u0430\u043D\u043D\u044B\u0445.");
+      await refreshSyncStatus(changed ? "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 \u0437\u0430\u043C\u0435\u043D\u0435\u043D\u044B \u043E\u0431\u043B\u0430\u0447\u043D\u043E\u0439 \u0432\u0435\u0440\u0441\u0438\u0435\u0439." : "\u041E\u0431\u043B\u0430\u0447\u043D\u043E\u0439 \u0432\u0435\u0440\u0441\u0438\u0438 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442.");
       if (changed) {
         window.setTimeout(() => window.location.reload(), 700);
       }
     } catch (err) {
       console.error("Failed to replace local data from account sync", err);
       showToast("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u043C\u0435\u043D\u0438\u0442\u044C \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435", true);
+    } finally {
+      setSyncBusy(false);
+    }
+  });
+  syncStatus?.addEventListener("click", async (event) => {
+    if (!event.target.closest("#refreshSyncStatus")) return;
+    try {
+      setSyncBusy(true);
+      const refreshButton = syncStatus.querySelector("#refreshSyncStatus");
+      refreshButton?.classList.add("is-loading");
+      await refreshSyncStatus("\u0421\u0442\u0430\u0442\u0443\u0441 \u043E\u0431\u043B\u0430\u043A\u0430 \u043E\u0431\u043D\u043E\u0432\u043B\u0451\u043D.", { refreshRemote: true });
+    } catch (err) {
+      console.error("Failed to refresh sync status", err);
+      showToast("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0441\u0442\u0430\u0442\u0443\u0441 \u043E\u0431\u043B\u0430\u043A\u0430", true);
     } finally {
       setSyncBusy(false);
     }

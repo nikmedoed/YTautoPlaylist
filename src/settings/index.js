@@ -14,6 +14,7 @@ import {
   setStartDate,
 } from "./shared/runtime.js";
 import { createSaveUiState, showToast, updateLastSaveDisplay } from "./shared/saveUi.js";
+import { renderSyncStatus } from "./shared/syncStatusView.js";
 import { renderCheckVideoResult } from "./video-check/resultView.js";
 import {
   addDurationFilterToSection,
@@ -60,50 +61,24 @@ document.addEventListener("DOMContentLoaded", async () => {
     target?.addEventListener("change", markUnsaved, true);
   });
   updateSaveButtons();
-  function formatSyncDate(value) {
-    const ts = Number(value) || 0;
-    if (ts <= 0) return "нет";
-    const date = new Date(ts);
-    return Number.isNaN(date.getTime()) ? "нет" : date.toLocaleString();
-  }
   function setSyncBusy(busy) {
-    [pullSyncBtn, pushSyncBtn, replaceFromSyncBtn].forEach((button) => {
+    [
+      pullSyncBtn,
+      pushSyncBtn,
+      replaceFromSyncBtn,
+    ].forEach((button) => {
       if (!button) return;
       button.disabled = busy;
       button.classList.toggle("is-loading", busy);
     });
   }
-  function renderSyncStatus(status, message = "") {
-    if (!syncStatus) return;
-    const playlist = status?.playlist || {};
-    const settings = status?.settings || {};
-    const drive = status?.drive || {};
-    const pending = [playlist.pending, settings.pending].some(Boolean);
-    const errors = [playlist.lastError, settings.lastError, drive.lastError].filter(Boolean);
-    const manifests = `${status?.hasPlaylistManifest ? "playlist" : "-"} / ${status?.hasSettingsManifest ? "filters" : "-"}`;
-    const shortId = (id) => (id ? String(id).slice(-8) : "-");
-    const parts = [
-      message,
-      `ID: ${status?.extensionId || "?"}`,
-      `Плейлисты remote: ${playlist.remoteAvailable ? formatSyncDate(playlist.remoteUpdatedAt) : "нет"}`,
-      `Фильтры remote: ${settings.remoteAvailable ? formatSyncDate(settings.remoteUpdatedAt) : "нет"}`,
-      `Drive: ${drive.remoteAvailable ? formatSyncDate(drive.remoteUpdatedAt) : "нет"}`,
-      `Ключи sync: ${status?.syncKeyCount ?? "?"}`,
-      `Manifest: ${manifests}`,
-      `Writer: ${shortId(playlist.remoteDeviceId)} / ${shortId(settings.remoteDeviceId)} / ${shortId(drive.remoteDeviceId)}`,
-      pending ? "Есть локальные изменения в очереди на отправку." : "",
-      errors.length ? `Ошибки: ${errors.join("; ")}` : "",
-    ].filter(Boolean);
-    syncStatus.textContent = parts.join(" ");
-    syncStatus.classList.toggle("is-danger", errors.length > 0);
-  }
-  async function refreshSyncStatus(message = "") {
+  async function refreshSyncStatus(message = "", { refreshRemote = false } = {}) {
     try {
-      const status = await getSyncStatus();
-      renderSyncStatus(status, message);
+      const status = await getSyncStatus({ refreshRemote });
+      renderSyncStatus(syncStatus, status, message);
     } catch (err) {
       console.error("Failed to load sync status", err);
-      renderSyncStatus(null, "Не удалось получить статус синхронизации.");
+      renderSyncStatus(syncStatus, null, "Не удалось получить статус синхронизации.");
     }
   }
   pullSyncBtn?.addEventListener("click", async () => {
@@ -112,14 +87,14 @@ document.addEventListener("DOMContentLoaded", async () => {
       const result = await pullRemoteSync();
       const changed = result?.playlistImported || result?.settingsImported;
       await refreshSyncStatus(changed
-        ? "Данные подтянуты из Drive/sync-хранилища."
-        : "Удалённых данных в Drive/sync-хранилище не видно.");
+        ? "Локальные данные слиты с облачной версией."
+        : "Облачной версии пока нет.");
       if (result?.settingsImported) {
         window.setTimeout(() => window.location.reload(), 700);
       }
     } catch (err) {
       console.error("Failed to pull account sync", err);
-      showToast("Не удалось подтянуть данные из аккаунта", true);
+      showToast("Не удалось слиять данные с облаком", true);
     } finally {
       setSyncBusy(false);
     }
@@ -135,21 +110,21 @@ document.addEventListener("DOMContentLoaded", async () => {
       const result = await pushLocalSync();
       const pushed = result?.drivePushed || result?.playlistPushed || result?.settingsPushed;
       const message = result?.drivePushed
-        ? "Локальные данные записаны в Drive и chrome.storage.sync."
+        ? "Данные отправлены в облако."
         : pushed
-          ? "Локальные данные записаны только в chrome.storage.sync."
-          : "Не удалось записать данные в удалённое хранилище.";
+          ? "Данные сохранены только в резервное хранилище Chrome."
+          : "Не удалось отправить данные в облако.";
       await refreshSyncStatus(message);
     } catch (err) {
       console.error("Failed to push local account sync", err);
-      showToast("Не удалось отправить данные в аккаунт", true);
+      showToast("Не удалось отправить данные", true);
     } finally {
       setSyncBusy(false);
     }
   });
   replaceFromSyncBtn?.addEventListener("click", async () => {
     const ok = window.confirm(
-      "Заменить локальные плейлисты и фильтры данными из аккаунта?"
+      "Полностью заменить локальное состояние и списки облачной версией?"
     );
     if (!ok) return;
     try {
@@ -157,14 +132,28 @@ document.addEventListener("DOMContentLoaded", async () => {
       const result = await replaceLocalFromRemoteSync();
       const changed = result?.playlistImported || result?.settingsImported;
       await refreshSyncStatus(changed
-        ? "Локальные данные заменены из Drive/sync-хранилища."
-        : "В Drive/sync-хранилище нет сохранённых данных.");
+        ? "Локальные данные заменены облачной версией."
+        : "Облачной версии пока нет.");
       if (changed) {
         window.setTimeout(() => window.location.reload(), 700);
       }
     } catch (err) {
       console.error("Failed to replace local data from account sync", err);
       showToast("Не удалось заменить локальные данные", true);
+    } finally {
+      setSyncBusy(false);
+    }
+  });
+  syncStatus?.addEventListener("click", async (event) => {
+    if (!event.target.closest("#refreshSyncStatus")) return;
+    try {
+      setSyncBusy(true);
+      const refreshButton = syncStatus.querySelector("#refreshSyncStatus");
+      refreshButton?.classList.add("is-loading");
+      await refreshSyncStatus("Статус облака обновлён.", { refreshRemote: true });
+    } catch (err) {
+      console.error("Failed to refresh sync status", err);
+      showToast("Не удалось обновить статус облака", true);
     } finally {
       setSyncBusy(false);
     }

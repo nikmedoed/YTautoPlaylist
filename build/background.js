@@ -224,7 +224,8 @@ function resolveThumbnailUrl(entry, fallback = "") {
   if (!entry || typeof entry !== "object") {
     return fallback || "";
   }
-  return pickThumbnailValue(entry.thumbnail) || pickThumbnailSet(entry.thumbnails) || fallback || "";
+  const id = parseVideoId(entry.id);
+  return pickThumbnailValue(entry.thumbnail) || pickThumbnailSet(entry.thumbnails) || (id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : "") || fallback || "";
 }
 
 // src/progress.js
@@ -2228,7 +2229,7 @@ async function writeDrivePayload(payload, { interactive = true } = {}) {
   }, { interactive });
   return response.json();
 }
-async function pushLocalDriveSyncNow() {
+async function pushLocalDriveSyncNow({ interactive = true } = {}) {
   const meta = await readLocalMeta2();
   const deviceId = await ensureDeviceId2(meta);
   const [playlist, settings] = await Promise.all([
@@ -2243,13 +2244,17 @@ async function pushLocalDriveSyncNow() {
     settings: encodeSnapshot(settings)
   };
   try {
-    const file = await writeDrivePayload(payload, { interactive: true });
+    const file = await writeDrivePayload(payload, { interactive });
+    const now = Date.now();
     await writeLocalMeta2({
       ...meta,
       deviceId,
       fileId: file.id,
       remoteUpdatedAt: payload.updatedAt,
-      lastWriteAt: Date.now(),
+      remoteDeviceId: deviceId,
+      remoteAvailable: true,
+      lastWriteAt: now,
+      lastReadAt: now,
       lastError: null
     });
     return { pushed: true, updatedAt: payload.updatedAt };
@@ -2274,6 +2279,7 @@ async function importDriveSync({ force = false } = {}) {
       fileId: file?.id || meta.fileId || null,
       remoteUpdatedAt: payload.updatedAt,
       remoteDeviceId: payload.deviceId,
+      remoteAvailable: true,
       lastReadAt: Date.now(),
       lastError: null
     });
@@ -2288,10 +2294,30 @@ async function importDriveSync({ force = false } = {}) {
     return { imported: false, reason: err.message };
   }
 }
-async function getDriveSyncStatus() {
+async function getDriveSyncStatus({ refreshRemote = false } = {}) {
   const meta = await readLocalMeta2();
+  if (!refreshRemote) {
+    return {
+      remoteAvailable: Boolean(meta.remoteAvailable || meta.remoteUpdatedAt),
+      remoteUpdatedAt: normalizeSyncTimestamp(meta.remoteUpdatedAt),
+      remoteDeviceId: meta.remoteDeviceId || null,
+      lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
+      lastReadAt: normalizeSyncTimestamp(meta.lastReadAt),
+      lastError: null
+    };
+  }
   try {
     const { file, payload } = await readDrivePayload({ interactive: false });
+    const now = Date.now();
+    await writeLocalMeta2({
+      ...meta,
+      fileId: file?.id || meta.fileId || null,
+      remoteAvailable: Boolean(payload),
+      remoteUpdatedAt: normalizeSyncTimestamp(payload?.updatedAt),
+      remoteDeviceId: payload?.deviceId || meta.remoteDeviceId || null,
+      lastReadAt: now,
+      lastError: null
+    });
     return {
       remoteAvailable: Boolean(payload),
       remoteUpdatedAt: normalizeSyncTimestamp(payload?.updatedAt),
@@ -2300,7 +2326,7 @@ async function getDriveSyncStatus() {
       remoteDeviceId: payload?.deviceId || null,
       fileModifiedTime: file?.modifiedTime || null,
       lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
-      lastReadAt: normalizeSyncTimestamp(meta.lastReadAt),
+      lastReadAt: now,
       lastError: meta.lastError || null
     };
   } catch (err) {
@@ -4982,11 +5008,11 @@ var optionsHandlers = {
       return { error: err?.message || "FAILED_TO_OPEN_LIST_SETTINGS" };
     }
   },
-  async "sync:getStatus"() {
+  async "sync:getStatus"(message = {}) {
     const [playlist, settings, drive] = await Promise.all([
       getPlaylistSyncStorageStatus(),
       getSettingsSyncStatus(),
-      getDriveSyncStatus()
+      getDriveSyncStatus({ refreshRemote: Boolean(message.refreshRemote) })
     ]);
     const syncKeys = Object.keys(await chrome.storage.sync.get(null));
     return {
@@ -5762,16 +5788,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   clearCurrentTab(tabId).then(() => notifyState());
 });
+async function flushPendingAccountSync() {
+  const [playlist, settings] = await Promise.all([
+    flushPendingPlaylistSync(),
+    flushPendingSettingsSync()
+  ]);
+  if (playlist?.wrote || settings?.wrote || playlist?.mergedState) {
+    await pushLocalDriveSyncNow({ interactive: false });
+  }
+}
 if (chrome.alarms?.onAlarm) {
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm?.name !== SYNC_ALARM_NAME) {
       return;
     }
-    Promise.all([flushPendingPlaylistSync(), flushPendingSettingsSync()]).catch(
-      (err) => {
-        console.error("Account sync flush failed", err);
-      }
-    );
+    flushPendingAccountSync().catch((err) => {
+      console.error("Account sync flush failed", err);
+    });
   });
 }
 chrome.storage?.onChanged?.addListener((changes, area) => {

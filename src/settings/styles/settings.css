@@ -148,7 +148,7 @@
   display: inline-flex;
   align-items: center;
 }
-#syncStatus{min-height:1.4rem}.sync-actions{display:flex;flex-wrap:wrap;gap:.5rem}.sync-actions .button{min-width:190px}
+@media (max-width:720px){.start-date-column{max-width:100%}.start-date-field{flex-wrap:wrap}#startDate{width:100%}}
 .filter-buttons {
   display: inline-flex;
   flex-wrap: wrap;
@@ -157,11 +157,11 @@
 }
 
 .start-date-column {
-  flex: 0 0 326px;
-  max-width: 326px;
+  flex: 0 0 420px;
+  max-width: 420px;
 }
 
-#startDate { max-width: 260px; }
+.start-date-field{flex-wrap:nowrap}#startDate{width:240px}
 
 #checkVideoResult { white-space: pre-wrap; }
 

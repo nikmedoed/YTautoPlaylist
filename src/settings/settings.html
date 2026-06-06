@@ -9,6 +9,7 @@
       href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css"
     />
     <link rel="stylesheet" href="styles/settings.css" />
+    <link rel="stylesheet" href="styles/sync.css" />
     <!-- Inline icon sprite -->
     <title>YT AutoWL settings</title>
   </head>
@@ -27,20 +28,37 @@
           Здесь настраиваются правила отбора видео: начальная дата для следуюшей итерации и правила фильтрации.
         </div>
 
-        <h3 class="title is-4 mb-2" id="syncHeader">Синхронизация</h3>
-        <div class="box sync-card mb-4">
+        <h3 class="title is-4 mb-2" id="syncHeader">
+          Синхронизация состояния и списков
+        </h3>
+        <div class="sync-panel mb-5">
           <div class="sync-actions">
-            <button id="pullSync" class="button is-info" type="button">
-              Подтянуть из аккаунта
+            <button
+              id="pullSync"
+              class="button is-info sync-action-button"
+              type="button"
+              title="Объединить локальные данные с облачной версией"
+            >
+              Слиять
             </button>
-            <button id="pushSync" class="button is-success" type="button">
-              Отправить в аккаунт
+            <button
+              id="replaceFromSync"
+              class="button is-warning sync-action-button"
+              type="button"
+              title="Полностью заменить локальные данные облачной версией"
+            >
+              Заменить
             </button>
-            <button id="replaceFromSync" class="button is-warning" type="button">
-              Заменить локальное из аккаунта
+            <button
+              id="pushSync"
+              class="button is-success sync-action-button"
+              type="button"
+              title="Сохранить локальное состояние и списки в облако"
+            >
+              Отправить
             </button>
           </div>
-          <p id="syncStatus" class="help mt-2"></p>
+          <div id="syncStatus" class="sync-status mt-2"></div>
         </div>
 
         <h3 class="title is-4 mb-2" id="timeHeader">Временные настройки</h3>
@@ -54,7 +72,7 @@
               >В плейлист будут добавлены видео опубликованные после этой
               даты</label
             >
-            <div class="field has-addons is-flex-wrap-wrap">
+            <div class="field has-addons start-date-field">
               <div class="control">
                 <input id="startDate" class="input" type="datetime-local" />
               </div>

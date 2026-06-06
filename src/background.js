@@ -11,6 +11,7 @@ import {
   importRemoteSettingsSync,
   isPlaylistSyncStorageChange,
   isSettingsSyncStorageChange,
+  pushLocalDriveSyncNow,
   SYNC_ALARM_NAME,
 } from "./store/index.js";
 
@@ -42,16 +43,24 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   clearCurrentTab(tabId).then(() => notifyState());
 });
 
+async function flushPendingAccountSync() {
+  const [playlist, settings] = await Promise.all([
+    flushPendingPlaylistSync(),
+    flushPendingSettingsSync(),
+  ]);
+  if (playlist?.wrote || settings?.wrote || playlist?.mergedState) {
+    await pushLocalDriveSyncNow({ interactive: false });
+  }
+}
+
 if (chrome.alarms?.onAlarm) {
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm?.name !== SYNC_ALARM_NAME) {
       return;
     }
-    Promise.all([flushPendingPlaylistSync(), flushPendingSettingsSync()]).catch(
-      (err) => {
-        console.error("Account sync flush failed", err);
-      }
-    );
+    flushPendingAccountSync().catch((err) => {
+      console.error("Account sync flush failed", err);
+    });
   });
 }
 

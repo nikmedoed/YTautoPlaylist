@@ -406,7 +406,30 @@ function formatClockTime(value = /* @__PURE__ */ new Date()) {
 }
 
 // src/utils.js
+var YOUTUBE_ID_PATTERN = /[\w-]{11}/;
 var THUMBNAIL_PRIORITY = ["maxres", "standard", "high", "medium", "default"];
+function parseVideoId(input) {
+  if (!input) return "";
+  const str = String(input).trim();
+  if (/^[\w-]{11}$/.test(str)) return str;
+  try {
+    const baseUrl = typeof globalThis?.location?.href === "string" ? globalThis.location.href : null;
+    const url = baseUrl ? new URL(str, baseUrl) : new URL(str);
+    if (url.hostname.includes("youtu.be")) {
+      const id = url.pathname.split("/").filter(Boolean)[0];
+      if (/^[\w-]{11}$/.test(id)) return id;
+    }
+    const candidate = url.searchParams.get("v");
+    if (candidate && /^[\w-]{11}$/.test(candidate)) return candidate;
+    const segments = url.pathname.split("/");
+    for (const segment of segments) {
+      if (/^[\w-]{11}$/.test(segment)) return segment;
+    }
+  } catch {
+  }
+  const match = str.match(YOUTUBE_ID_PATTERN);
+  return match ? match[0] : "";
+}
 function pickThumbnailValue(value) {
   if (typeof value === "string" && value) {
     return value;
@@ -432,7 +455,8 @@ function resolveThumbnailUrl(entry, fallback = "") {
   if (!entry || typeof entry !== "object") {
     return fallback || "";
   }
-  return pickThumbnailValue(entry.thumbnail) || pickThumbnailSet(entry.thumbnails) || fallback || "";
+  const id = parseVideoId(entry.id);
+  return pickThumbnailValue(entry.thumbnail) || pickThumbnailSet(entry.thumbnails) || (id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : "") || fallback || "";
 }
 
 // src/popup/lib/videoItem.js
