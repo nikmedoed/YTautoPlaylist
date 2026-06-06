@@ -210,6 +210,41 @@ export async function forceRemotePlaylistSyncState(localStateInput) {
   });
   return { state: merged, imported: true, remoteUpdatedAt: remote.updatedAt };
 }
+
+export async function recordImportedPlaylistSyncSnapshot(
+  snapshot,
+  stateInput,
+  { force = false } = {}
+) {
+  if (!snapshot?.state) {
+    return;
+  }
+  const now = Date.now();
+  const state = sanitizeState(stateInput);
+  const localHash = getSyncStateFingerprint(state);
+  const remoteHash = typeof snapshot.hash === "string" ? snapshot.hash : "";
+  const pending = !force && localHash !== remoteHash;
+  const localMeta = await readLocalSyncMeta();
+  await writeLocalSyncMeta({
+    ...localMeta,
+    localUpdatedAt: force ? snapshot.updatedAt : now,
+    localHash,
+    syncedUpdatedAt: force || !pending ? snapshot.updatedAt : now,
+    syncedHash: force || !pending ? remoteHash : localHash,
+    remoteUpdatedAt: snapshot.updatedAt,
+    remoteHash,
+    baseRemoteHash: null,
+    baseRemoteUpdatedAt: null,
+    pending,
+    pendingSince: pending ? now : null,
+    flushAfter: pending ? now + SYNC_DEBOUNCE_MS : null,
+    lastError: null,
+  });
+  if (pending) {
+    await scheduleSyncAlarm(now + SYNC_DEBOUNCE_MS);
+  }
+}
+
 export async function getPlaylistSyncStatus() {
   const [meta, remote] = await Promise.all([
     readLocalSyncMeta(),

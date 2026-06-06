@@ -28,6 +28,83 @@ body.full-page {
   gap: 16px;
 }
 
+.popup-sync {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.popup-sync__state {
+  flex: 1 1 140px;
+  min-width: 0;
+  color: #d6d6d6;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popup-sync__state[data-kind="ok"] {
+  color: #8bd99f;
+}
+
+.popup-sync__state[data-kind="warning"] {
+  color: #ffd166;
+}
+
+.popup-sync__state[data-kind="error"] {
+  color: #ff8a80;
+}
+
+.popup-sync__meta {
+  flex: 0 1 auto;
+  max-width: 150px;
+  min-width: 0;
+  color: #a8a8a8;
+  font-size: 11px;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popup-sync__meta[data-kind="ok"] {
+  color: #9cccaa;
+}
+
+.popup-sync__meta[data-kind="warning"] {
+  color: #d6bd6b;
+}
+
+.popup-sync__meta[data-kind="error"] {
+  color: #d99591;
+}
+
+.popup-sync__actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+}
+
+button.popup-sync__button {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  font-size: 13px;
+  color: #dcdcdc;
+}
+
+button.popup-sync__button.is-loading {
+  opacity: 0.55;
+}
+
 .full-page #app {
   max-width: 960px;
   margin: 0 auto;

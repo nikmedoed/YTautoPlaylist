@@ -4,10 +4,15 @@ import {
   buildSyncSnapshot,
   buildSyncState,
   getSyncStateFingerprint,
+  importPlaylistSyncSnapshot,
   mergeSyncStatesConservatively,
   mergeRemoteSyncState,
+  pushLocalPlaylistSyncNow,
   pushLocalSettingsSyncNow,
+  recordImportedPlaylistSyncSnapshot,
   resolveRemoteSettingsSyncFilters,
+  SYNC_LOCAL_META_STORAGE_KEY,
+  SYNC_MANIFEST_STORAGE_KEY,
   SETTINGS_SYNC_LOCAL_META_STORAGE_KEY,
   SETTINGS_SYNC_MANIFEST_STORAGE_KEY,
 } from '../src/store/index.js';
@@ -287,6 +292,85 @@ function installChromeStorageMock() {
       undefined
     );
     console.log('settings sync does not auto-seed empty remote storage');
+  } finally {
+    chromeMock.restore();
+  }
+}
+
+{
+  const chromeMock = installChromeStorageMock();
+  try {
+    const snapshot = buildSyncSnapshot({
+      lists: {
+        default: {
+          id: 'default',
+          name: 'Основной',
+          freeze: false,
+          queue: [{ id: 'driveSync01', addedAt: 1 }],
+          currentIndex: 0,
+          revision: 1,
+        },
+      },
+      listOrder: ['default'],
+    });
+    await importPlaylistSyncSnapshot(
+      {
+        state: snapshot.state || buildSyncState({
+          lists: {
+            default: {
+              id: 'default',
+              name: 'Основной',
+              freeze: false,
+              queue: [{ id: 'driveSync01', addedAt: 1 }],
+              currentIndex: 0,
+              revision: 1,
+            },
+          },
+          listOrder: ['default'],
+        }),
+        hash: snapshot.hash,
+        updatedAt: snapshot.manifest.updatedAt,
+      },
+      { force: true }
+    );
+    const meta = chromeMock.stores.local[SYNC_LOCAL_META_STORAGE_KEY];
+    assert.strictEqual(meta.remoteHash, snapshot.hash);
+    const pushed = await pushLocalPlaylistSyncNow();
+    assert.strictEqual(pushed.pushed, true);
+    assert.ok(chromeMock.stores.sync[SYNC_MANIFEST_STORAGE_KEY]);
+    console.log('drive playlist imports initialize automatic playlist sync metadata');
+  } finally {
+    chromeMock.restore();
+  }
+}
+
+{
+  const chromeMock = installChromeStorageMock();
+  try {
+    const remoteState = buildSyncState({
+      lists: {
+        default: {
+          id: 'default',
+          name: 'Основной',
+          freeze: false,
+          queue: [{ id: 'remoteOnly1', addedAt: 1 }],
+          currentIndex: 0,
+          revision: 1,
+        },
+      },
+      listOrder: ['default'],
+    });
+    const snapshot = buildSyncSnapshot(remoteState);
+    await recordImportedPlaylistSyncSnapshot({
+      state: remoteState,
+      hash: snapshot.hash,
+      updatedAt: snapshot.manifest.updatedAt,
+    }, remoteState);
+    const meta = chromeMock.stores.local[SYNC_LOCAL_META_STORAGE_KEY];
+    assert.strictEqual(meta.pending, false);
+    assert.strictEqual(meta.remoteHash, snapshot.hash);
+    assert.strictEqual(chromeMock.alarms.length, 0);
+    console.log('drive playlist imports without local conflicts become synced baseline');
   } finally {
     chromeMock.restore();
   }

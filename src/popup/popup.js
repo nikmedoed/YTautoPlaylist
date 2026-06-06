@@ -6,6 +6,7 @@ import { createHistoryController } from "./modules/history/index.js";
 import { createCollectionController } from "./modules/collection/index.js";
 import { createAddActionsController } from "./modules/shared/addActions.js";
 import { createCollectionAvailabilityController } from "./modules/collection/availability.js";
+import { createPopupSyncController } from "./modules/sync/index.js";
 import {
   renderListSwitcher,
   updateListSelection as updateSwitcherSelection,
@@ -49,6 +50,10 @@ const playbackControls = document.querySelector(".playback-controls");
 const openManagerBtn = document.getElementById("openManager");
 const openFilterSettingsBtn = document.getElementById("openFilterSettings");
 const addRow = document.querySelector(".control-row--add");
+const popupSyncState = document.getElementById("popupSyncState");
+const popupSyncMeta = document.getElementById("popupSyncMeta");
+const popupSyncPullBtn = document.getElementById("popupSyncPull");
+const popupSyncPushBtn = document.getElementById("popupSyncPush");
 
 const fallbackThumbnail = chrome.runtime.getURL("icon/icon.png");
 const DEFAULT_LIST_ID = "default";
@@ -166,6 +171,16 @@ const addActionsController = createAddActionsController({
   updatePlaybackControls: playbackController.updatePlaybackControls,
 });
 
+const popupSyncController = createPopupSyncController({
+  stateEl: popupSyncState,
+  metaEl: popupSyncMeta,
+  pullBtn: popupSyncPullBtn,
+  pushBtn: popupSyncPushBtn,
+  sendMessage,
+  setStatus,
+  refreshState,
+});
+
 function getSelectedListId() {
   if (playlistState?.currentQueue?.id) {
     return playlistState.currentQueue.id;
@@ -224,6 +239,7 @@ chrome.runtime.onMessage.addListener((message) => {
 });
 
 refreshState();
+popupSyncController.refresh();
 
 addActionsController.updateControlCapabilities().catch(() => {});
 
@@ -280,6 +296,7 @@ function renderState(state) {
   historyController.render(playlistState);
   playbackController.syncState(playlistState);
   collectionAvailabilityController.updateAvailability();
+  popupSyncController.scheduleRefresh();
 }
 
 async function refreshState() {

@@ -20,6 +20,7 @@ import {
   hasSyncableUserData,
   mergeRemoteSyncState,
   mergeSyncStatesConservatively,
+  recordImportedPlaylistSyncSnapshot,
   resolveRemotePlaylistSyncState,
   schedulePlaylistSync,
   writePendingPlaylistSync,
@@ -335,6 +336,7 @@ export async function importPlaylistSyncSnapshot(snapshot, { force = false } = {
       ? mergeRemoteSyncState(localRaw, snapshot.state)
       : mergeSyncStatesConservatively(localRaw, snapshot.state);
     await persistState(nextState, { scheduleSync: false });
+    await recordImportedPlaylistSyncSnapshot(snapshot, nextState, { force });
     return { imported: true, state: sanitizeState(nextState) };
   });
 }

@@ -113,7 +113,7 @@ export function resolveThumbnailUrl(entry, fallback = "") {
   return (
     pickThumbnailValue(entry.thumbnail) ||
     pickThumbnailSet(entry.thumbnails) ||
-    (id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : "") ||
+    (id ? `https://i.ytimg.com/vi/${id}/mqdefault.jpg` : "") ||
     fallback ||
     ""
   );

@@ -225,7 +225,7 @@ function resolveThumbnailUrl(entry, fallback = "") {
     return fallback || "";
   }
   const id = parseVideoId(entry.id);
-  return pickThumbnailValue(entry.thumbnail) || pickThumbnailSet(entry.thumbnails) || (id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : "") || fallback || "";
+  return pickThumbnailValue(entry.thumbnail) || pickThumbnailSet(entry.thumbnails) || (id ? `https://i.ytimg.com/vi/${id}/mqdefault.jpg` : "") || fallback || "";
 }
 
 // src/progress.js
@@ -1220,6 +1220,35 @@ async function forceRemotePlaylistSyncState(localStateInput) {
   });
   return { state: merged, imported: true, remoteUpdatedAt: remote.updatedAt };
 }
+async function recordImportedPlaylistSyncSnapshot(snapshot, stateInput, { force = false } = {}) {
+  if (!snapshot?.state) {
+    return;
+  }
+  const now = Date.now();
+  const state = sanitizeState(stateInput);
+  const localHash = getSyncStateFingerprint(state);
+  const remoteHash = typeof snapshot.hash === "string" ? snapshot.hash : "";
+  const pending = !force && localHash !== remoteHash;
+  const localMeta = await readLocalSyncMeta();
+  await writeLocalSyncMeta({
+    ...localMeta,
+    localUpdatedAt: force ? snapshot.updatedAt : now,
+    localHash,
+    syncedUpdatedAt: force || !pending ? snapshot.updatedAt : now,
+    syncedHash: force || !pending ? remoteHash : localHash,
+    remoteUpdatedAt: snapshot.updatedAt,
+    remoteHash,
+    baseRemoteHash: null,
+    baseRemoteUpdatedAt: null,
+    pending,
+    pendingSince: pending ? now : null,
+    flushAfter: pending ? now + SYNC_DEBOUNCE_MS : null,
+    lastError: null
+  });
+  if (pending) {
+    await scheduleSyncAlarm(now + SYNC_DEBOUNCE_MS);
+  }
+}
 async function getPlaylistSyncStatus() {
   const [meta, remote] = await Promise.all([
     readLocalSyncMeta(),
@@ -1627,6 +1656,7 @@ async function importPlaylistSyncSnapshot(snapshot, { force = false } = {}) {
     const localRaw = await loadLocalRawState();
     const nextState = force || !hasSyncableUserData(localRaw) ? mergeRemoteSyncState(localRaw, snapshot.state) : mergeSyncStatesConservatively(localRaw, snapshot.state);
     await persistState(nextState, { scheduleSync: false });
+    await recordImportedPlaylistSyncSnapshot(snapshot, nextState, { force });
     return { imported: true, state: sanitizeState(nextState) };
   });
 }

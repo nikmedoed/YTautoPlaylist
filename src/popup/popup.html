@@ -13,6 +13,30 @@
   </head>
   <body>
     <div id="app">
+      <section class="popup-sync" aria-label="Синхронизация">
+        <span id="popupSyncState" class="popup-sync__state">Синхронизация...</span>
+        <span id="popupSyncMeta" class="popup-sync__meta"></span>
+        <div class="popup-sync__actions" role="group" aria-label="Действия синхронизации">
+          <button
+            id="popupSyncPull"
+            class="icon-button popup-sync__button"
+            type="button"
+            title="Слить с облаком"
+            aria-label="Слить с облаком"
+          >
+            <span aria-hidden="true">⇣</span>
+          </button>
+          <button
+            id="popupSyncPush"
+            class="icon-button popup-sync__button"
+            type="button"
+            title="Отправить в облако"
+            aria-label="Отправить в облако"
+          >
+            <span aria-hidden="true">⇡</span>
+          </button>
+        </div>
+      </section>
       <section class="controls">
         <div class="control-row control-row--playback">
           <div class="playback-block">

@@ -136,7 +136,7 @@ console.log('getNewVideos falls back to search');
   assert.strictEqual(resolveThumbnailUrl({}, 'fallback.png'), 'fallback.png');
   assert.strictEqual(
     resolveThumbnailUrl({ id: 'HxdM7D8rnpw' }),
-    'https://i.ytimg.com/vi/HxdM7D8rnpw/hqdefault.jpg'
+    'https://i.ytimg.com/vi/HxdM7D8rnpw/mqdefault.jpg'
   );
   console.log('resolveThumbnailUrl handles API thumbnails, local thumbnail objects and fallback');
 }
