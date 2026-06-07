@@ -30,12 +30,13 @@
 
 .sync-status {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.65rem;
-  padding: 0.8rem;
+  grid-template-columns: repeat(4, max-content);
+  gap: 0.4rem 2rem;
+  padding: 0.65rem 0.8rem;
   border-radius: 6px;
   background: #f5f7fb;
   color: #243b53;
+  position: relative;
 }
 
 .sync-status__message,
@@ -52,12 +53,15 @@
   color: #52606d;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 0.75rem;
+  padding-right: 2.25rem;
 }
 
 .sync-status__refresh {
-  flex: 0 0 auto;
+  position: absolute;
+  top: 0.55rem;
+  right: 0.55rem;
   width: 1.9rem;
   height: 1.9rem;
   border: 1px solid #d9e2ec;
@@ -83,7 +87,7 @@
 
 .sync-status__row {
   min-width: 0;
-  padding-top: 0.15rem;
+  padding-top: 0.05rem;
 }
 
 .sync-status__row--error {
@@ -120,13 +124,23 @@
   overflow-wrap: anywhere;
 }
 
+.sync-status__date,
+.sync-status__offset {
+  display: block;
+  white-space: nowrap;
+}
+
+.sync-status__offset {
+  margin-top: 0.05rem;
+}
+
 .sync-status--error {
   background: #fff7f5;
 }
 
 @media (max-width: 820px) {
   .sync-status {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(2, max-content);
   }
 }
 

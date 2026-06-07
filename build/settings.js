@@ -677,6 +677,21 @@ function formatDate(value) {
   const date = new Date(ts);
   return Number.isNaN(date.getTime()) ? "\u043D\u0435\u0442" : date.toLocaleString();
 }
+function formatOffset(value, baseValue) {
+  const ts = Number(value) || 0;
+  const baseTs = Number(baseValue) || 0;
+  if (ts <= 0 || baseTs <= 0) return "";
+  const deltaMs = ts - baseTs;
+  const absSeconds = Math.round(Math.abs(deltaMs) / 1e3);
+  const sign = deltaMs >= 0 ? "+" : "-";
+  if (absSeconds < 60) return `${sign}${absSeconds} \u0441\u0435\u043A.`;
+  const absMinutes = Math.round(absSeconds / 60);
+  if (absMinutes < 60) return `${sign}${absMinutes} \u043C\u0438\u043D.`;
+  const absHours = Math.round(absMinutes / 60);
+  if (absHours < 24) return `${sign}${absHours} \u0447.`;
+  const absDays = Math.round(absHours / 24);
+  return `${sign}${absDays} \u0434\u043D.`;
+}
 function maxTimestamp(...values) {
   return Math.max(...values.map((value) => Number(value) || 0), 0);
 }
@@ -699,6 +714,28 @@ function createRow(doc, label, value, className = "") {
   const valueEl = doc.createElement("span");
   valueEl.className = "sync-status__value";
   valueEl.textContent = value;
+  row.append(labelEl, valueEl);
+  return row;
+}
+function createDateOffsetRow(doc, label, value, baseValue) {
+  const row = doc.createElement("div");
+  row.className = "sync-status__row";
+  const labelEl = doc.createElement("span");
+  labelEl.className = "sync-status__label";
+  labelEl.textContent = label;
+  const valueEl = doc.createElement("span");
+  valueEl.className = "sync-status__value";
+  const dateEl = doc.createElement("span");
+  dateEl.className = "sync-status__date";
+  dateEl.textContent = formatDate(value);
+  valueEl.appendChild(dateEl);
+  const offsetText = formatOffset(value, baseValue);
+  if (offsetText) {
+    const offsetEl = doc.createElement("span");
+    offsetEl.className = "sync-status__offset";
+    offsetEl.textContent = `(${offsetText})`;
+    valueEl.appendChild(offsetEl);
+  }
   row.append(labelEl, valueEl);
   return row;
 }
@@ -755,9 +792,9 @@ function renderSyncStatus(target, status, message = "") {
   target.appendChild(summary);
   target.append(
     createRow(doc, "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u043E", formatDate(localUpdatedAt)),
-    createRow(doc, "\u041E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u043E", formatDate(drive.lastWriteAt)),
-    createRow(doc, "\u0412 \u043E\u0431\u043B\u0430\u043A\u0435", formatDate(remoteUpdatedAt)),
-    createRow(doc, "\u041F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E", formatDate(drive.lastReadAt))
+    createDateOffsetRow(doc, "\u041E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u043E", drive.lastWriteAt, localUpdatedAt),
+    createDateOffsetRow(doc, "\u0412 \u043E\u0431\u043B\u0430\u043A\u0435", remoteUpdatedAt, localUpdatedAt),
+    createDateOffsetRow(doc, "\u041F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E", drive.lastReadAt, localUpdatedAt)
   );
   errors.forEach((error) => {
     target.appendChild(createRow(doc, "\u041F\u0440\u043E\u0431\u043B\u0435\u043C\u0430", error, "sync-status__row--error"));
