@@ -83,6 +83,7 @@ function autoCollectFingerprint(metaInput) {
 
 function buildAutoCollectSyncSnapshot(stateInput, { updatedAt, deviceId } = {}) {
   const autoCollect = normalizeAutoCollectMeta(sanitizeState(stateInput).autoCollect);
+  autoCollect.seenIds = [];
   const payload = JSON.stringify(autoCollect);
   return {
     version: AUTO_COLLECT_SYNC_VERSION,
@@ -104,6 +105,7 @@ function parseAutoCollectSyncSnapshot(raw) {
     return null;
   }
   const autoCollect = normalizeAutoCollectMeta(raw.autoCollect);
+  autoCollect.seenIds = [];
   const hash = hashString(JSON.stringify(autoCollect));
   if (typeof raw.hash === "string" && raw.hash && raw.hash !== hash) {
     return null;
@@ -280,7 +282,23 @@ export async function writePendingPlaylistSync(stateInput = null) {
       updatedAt: normalizeSyncTimestamp(localMeta.localUpdatedAt) || now,
       deviceId,
     });
-    await storageSet("sync", { [AUTO_COLLECT_SYNC_STORAGE_KEY]: snapshot });
+    try {
+      await storageSet("sync", { [AUTO_COLLECT_SYNC_STORAGE_KEY]: snapshot });
+    } catch (err) {
+      await writeLocalSyncMeta({
+        ...localMeta,
+        pending: false,
+        pendingSince: null,
+        flushAfter: null,
+        lastError: err?.message || String(err),
+        lastErrorAt: now,
+      });
+      return {
+        wrote: false,
+        reason: err?.message || "auto-collect-sync-failed",
+        autoCollectPushed: false,
+      };
+    }
   }
   await writeLocalSyncMeta({
     ...localMeta,

@@ -358,13 +358,12 @@ function installChromeStorageMock() {
         lastAdded: 2,
         lastFetched: 4,
         nextAutoCollectAt: remoteLastRunAt + 60_000,
-        seenIds: ['remoteSeen1'],
       },
     };
     const result = await importRemotePlaylistSyncIfNewer();
     assert.strictEqual(result.imported, true);
     assert.strictEqual(result.state.autoCollect.lastRunAt, remoteLastRunAt);
-    assert.deepStrictEqual(result.state.autoCollect.seenIds, ['remoteSeen1']);
+    assert.deepStrictEqual(result.state.autoCollect.seenIds, []);
     console.log('auto-collect sync imports technical cursor without playlists');
   } finally {
     chromeMock.restore();
@@ -422,6 +421,39 @@ function installChromeStorageMock() {
     );
     assert.strictEqual(chromeMock.alarms.length, 1);
     console.log('playlist changes sync only auto-collect metadata through storage.sync');
+  } finally {
+    chromeMock.restore();
+  }
+}
+
+{
+  const chromeMock = installChromeStorageMock();
+  try {
+    const state = buildSyncState({
+      autoCollect: {
+      lastRunAt: Date.now(),
+      lastAdded: 1,
+      lastFetched: 1,
+      nextAutoCollectAt: Date.now() + 60_000,
+      seenIds: Array.from({ length: 2000 }, (_, index) =>
+        `syncSeen${String(index).padStart(3, '0')}`
+      ),
+      },
+    });
+    await importPlaylistSyncSnapshot(
+      {
+        state,
+        hash: getSyncStateFingerprint(state),
+        updatedAt: Date.now(),
+      },
+      { force: true }
+    );
+    const pushed = await pushLocalPlaylistSyncNow();
+    const remote = chromeMock.stores.sync[AUTO_COLLECT_SYNC_STORAGE_KEY];
+    assert.strictEqual(pushed.pushed, true);
+    assert.ok(remote);
+    assert.deepStrictEqual(remote.autoCollect.seenIds, []);
+    console.log('auto-collect technical sync omits seen-id history');
   } finally {
     chromeMock.restore();
   }
