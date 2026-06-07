@@ -1,17 +1,14 @@
 // Pure playlist sync snapshot helpers. Contains portable state selection,
-// fingerprinting, chunking, and remote/local runtime merge behavior.
+// fingerprinting, and remote/local runtime merge behavior.
 import {
   AUTO_COLLECT_SEEN_IDS_LIMIT,
   DEFAULT_LIST_ID,
   HISTORY_LIMIT,
-  SYNC_CHUNK_TARGET_BYTES,
-  SYNC_MANIFEST_STORAGE_KEY,
 } from "./constants.js";
 import { sanitizeState } from "./sanitizers.js";
 import { deepClone } from "../../utils.js";
 
 export const SYNC_FORMAT_VERSION = 1;
-const SYNC_MAX_CHUNKS = 2000;
 
 function byteLength(value) {
   return new TextEncoder().encode(String(value)).length;
@@ -35,15 +32,8 @@ export function normalizeSyncTimestamp(value) {
   return Number.isFinite(ts) && ts > 0 ? Math.trunc(ts) : 0;
 }
 
-export function getSyncChunkKey(index) {
-  return `${SYNC_MANIFEST_STORAGE_KEY}:chunk:${index}`;
-}
-
 function normalizeListForSync(list) {
-  const normalized = deepClone(list);
-  const queue = Array.isArray(normalized.queue) ? normalized.queue : [];
-  normalized.currentIndex = queue.length ? 0 : null;
-  return normalized;
+  return deepClone(list);
 }
 
 function normalizeListsForSync(lists) {
@@ -59,8 +49,8 @@ export function buildSyncState(stateInput) {
   return sanitizeState({
     lists: normalizeListsForSync(state.lists),
     listOrder: deepClone(state.listOrder),
-    currentListId: DEFAULT_LIST_ID,
-    currentVideoId: null,
+    currentListId: state.currentListId,
+    currentVideoId: state.currentVideoId,
     currentTabId: null,
     history: deepClone(state.history),
     deletedHistory: deepClone(state.deletedHistory),
@@ -225,6 +215,8 @@ export function mergeSyncStatesConservatively(localInput, remoteInput) {
   return buildSyncState({
     lists,
     listOrder: mergeListOrder(remote.listOrder, local.listOrder, lists),
+    currentListId: local.currentListId,
+    currentVideoId: local.currentVideoId,
     history: mergeDatedEntries(remote.history, local.history, "watchedAt"),
     deletedHistory: mergeDatedEntries(
       remote.deletedHistory,
@@ -242,8 +234,6 @@ export function mergeRemoteSyncState(localInput, remoteInput) {
   const merged = sanitizeState({
     ...remote,
     currentTabId: local.currentTabId,
-    currentVideoId: null,
-    currentListId: DEFAULT_LIST_ID,
   });
 
   if (local.currentListId && merged.lists[local.currentListId]) {
@@ -255,35 +245,24 @@ export function mergeRemoteSyncState(localInput, remoteInput) {
     merged.currentListId = locatedCurrent.listId;
     merged.currentVideoId = local.currentVideoId;
     merged.lists[locatedCurrent.listId].currentIndex = locatedCurrent.index;
-  } else if (!merged.lists[merged.currentListId]) {
+  } else {
+    const locatedRemoteCurrent = findVideoInLists(
+      merged.lists,
+      remote.currentVideoId
+    );
+    if (locatedRemoteCurrent) {
+      merged.currentListId = locatedRemoteCurrent.listId;
+      merged.currentVideoId = remote.currentVideoId;
+      merged.lists[locatedRemoteCurrent.listId].currentIndex =
+        locatedRemoteCurrent.index;
+    }
+  }
+
+  if (!merged.lists[merged.currentListId]) {
     merged.currentListId = DEFAULT_LIST_ID;
   }
 
   return sanitizeState(merged);
-}
-
-function splitStringByStorageBytes(value) {
-  const chunks = [];
-  let offset = 0;
-  while (offset < value.length) {
-    let low = 1;
-    let high = value.length - offset;
-    let best = 1;
-    while (low <= high) {
-      const mid = Math.floor((low + high) / 2);
-      const candidate = value.slice(offset, offset + mid);
-      const bytes = storageItemBytes(getSyncChunkKey(chunks.length), candidate);
-      if (bytes <= SYNC_CHUNK_TARGET_BYTES) {
-        best = mid;
-        low = mid + 1;
-      } else {
-        high = mid - 1;
-      }
-    }
-    chunks.push(value.slice(offset, offset + best));
-    offset += best;
-  }
-  return chunks;
 }
 
 export function buildSyncSnapshot(
@@ -293,55 +272,17 @@ export function buildSyncSnapshot(
   const payload = buildSyncState(stateInput);
   const json = JSON.stringify(payload);
   const hash = hashString(json);
-  const chunks = splitStringByStorageBytes(json);
   const manifest = {
     version: SYNC_FORMAT_VERSION,
     updatedAt: normalizeSyncTimestamp(updatedAt) || Date.now(),
     deviceId: typeof deviceId === "string" && deviceId ? deviceId : null,
     hash,
-    chunkCount: chunks.length,
   };
-  const totalBytes =
-    storageItemBytes(SYNC_MANIFEST_STORAGE_KEY, manifest) +
-    chunks.reduce(
-      (sum, chunk, index) => sum + storageItemBytes(getSyncChunkKey(index), chunk),
-      0
-    );
+  const totalBytes = byteLength(JSON.stringify({ manifest, state: payload }));
   if (Number.isFinite(maxTotalBytes) && totalBytes > maxTotalBytes) {
     throw new Error(
       `Playlist sync snapshot is too large (${totalBytes} bytes)`
     );
   }
-  return { manifest, chunks, hash, totalBytes };
-}
-
-export function parseSyncSnapshot(manifest, chunks) {
-  if (
-    !manifest ||
-    typeof manifest !== "object" ||
-    manifest.version !== SYNC_FORMAT_VERSION ||
-    !Number.isInteger(manifest.chunkCount) ||
-    manifest.chunkCount <= 0 ||
-    manifest.chunkCount > SYNC_MAX_CHUNKS ||
-    !Array.isArray(chunks) ||
-    chunks.some((chunk) => typeof chunk !== "string")
-  ) {
-    return null;
-  }
-  const json = chunks.join("");
-  const hash = hashString(json);
-  if (hash !== manifest.hash) {
-    return null;
-  }
-  try {
-    const parsed = JSON.parse(json);
-    return {
-      manifest,
-      state: buildSyncState(parsed),
-      updatedAt: normalizeSyncTimestamp(manifest.updatedAt),
-      hash,
-    };
-  } catch {
-    return null;
-  }
+  return { manifest, state: payload, hash, totalBytes };
 }

@@ -1,7 +1,6 @@
 // Playlist account sync shared helpers. Playlist data is transported through
 // Google Drive appData; chrome.storage.sync is intentionally not used here.
 import {
-  AUTO_COLLECT_SYNC_STORAGE_KEY,
   SYNC_ALARM_NAME,
   SYNC_DEBOUNCE_MS,
   SYNC_LOCAL_META_STORAGE_KEY,
@@ -11,15 +10,11 @@ import {
   buildSyncSnapshot,
   buildSyncState,
   getSyncStateFingerprint,
-  hashString,
   hasSyncableUserData,
   mergeSyncStatesConservatively,
   mergeRemoteSyncState,
   normalizeSyncTimestamp,
-  parseSyncSnapshot,
 } from "./syncSnapshot.js";
-
-const AUTO_COLLECT_SYNC_VERSION = 1;
 
 export {
   buildSyncSnapshot,
@@ -28,7 +23,6 @@ export {
   hasSyncableUserData,
   mergeSyncStatesConservatively,
   mergeRemoteSyncState,
-  parseSyncSnapshot,
 } from "./syncSnapshot.js";
 
 function hasChromeStorageArea(area) {
@@ -73,89 +67,6 @@ async function writeLocalSyncMeta(meta) {
   });
 }
 
-function normalizeAutoCollectMeta(metaInput) {
-  return sanitizeState({ autoCollect: metaInput }).autoCollect;
-}
-
-function autoCollectFingerprint(metaInput) {
-  return hashString(JSON.stringify(normalizeAutoCollectMeta(metaInput)));
-}
-
-function buildAutoCollectSyncSnapshot(stateInput, { updatedAt, deviceId } = {}) {
-  const autoCollect = normalizeAutoCollectMeta(sanitizeState(stateInput).autoCollect);
-  autoCollect.seenIds = [];
-  const payload = JSON.stringify(autoCollect);
-  return {
-    version: AUTO_COLLECT_SYNC_VERSION,
-    updatedAt: normalizeSyncTimestamp(updatedAt) || Date.now(),
-    deviceId: typeof deviceId === "string" && deviceId ? deviceId : null,
-    hash: hashString(payload),
-    autoCollect,
-  };
-}
-
-function parseAutoCollectSyncSnapshot(raw) {
-  if (
-    !raw ||
-    typeof raw !== "object" ||
-    raw.version !== AUTO_COLLECT_SYNC_VERSION ||
-    !raw.autoCollect ||
-    typeof raw.autoCollect !== "object"
-  ) {
-    return null;
-  }
-  const autoCollect = normalizeAutoCollectMeta(raw.autoCollect);
-  autoCollect.seenIds = [];
-  const hash = hashString(JSON.stringify(autoCollect));
-  if (typeof raw.hash === "string" && raw.hash && raw.hash !== hash) {
-    return null;
-  }
-  return {
-    version: raw.version,
-    updatedAt: normalizeSyncTimestamp(raw.updatedAt),
-    deviceId: typeof raw.deviceId === "string" ? raw.deviceId : null,
-    hash,
-    autoCollect,
-  };
-}
-
-async function readRemoteAutoCollectSyncSnapshot() {
-  const stored = await storageGet("sync", AUTO_COLLECT_SYNC_STORAGE_KEY);
-  return parseAutoCollectSyncSnapshot(stored?.[AUTO_COLLECT_SYNC_STORAGE_KEY]);
-}
-
-function mergeAutoCollectMeta(localInput, remoteInput) {
-  const local = normalizeAutoCollectMeta(localInput);
-  const remote = normalizeAutoCollectMeta(remoteInput);
-  const preferRemote = remote.lastRunAt >= local.lastRunAt;
-  return normalizeAutoCollectMeta({
-    lastRunAt: Math.max(local.lastRunAt, remote.lastRunAt),
-    lastAdded: preferRemote ? remote.lastAdded : local.lastAdded,
-    lastFetched: preferRemote ? remote.lastFetched : local.lastFetched,
-    nextAutoCollectAt: Math.max(local.nextAutoCollectAt, remote.nextAutoCollectAt),
-    seenIds: [...(local.seenIds || []), ...(remote.seenIds || [])],
-  });
-}
-
-function mergeRemoteAutoCollectState(localStateInput, remoteSnapshot) {
-  const local = sanitizeState(localStateInput);
-  if (!remoteSnapshot?.autoCollect) {
-    return { state: local, imported: false };
-  }
-  const mergedAutoCollect = mergeAutoCollectMeta(
-    local.autoCollect,
-    remoteSnapshot.autoCollect
-  );
-  const changed =
-    autoCollectFingerprint(local.autoCollect) !==
-    autoCollectFingerprint(mergedAutoCollect);
-  return {
-    state: sanitizeState({ ...local, autoCollect: mergedAutoCollect }),
-    imported: changed,
-    remoteUpdatedAt: remoteSnapshot.updatedAt,
-  };
-}
-
 async function scheduleSyncAlarm(dueAt) {
   if (typeof chrome === "undefined") return;
   if (chrome?.alarms?.create) {
@@ -171,22 +82,16 @@ export function isPlaylistSyncStorageChange() {
   return false;
 }
 
-export function isAutoCollectSyncStorageChange(changes = {}) {
-  return Object.prototype.hasOwnProperty.call(
-    changes,
-    AUTO_COLLECT_SYNC_STORAGE_KEY
-  );
-}
-
 export async function resolveRemotePlaylistSyncState(localStateInput) {
-  const remote = await readRemoteAutoCollectSyncSnapshot();
-  return mergeRemoteAutoCollectState(localStateInput, remote);
+  return { state: sanitizeState(localStateInput), imported: false };
 }
 
 export async function forceRemotePlaylistSyncState(localStateInput) {
-  const remote = await readRemoteAutoCollectSyncSnapshot();
-  const result = mergeRemoteAutoCollectState(localStateInput, remote);
-  return remote ? result : { ...result, reason: "no-auto-collect-remote" };
+  return {
+    state: sanitizeState(localStateInput),
+    imported: false,
+    reason: "drive-sync-required",
+  };
 }
 
 export async function recordImportedPlaylistSyncSnapshot(
@@ -200,37 +105,70 @@ export async function recordImportedPlaylistSyncSnapshot(
   const localHash = getSyncStateFingerprint(state);
   const remoteHash = typeof snapshot.hash === "string" ? snapshot.hash : "";
   const localMeta = await readLocalSyncMeta();
+  const mergedNeedsPush = !force && localHash !== remoteHash;
+  const flushAfter = mergedNeedsPush ? now + SYNC_DEBOUNCE_MS : null;
   await writeLocalSyncMeta({
     ...localMeta,
     localUpdatedAt: force ? snapshot.updatedAt : now,
     localHash,
     syncedUpdatedAt: force ? snapshot.updatedAt : now,
-    syncedHash: force ? remoteHash : localHash,
+    syncedHash: force || !mergedNeedsPush ? remoteHash || localHash : localHash,
     remoteUpdatedAt: normalizeSyncTimestamp(snapshot.updatedAt),
     remoteHash,
+    pending: mergedNeedsPush,
+    pendingSince: null,
+    flushAfter,
+    lastError: null,
+  });
+  if (flushAfter) await scheduleSyncAlarm(flushAfter);
+}
+
+export async function recordPushedPlaylistSyncSnapshot(snapshot) {
+  if (!snapshot?.state) return;
+  const now = Date.now();
+  const localHash = getSyncStateFingerprint(snapshot.state);
+  const remoteHash = typeof snapshot.hash === "string" ? snapshot.hash : localHash;
+  const localMeta = await readLocalSyncMeta();
+  await writeLocalSyncMeta({
+    ...localMeta,
+    localUpdatedAt: normalizeSyncTimestamp(snapshot.manifest?.updatedAt) || now,
+    localHash,
+    syncedUpdatedAt: normalizeSyncTimestamp(snapshot.manifest?.updatedAt) || now,
+    syncedHash: remoteHash,
+    remoteUpdatedAt: normalizeSyncTimestamp(snapshot.manifest?.updatedAt) || now,
+    remoteHash,
+    remoteDeviceId: snapshot.manifest?.deviceId || localMeta.remoteDeviceId || null,
     pending: false,
     pendingSince: null,
     flushAfter: null,
+    lastWriteAt: now,
     lastError: null,
   });
 }
 
+export async function recordPlaylistSyncError(error) {
+  const localMeta = await readLocalSyncMeta();
+  await writeLocalSyncMeta({
+    ...localMeta,
+    pending: Boolean(localMeta.pending),
+    lastError: error?.message || String(error),
+    lastErrorAt: Date.now(),
+  });
+}
+
 export async function getPlaylistSyncStatus() {
-  const [meta, remoteAutoCollect] = await Promise.all([
-    readLocalSyncMeta(),
-    readRemoteAutoCollectSyncSnapshot(),
-  ]);
+  const meta = await readLocalSyncMeta();
   return {
     localDeviceId: meta.deviceId || null,
     localUpdatedAt: normalizeSyncTimestamp(meta.localUpdatedAt),
-    remoteUpdatedAt: normalizeSyncTimestamp(remoteAutoCollect?.updatedAt),
-    remoteDeviceId: remoteAutoCollect?.deviceId || null,
-    remoteChunkCount: remoteAutoCollect ? 1 : 0,
-    pending: false,
+    remoteUpdatedAt: normalizeSyncTimestamp(meta.remoteUpdatedAt),
+    remoteDeviceId: meta.remoteDeviceId || null,
+    remoteChunkCount: 0,
+    pending: Boolean(meta.pending),
     lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
-    lastError: null,
-    remoteAvailable: Boolean(remoteAutoCollect),
-    technicalOnly: true,
+    lastError: meta.lastError || null,
+    remoteAvailable: Boolean(meta.remoteUpdatedAt),
+    technicalOnly: false,
   };
 }
 
@@ -275,46 +213,16 @@ export async function writePendingPlaylistSync(stateInput = null) {
     await scheduleSyncAlarm(flushAfter);
     return { wrote: false, reason: "debounced" };
   }
-  let snapshot = null;
-  if (stateInput) {
-    const deviceId = localMeta.deviceId || createDeviceId();
-    snapshot = buildAutoCollectSyncSnapshot(stateInput, {
-      updatedAt: normalizeSyncTimestamp(localMeta.localUpdatedAt) || now,
-      deviceId,
-    });
-    try {
-      await storageSet("sync", { [AUTO_COLLECT_SYNC_STORAGE_KEY]: snapshot });
-    } catch (err) {
-      await writeLocalSyncMeta({
-        ...localMeta,
-        pending: false,
-        pendingSince: null,
-        flushAfter: null,
-        lastError: err?.message || String(err),
-        lastErrorAt: now,
-      });
-      return {
-        wrote: false,
-        reason: err?.message || "auto-collect-sync-failed",
-        autoCollectPushed: false,
-      };
-    }
-  }
   await writeLocalSyncMeta({
     ...localMeta,
-    pending: false,
-    pendingSince: null,
+    pending: true,
+    pendingSince: localMeta.pendingSince || now,
     flushAfter: null,
-    syncedUpdatedAt: normalizeSyncTimestamp(localMeta.localUpdatedAt) || now,
-    syncedHash: localMeta.localHash || null,
-    remoteUpdatedAt: snapshot?.updatedAt || localMeta.remoteUpdatedAt || null,
-    remoteHash: snapshot?.hash || localMeta.remoteHash || null,
-    lastWriteAt: now,
     lastError: null,
   });
   return {
-    wrote: true,
+    wrote: false,
+    ready: true,
     reason: "drive-pending",
-    autoCollectPushed: Boolean(snapshot),
   };
 }

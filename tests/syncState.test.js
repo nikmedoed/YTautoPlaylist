@@ -4,7 +4,6 @@ import {
   buildSyncSnapshot,
   buildSyncState,
   getSyncStateFingerprint,
-  importRemotePlaylistSyncIfNewer,
   importPlaylistSyncSnapshot,
   mergeSyncStatesConservatively,
   mergeRemoteSyncState,
@@ -12,8 +11,6 @@ import {
   pushLocalSettingsSyncNow,
   recordImportedPlaylistSyncSnapshot,
   resolveRemoteSettingsSyncFilters,
-  parseSyncSnapshot,
-  AUTO_COLLECT_SYNC_STORAGE_KEY,
   SYNC_LOCAL_META_STORAGE_KEY,
   SETTINGS_SYNC_LOCAL_META_STORAGE_KEY,
   SETTINGS_SYNC_MANIFEST_STORAGE_KEY,
@@ -69,14 +66,14 @@ function installChromeStorageMock() {
     currentVideoId: 'syncVideo01',
     currentTabId: 42,
   });
-  assert.strictEqual(syncState.currentVideoId, null);
+  assert.strictEqual(syncState.currentVideoId, 'syncVideo01');
   assert.strictEqual(syncState.currentTabId, null);
   assert.strictEqual(syncState.currentListId, 'default');
   assert.deepStrictEqual(
     syncState.lists.default.queue.map((entry) => entry.id),
     ['syncVideo01']
   );
-  console.log('playlist sync snapshots exclude machine-local playback fields');
+  console.log('playlist sync snapshots keep playlist position and exclude tab ids');
 }
 
 {
@@ -110,11 +107,11 @@ function installChromeStorageMock() {
     currentVideoId: 'indexVideo2',
     currentTabId: 13,
   };
-  assert.strictEqual(
+  assert.notStrictEqual(
     getSyncStateFingerprint(base),
     getSyncStateFingerprint(moved)
   );
-  console.log('playlist sync fingerprints ignore local playback position');
+  console.log('playlist sync fingerprints include playlist playback position');
 }
 
 {
@@ -217,7 +214,7 @@ function installChromeStorageMock() {
     merged.lists.default.queue.map((entry) => entry.id),
     ['sharedVid01', 'remoteAdd01', 'localAdd001']
   );
-  assert.strictEqual(merged.lists.default.currentIndex, 0);
+  assert.strictEqual(merged.lists.default.currentIndex, 1);
   assert.strictEqual(merged.autoCollect.lastRunAt, 5000);
   assert.deepStrictEqual(
     new Set(merged.autoCollect.seenIds),
@@ -226,29 +223,6 @@ function installChromeStorageMock() {
   assert.strictEqual(merged.videoProgress.localAdd001.percent, 40);
   assert.strictEqual(merged.videoProgress.sharedVid01.percent, 80);
   console.log('playlist sync conflict merge keeps local and remote data');
-}
-
-{
-  const longQueue = Array.from({ length: 80 }, (_, index) => ({
-    id: `chunkVid${String(index).padStart(3, '0')}`,
-    title: `Chunked playlist video ${index}`,
-  }));
-  const snapshot = buildSyncSnapshot({
-    lists: {
-      default: {
-        id: 'default',
-        name: 'Основной',
-        freeze: false,
-        queue: longQueue,
-        currentIndex: 0,
-        revision: 80,
-      },
-    },
-    listOrder: ['default'],
-  });
-  assert.ok(snapshot.manifest.chunkCount >= 1);
-  assert.strictEqual(snapshot.chunks.length, snapshot.manifest.chunkCount);
-  console.log('playlist sync snapshots are split into transport chunks');
 }
 
 {
@@ -283,8 +257,7 @@ function installChromeStorageMock() {
     },
     listOrder: ['default'],
   });
-  const parsed = parseSyncSnapshot(snapshot.manifest, snapshot.chunks);
-  const entry = parsed.state.lists.default.queue[0];
+  const entry = snapshot.state.lists.default.queue[0];
   assert.strictEqual(entry.title, queue[0].title);
   assert.strictEqual(entry.channelId, queue[0].channelId);
   assert.strictEqual(entry.channelTitle, queue[0].channelTitle);
@@ -348,31 +321,6 @@ function installChromeStorageMock() {
 {
   const chromeMock = installChromeStorageMock();
   try {
-    const remoteLastRunAt = Date.now() + 60_000;
-    chromeMock.stores.sync[AUTO_COLLECT_SYNC_STORAGE_KEY] = {
-      version: 1,
-      updatedAt: remoteLastRunAt,
-      deviceId: 'remote-device',
-      autoCollect: {
-        lastRunAt: remoteLastRunAt,
-        lastAdded: 2,
-        lastFetched: 4,
-        nextAutoCollectAt: remoteLastRunAt + 60_000,
-      },
-    };
-    const result = await importRemotePlaylistSyncIfNewer();
-    assert.strictEqual(result.imported, true);
-    assert.strictEqual(result.state.autoCollect.lastRunAt, remoteLastRunAt);
-    assert.deepStrictEqual(result.state.autoCollect.seenIds, []);
-    console.log('auto-collect sync imports technical cursor without playlists');
-  } finally {
-    chromeMock.restore();
-  }
-}
-
-{
-  const chromeMock = installChromeStorageMock();
-  try {
     const snapshot = buildSyncSnapshot({
       lists: {
         default: {
@@ -411,49 +359,9 @@ function installChromeStorageMock() {
     const pushed = await pushLocalPlaylistSyncNow();
     assert.strictEqual(pushed.pushed, true);
     assert.strictEqual(pushed.reason, 'drive-pending');
-    assert.deepStrictEqual(
-      Object.keys(chromeMock.stores.sync),
-      [AUTO_COLLECT_SYNC_STORAGE_KEY]
-    );
-    assert.strictEqual(
-      chromeMock.stores.sync[AUTO_COLLECT_SYNC_STORAGE_KEY].version,
-      1
-    );
+    assert.deepStrictEqual(Object.keys(chromeMock.stores.sync), []);
     assert.strictEqual(chromeMock.alarms.length, 1);
-    console.log('playlist changes sync only auto-collect metadata through storage.sync');
-  } finally {
-    chromeMock.restore();
-  }
-}
-
-{
-  const chromeMock = installChromeStorageMock();
-  try {
-    const state = buildSyncState({
-      autoCollect: {
-      lastRunAt: Date.now(),
-      lastAdded: 1,
-      lastFetched: 1,
-      nextAutoCollectAt: Date.now() + 60_000,
-      seenIds: Array.from({ length: 2000 }, (_, index) =>
-        `syncSeen${String(index).padStart(3, '0')}`
-      ),
-      },
-    });
-    await importPlaylistSyncSnapshot(
-      {
-        state,
-        hash: getSyncStateFingerprint(state),
-        updatedAt: Date.now(),
-      },
-      { force: true }
-    );
-    const pushed = await pushLocalPlaylistSyncNow();
-    const remote = chromeMock.stores.sync[AUTO_COLLECT_SYNC_STORAGE_KEY];
-    assert.strictEqual(pushed.pushed, true);
-    assert.ok(remote);
-    assert.deepStrictEqual(remote.autoCollect.seenIds, []);
-    console.log('auto-collect technical sync omits seen-id history');
+    console.log('playlist changes mark Drive sync pending without storage.sync writes');
   } finally {
     chromeMock.restore();
   }

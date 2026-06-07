@@ -319,7 +319,7 @@ export async function pushLocalPlaylistSyncNow() {
     const result = await writePendingPlaylistSync(localRaw);
     return {
       ...result,
-      pushed: Boolean(result?.wrote || result?.autoCollectPushed),
+      pushed: Boolean(result?.ready),
     };
   });
 }
@@ -339,7 +339,21 @@ export async function importPlaylistSyncSnapshot(snapshot, { force = false } = {
   return enqueueStateWrite(async () => {
     if (!snapshot?.state) return { imported: false, reason: "invalid-snapshot" };
     const localRaw = await loadLocalRawState();
-    const nextState = force || !hasSyncableUserData(localRaw)
+    const status = await getPlaylistSyncStatus();
+    const remoteUpdatedAt = Number(snapshot.updatedAt) || 0;
+    const localUpdatedAt = Number(status.localUpdatedAt) || 0;
+    const localHasUserData = hasSyncableUserData(localRaw);
+    const shouldImport =
+      force ||
+      !localHasUserData ||
+      (!status.pending && remoteUpdatedAt > localUpdatedAt);
+    if (!shouldImport) {
+      return {
+        imported: false,
+        reason: status.pending ? "local-pending" : "local-newer",
+      };
+    }
+    const nextState = force || !localHasUserData
       ? mergeRemoteSyncState(localRaw, snapshot.state)
       : mergeSyncStatesConservatively(localRaw, snapshot.state);
     await persistState(nextState, { scheduleSync: false });

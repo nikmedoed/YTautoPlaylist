@@ -7,8 +7,7 @@ import {
   configurePlaylistSyncAccess,
   flushPendingPlaylistSync,
   flushPendingSettingsSync,
-  importRemotePlaylistSyncIfNewer,
-  isAutoCollectSyncStorageChange,
+  importDriveSync,
   importRemoteSettingsSync,
   isSettingsSyncStorageChange,
   pushLocalDriveSyncNow,
@@ -16,6 +15,13 @@ import {
 } from "./store/index.js";
 
 configurePlaylistSyncAccess();
+importDriveSync({ interactive: false })
+  .then((result) => {
+    if (result?.playlistImported) notifyState();
+  })
+  .catch((err) => {
+    console.debug("Initial Drive sync check skipped", err);
+  });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message.type !== "string") {
@@ -48,7 +54,7 @@ async function flushPendingAccountSync() {
     flushPendingPlaylistSync(),
     flushPendingSettingsSync(),
   ]);
-  if (playlist?.wrote || settings?.wrote || playlist?.mergedState) {
+  if (playlist?.ready || settings?.wrote) {
     await pushLocalDriveSyncNow({ interactive: false });
   }
 }
@@ -69,9 +75,6 @@ chrome.storage?.onChanged?.addListener((changes, area) => {
     return;
   }
   const tasks = [];
-  if (isAutoCollectSyncStorageChange(changes)) {
-    tasks.push(importRemotePlaylistSyncIfNewer().then(() => notifyState()));
-  }
   if (isSettingsSyncStorageChange(changes)) {
     tasks.push(importRemoteSettingsSync());
   }

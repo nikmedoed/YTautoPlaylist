@@ -5,10 +5,8 @@ import {
   getSettingsSyncStatus,
   importDriveSync,
   importRemoteSettingsSync,
-  pushLocalPlaylistSyncNow,
   pushLocalDriveSyncNow,
   pushLocalSettingsSyncNow,
-  AUTO_COLLECT_SYNC_STORAGE_KEY,
   SETTINGS_SYNC_MANIFEST_STORAGE_KEY,
 } from "../../store/index.js";
 import { parseVideoId } from "../../utils.js";
@@ -69,7 +67,7 @@ export const optionsHandlers = {
       drive,
       syncKeyCount: syncKeys.length,
       hasPlaylistManifest: false,
-      hasAutoCollectSync: syncKeys.includes(AUTO_COLLECT_SYNC_STORAGE_KEY),
+      hasAutoCollectSync: false,
       hasSettingsManifest: syncKeys.includes(SETTINGS_SYNC_MANIFEST_STORAGE_KEY),
     };
   },
@@ -106,8 +104,7 @@ export const optionsHandlers = {
   },
 
   async "sync:pushLocal"() {
-    const [playlist, settings, drive] = await Promise.all([
-      pushLocalPlaylistSyncNow(),
+    const [settings, drive] = await Promise.all([
       pushLocalSettingsSyncNow(),
       pushLocalDriveSyncNow(),
     ]);
@@ -115,8 +112,8 @@ export const optionsHandlers = {
       ok: true,
       drivePushed: Boolean(drive?.pushed),
       driveReason: drive?.reason || null,
-      playlistPushed: Boolean(drive?.pushed || playlist?.pushed),
-      playlistReason: playlist?.reason || drive?.reason || null,
+      playlistPushed: Boolean(drive?.pushed),
+      playlistReason: drive?.reason || null,
       settingsPushed: Boolean(settings?.pushed),
       settingsReason: settings?.reason || null,
     };

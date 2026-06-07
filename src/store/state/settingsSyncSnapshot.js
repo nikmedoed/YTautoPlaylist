@@ -123,7 +123,7 @@ export function buildSettingsSnapshot(filtersInput, { updatedAt, deviceId } = {}
   if (totalBytes > SETTINGS_SYNC_TOTAL_TARGET_BYTES) {
     throw new Error(`Settings sync snapshot is too large (${totalBytes} bytes)`);
   }
-  return { manifest, chunks, hash, totalBytes };
+  return { manifest, chunks, filters, hash, totalBytes };
 }
 
 export function parseSettingsSnapshot(manifest, chunks) {
