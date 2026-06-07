@@ -14,7 +14,6 @@ import {
 import { composeRawState, splitStateForStorage } from "./serialization.js";
 import { sanitizeState } from "./sanitizers.js";
 import {
-  forceRemotePlaylistSyncState,
   buildSyncSnapshot,
   getPlaylistSyncStatus,
   hasSyncableUserData,
@@ -23,6 +22,7 @@ import {
   recordImportedPlaylistSyncSnapshot,
   resolveRemotePlaylistSyncState,
   schedulePlaylistSync,
+  forceRemotePlaylistSyncState,
   writePendingPlaylistSync,
 } from "./sync.js";
 import { deepClone } from "../../utils.js";
@@ -308,7 +308,7 @@ export async function replaceLocalPlaylistSyncFromRemote() {
       await persistState(resolved.state, { scheduleSync: false });
       return { imported: true, state: sanitizeState(resolved.state) };
     }
-    return { imported: false, reason: resolved.reason || "no-remote" };
+    return { imported: false, reason: resolved.reason || "no-auto-collect-remote" };
   });
 }
 
@@ -316,15 +316,22 @@ export async function pushLocalPlaylistSyncNow() {
   return enqueueStateWrite(async () => {
     const localRaw = await loadRawState({ checkRemoteSync: false });
     await schedulePlaylistSync(localRaw, { immediate: true });
-    const result = await writePendingPlaylistSync(localRaw, { force: true });
-    return { ...result, pushed: Boolean(result?.wrote) };
+    const result = await writePendingPlaylistSync(localRaw);
+    return {
+      ...result,
+      pushed: Boolean(result?.wrote || result?.autoCollectPushed),
+    };
   });
 }
 
-export async function buildLocalPlaylistSyncSnapshot(deviceId) {
+export async function buildLocalPlaylistSyncSnapshot(deviceId, options = {}) {
   return enqueueStateWrite(async () => {
     const localRaw = await loadRawState({ checkRemoteSync: false });
-    return buildSyncSnapshot(localRaw, { updatedAt: Date.now(), deviceId });
+    return buildSyncSnapshot(localRaw, {
+      updatedAt: Date.now(),
+      deviceId,
+      ...options,
+    });
   });
 }
 
@@ -348,10 +355,6 @@ export async function getPlaylistSyncStorageStatus() {
 export async function flushPendingPlaylistSync() {
   return enqueueStateWrite(async () => {
     const localRaw = await loadRawState({ checkRemoteSync: false });
-    const result = await writePendingPlaylistSync(localRaw);
-    if (result?.mergedState) {
-      await persistState(result.mergedState, { scheduleSync: false });
-    }
-    return result;
+    return writePendingPlaylistSync(localRaw);
   });
 }

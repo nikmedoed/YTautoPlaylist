@@ -206,7 +206,6 @@ var SYNC_ALARM_NAME = "runtimePlaylistSyncFlush";
 var DEFAULT_LIST_ID = "default";
 var DEFAULT_LIST_NAME = "\u041E\u0441\u043D\u043E\u0432\u043D\u043E\u0439";
 var SYNC_DEBOUNCE_MS = 15 * 1e3;
-var SYNC_TOTAL_TARGET_BYTES = 98 * 1024;
 var SETTINGS_SYNC_TOTAL_TARGET_BYTES = 32 * 1024;
 var defaultState = {
   lists: {

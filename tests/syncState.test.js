@@ -4,6 +4,7 @@ import {
   buildSyncSnapshot,
   buildSyncState,
   getSyncStateFingerprint,
+  importRemotePlaylistSyncIfNewer,
   importPlaylistSyncSnapshot,
   mergeSyncStatesConservatively,
   mergeRemoteSyncState,
@@ -11,8 +12,9 @@ import {
   pushLocalSettingsSyncNow,
   recordImportedPlaylistSyncSnapshot,
   resolveRemoteSettingsSyncFilters,
+  parseSyncSnapshot,
+  AUTO_COLLECT_SYNC_STORAGE_KEY,
   SYNC_LOCAL_META_STORAGE_KEY,
-  SYNC_MANIFEST_STORAGE_KEY,
   SETTINGS_SYNC_LOCAL_META_STORAGE_KEY,
   SETTINGS_SYNC_MANIFEST_STORAGE_KEY,
 } from '../src/store/index.js';
@@ -246,7 +248,53 @@ function installChromeStorageMock() {
   });
   assert.ok(snapshot.manifest.chunkCount >= 1);
   assert.strictEqual(snapshot.chunks.length, snapshot.manifest.chunkCount);
-  console.log('playlist sync snapshots are split into storage.sync chunks');
+  console.log('playlist sync snapshots are split into transport chunks');
+}
+
+{
+  const queue = [{
+    id: 'metaVideo01',
+    title: 'Full metadata survives sync',
+    channelId: 'channel01',
+    channelTitle: 'Metadata Channel',
+    thumbnail: 'https://i.ytimg.com/vi/metaVideo01/maxresdefault.jpg',
+    publishedAt: '2026-06-01T00:00:00.000Z',
+    duration: 'PT12M34S',
+    addedAt: 1000,
+    description: 'Stored description',
+    tags: ['sync', 'metadata'],
+    liveStreamingDetails: {
+      actualStartTime: '2026-06-01T00:00:00.000Z',
+      scheduledStartTime: '2026-06-01T00:00:00.000Z',
+      actualEndTime: null,
+    },
+    liveBroadcastContent: 'none',
+  }];
+  const snapshot = buildSyncSnapshot({
+    lists: {
+      default: {
+        id: 'default',
+        name: 'Основной',
+        freeze: false,
+        queue,
+        currentIndex: 0,
+        revision: queue.length,
+      },
+    },
+    listOrder: ['default'],
+  });
+  const parsed = parseSyncSnapshot(snapshot.manifest, snapshot.chunks);
+  const entry = parsed.state.lists.default.queue[0];
+  assert.strictEqual(entry.title, queue[0].title);
+  assert.strictEqual(entry.channelId, queue[0].channelId);
+  assert.strictEqual(entry.channelTitle, queue[0].channelTitle);
+  assert.strictEqual(entry.thumbnail, queue[0].thumbnail);
+  assert.strictEqual(entry.duration, queue[0].duration);
+  assert.strictEqual(entry.description, queue[0].description);
+  assert.deepStrictEqual(entry.tags, queue[0].tags);
+  assert.deepStrictEqual(entry.liveStreamingDetails, queue[0].liveStreamingDetails);
+  assert.strictEqual(entry.liveBroadcastContent, queue[0].liveBroadcastContent);
+  console.log('playlist sync snapshots preserve video metadata');
 }
 
 {
@@ -257,7 +305,7 @@ function installChromeStorageMock() {
     channelTitle: `Channel ${index}`,
     addedAt: 1000 + index,
   }));
-  const snapshot = buildSyncSnapshot({
+  const driveSnapshot = buildSyncSnapshot({
     lists: {
       default: {
         id: 'default',
@@ -270,8 +318,8 @@ function installChromeStorageMock() {
     },
     listOrder: ['default'],
   });
-  assert.ok(snapshot.totalBytes < 98 * 1024);
-  console.log('playlist sync snapshots compact heavy video metadata');
+  assert.ok(driveSnapshot.totalBytes > 98 * 1024);
+  console.log('playlist drive snapshots keep large full metadata payloads');
 }
 
 {
@@ -292,6 +340,32 @@ function installChromeStorageMock() {
       undefined
     );
     console.log('settings sync does not auto-seed empty remote storage');
+  } finally {
+    chromeMock.restore();
+  }
+}
+
+{
+  const chromeMock = installChromeStorageMock();
+  try {
+    const remoteLastRunAt = Date.now() + 60_000;
+    chromeMock.stores.sync[AUTO_COLLECT_SYNC_STORAGE_KEY] = {
+      version: 1,
+      updatedAt: remoteLastRunAt,
+      deviceId: 'remote-device',
+      autoCollect: {
+        lastRunAt: remoteLastRunAt,
+        lastAdded: 2,
+        lastFetched: 4,
+        nextAutoCollectAt: remoteLastRunAt + 60_000,
+        seenIds: ['remoteSeen1'],
+      },
+    };
+    const result = await importRemotePlaylistSyncIfNewer();
+    assert.strictEqual(result.imported, true);
+    assert.strictEqual(result.state.autoCollect.lastRunAt, remoteLastRunAt);
+    assert.deepStrictEqual(result.state.autoCollect.seenIds, ['remoteSeen1']);
+    console.log('auto-collect sync imports technical cursor without playlists');
   } finally {
     chromeMock.restore();
   }
@@ -337,8 +411,17 @@ function installChromeStorageMock() {
     assert.strictEqual(meta.remoteHash, snapshot.hash);
     const pushed = await pushLocalPlaylistSyncNow();
     assert.strictEqual(pushed.pushed, true);
-    assert.ok(chromeMock.stores.sync[SYNC_MANIFEST_STORAGE_KEY]);
-    console.log('drive playlist imports initialize automatic playlist sync metadata');
+    assert.strictEqual(pushed.reason, 'drive-pending');
+    assert.deepStrictEqual(
+      Object.keys(chromeMock.stores.sync),
+      [AUTO_COLLECT_SYNC_STORAGE_KEY]
+    );
+    assert.strictEqual(
+      chromeMock.stores.sync[AUTO_COLLECT_SYNC_STORAGE_KEY].version,
+      1
+    );
+    assert.strictEqual(chromeMock.alarms.length, 1);
+    console.log('playlist changes sync only auto-collect metadata through storage.sync');
   } finally {
     chromeMock.restore();
   }

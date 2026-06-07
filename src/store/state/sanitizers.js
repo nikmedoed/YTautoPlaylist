@@ -55,11 +55,17 @@ export function sanitizeEntry(entry) {
     publishedAt = null,
     duration = null,
     addedAt = Date.now(),
+    description = "",
+    tags = [],
+    liveStreamingDetails = null,
+    liveBroadcastContent = null,
+    ...extraFields
   } = entry;
   if (!id) {
     throw new TypeError("Playlist entry must include id");
   }
-  return {
+  const sanitized = {
+    ...extraFields,
     id,
     title,
     channelId,
@@ -74,6 +80,23 @@ export function sanitizeEntry(entry) {
     duration,
     addedAt,
   };
+  if (typeof description === "string" && description) {
+    sanitized.description = description;
+  }
+  if (Array.isArray(tags) && tags.length) {
+    sanitized.tags = tags.filter((tag) => typeof tag === "string");
+  }
+  if (liveStreamingDetails && typeof liveStreamingDetails === "object") {
+    sanitized.liveStreamingDetails = {
+      actualStartTime: liveStreamingDetails.actualStartTime || null,
+      scheduledStartTime: liveStreamingDetails.scheduledStartTime || null,
+      actualEndTime: liveStreamingDetails.actualEndTime || null,
+    };
+  }
+  if (typeof liveBroadcastContent === "string" && liveBroadcastContent) {
+    sanitized.liveBroadcastContent = liveBroadcastContent;
+  }
+  return sanitized;
 }
 
 export function sanitizeHistoryEntry(entry) {

@@ -8,8 +8,8 @@ import {
   flushPendingPlaylistSync,
   flushPendingSettingsSync,
   importRemotePlaylistSyncIfNewer,
+  isAutoCollectSyncStorageChange,
   importRemoteSettingsSync,
-  isPlaylistSyncStorageChange,
   isSettingsSyncStorageChange,
   pushLocalDriveSyncNow,
   SYNC_ALARM_NAME,
@@ -69,7 +69,7 @@ chrome.storage?.onChanged?.addListener((changes, area) => {
     return;
   }
   const tasks = [];
-  if (isPlaylistSyncStorageChange(changes)) {
+  if (isAutoCollectSyncStorageChange(changes)) {
     tasks.push(importRemotePlaylistSyncIfNewer().then(() => notifyState()));
   }
   if (isSettingsSyncStorageChange(changes)) {

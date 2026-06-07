@@ -4,14 +4,12 @@ import {
   getPlaylistSyncStorageStatus,
   getSettingsSyncStatus,
   importDriveSync,
-  importRemotePlaylistSyncIfNewer,
   importRemoteSettingsSync,
-  pushLocalDriveSyncNow,
   pushLocalPlaylistSyncNow,
+  pushLocalDriveSyncNow,
   pushLocalSettingsSyncNow,
-  replaceLocalPlaylistSyncFromRemote,
+  AUTO_COLLECT_SYNC_STORAGE_KEY,
   SETTINGS_SYNC_MANIFEST_STORAGE_KEY,
-  SYNC_MANIFEST_STORAGE_KEY,
 } from "../../store/index.js";
 import { parseVideoId } from "../../utils.js";
 
@@ -70,43 +68,38 @@ export const optionsHandlers = {
       settings,
       drive,
       syncKeyCount: syncKeys.length,
-      hasPlaylistManifest: syncKeys.includes(SYNC_MANIFEST_STORAGE_KEY),
+      hasPlaylistManifest: false,
+      hasAutoCollectSync: syncKeys.includes(AUTO_COLLECT_SYNC_STORAGE_KEY),
       hasSettingsManifest: syncKeys.includes(SETTINGS_SYNC_MANIFEST_STORAGE_KEY),
     };
   },
 
   async "sync:pullRemote"() {
-    const drive = await importDriveSync();
-    const [playlist, settings] = drive.imported
-      ? [{ imported: drive.playlistImported }, { imported: drive.settingsImported }]
-      : await Promise.all([
-        importRemotePlaylistSyncIfNewer(),
-        importRemoteSettingsSync(),
-      ]);
+    const [drive, settings] = await Promise.all([
+      importDriveSync(),
+      importRemoteSettingsSync(),
+    ]);
     return {
       ok: true,
       driveImported: Boolean(drive.imported),
       driveReason: drive.reason || null,
-      playlistImported: Boolean(playlist?.imported),
+      playlistImported: Boolean(drive.playlistImported),
       settingsImported: Boolean(settings?.imported),
       settingsReason: settings?.reason || null,
     };
   },
 
   async "sync:replaceLocalFromRemote"() {
-    const drive = await importDriveSync({ force: true });
-    const [playlist, settings] = drive.imported
-      ? [{ imported: drive.playlistImported }, { imported: drive.settingsImported }]
-      : await Promise.all([
-        replaceLocalPlaylistSyncFromRemote(),
-        importRemoteSettingsSync({ force: true }),
-      ]);
+    const [drive, settings] = await Promise.all([
+      importDriveSync({ force: true }),
+      importRemoteSettingsSync({ force: true }),
+    ]);
     return {
       ok: true,
       driveImported: Boolean(drive.imported),
       driveReason: drive.reason || null,
-      playlistImported: Boolean(playlist?.imported),
-      playlistReason: playlist?.reason || null,
+      playlistImported: Boolean(drive.playlistImported),
+      playlistReason: drive.reason || null,
       settingsImported: Boolean(settings?.imported),
       settingsReason: settings?.reason || null,
     };
@@ -122,8 +115,8 @@ export const optionsHandlers = {
       ok: true,
       drivePushed: Boolean(drive?.pushed),
       driveReason: drive?.reason || null,
-      playlistPushed: Boolean(playlist?.pushed),
-      playlistReason: playlist?.reason || null,
+      playlistPushed: Boolean(drive?.pushed || playlist?.pushed),
+      playlistReason: playlist?.reason || drive?.reason || null,
       settingsPushed: Boolean(settings?.pushed),
       settingsReason: settings?.reason || null,
     };

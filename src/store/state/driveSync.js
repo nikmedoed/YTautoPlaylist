@@ -1,5 +1,5 @@
 // Google Drive appData sync adapter. Stores one portable snapshot file in the
-// signed-in Google account when chrome.storage.sync does not propagate.
+// signed-in Google account.
 import { getToken, clearToken, signInUser } from "../../auth.js";
 import {
   DRIVE_SYNC_FILE_NAME,

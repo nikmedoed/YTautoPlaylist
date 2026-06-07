@@ -4,19 +4,14 @@ import {
   AUTO_COLLECT_SEEN_IDS_LIMIT,
   DEFAULT_LIST_ID,
   HISTORY_LIMIT,
-  SYNC_CHUNK_STORAGE_PREFIX,
   SYNC_CHUNK_TARGET_BYTES,
-  SYNC_TOTAL_TARGET_BYTES,
   SYNC_MANIFEST_STORAGE_KEY,
 } from "./constants.js";
 import { sanitizeState } from "./sanitizers.js";
 import { deepClone } from "../../utils.js";
-import {
-  buildCompactSyncPayload,
-  expandCompactSyncPayload,
-} from "./syncPayload.js";
 
 export const SYNC_FORMAT_VERSION = 1;
+const SYNC_MAX_CHUNKS = 2000;
 
 function byteLength(value) {
   return new TextEncoder().encode(String(value)).length;
@@ -41,7 +36,7 @@ export function normalizeSyncTimestamp(value) {
 }
 
 export function getSyncChunkKey(index) {
-  return `${SYNC_CHUNK_STORAGE_PREFIX}${index}`;
+  return `${SYNC_MANIFEST_STORAGE_KEY}:chunk:${index}`;
 }
 
 function normalizeListForSync(list) {
@@ -75,7 +70,7 @@ export function buildSyncState(stateInput) {
 }
 
 export function getSyncStateFingerprint(stateInput) {
-  return hashString(JSON.stringify(buildCompactSyncPayload(buildSyncState(stateInput))));
+  return hashString(JSON.stringify(buildSyncState(stateInput)));
 }
 
 export function hasSyncableUserData(stateInput) {
@@ -291,8 +286,11 @@ function splitStringByStorageBytes(value) {
   return chunks;
 }
 
-export function buildSyncSnapshot(stateInput, { updatedAt, deviceId } = {}) {
-  const payload = buildCompactSyncPayload(buildSyncState(stateInput));
+export function buildSyncSnapshot(
+  stateInput,
+  { updatedAt, deviceId, maxTotalBytes = Number.POSITIVE_INFINITY } = {}
+) {
+  const payload = buildSyncState(stateInput);
   const json = JSON.stringify(payload);
   const hash = hashString(json);
   const chunks = splitStringByStorageBytes(json);
@@ -309,7 +307,7 @@ export function buildSyncSnapshot(stateInput, { updatedAt, deviceId } = {}) {
       (sum, chunk, index) => sum + storageItemBytes(getSyncChunkKey(index), chunk),
       0
     );
-  if (totalBytes > SYNC_TOTAL_TARGET_BYTES) {
+  if (Number.isFinite(maxTotalBytes) && totalBytes > maxTotalBytes) {
     throw new Error(
       `Playlist sync snapshot is too large (${totalBytes} bytes)`
     );
@@ -324,7 +322,7 @@ export function parseSyncSnapshot(manifest, chunks) {
     manifest.version !== SYNC_FORMAT_VERSION ||
     !Number.isInteger(manifest.chunkCount) ||
     manifest.chunkCount <= 0 ||
-    manifest.chunkCount > 100 ||
+    manifest.chunkCount > SYNC_MAX_CHUNKS ||
     !Array.isArray(chunks) ||
     chunks.some((chunk) => typeof chunk !== "string")
   ) {
@@ -339,7 +337,7 @@ export function parseSyncSnapshot(manifest, chunks) {
     const parsed = JSON.parse(json);
     return {
       manifest,
-      state: expandCompactSyncPayload(parsed) || buildSyncState(parsed),
+      state: buildSyncState(parsed),
       updatedAt: normalizeSyncTimestamp(manifest.updatedAt),
       hash,
     };
