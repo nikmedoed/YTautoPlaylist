@@ -115,6 +115,7 @@ export async function recordImportedPlaylistSyncSnapshot(
     syncedHash: force || !mergedNeedsPush ? remoteHash || localHash : localHash,
     remoteUpdatedAt: normalizeSyncTimestamp(snapshot.updatedAt),
     remoteHash,
+    remoteDeviceId: snapshot.manifest?.deviceId || localMeta.remoteDeviceId || null,
     pending: mergedNeedsPush,
     pendingSince: null,
     flushAfter,
@@ -161,7 +162,9 @@ export async function getPlaylistSyncStatus() {
   return {
     localDeviceId: meta.deviceId || null,
     localUpdatedAt: normalizeSyncTimestamp(meta.localUpdatedAt),
+    localHash: meta.localHash || null,
     remoteUpdatedAt: normalizeSyncTimestamp(meta.remoteUpdatedAt),
+    remoteHash: meta.remoteHash || null,
     remoteDeviceId: meta.remoteDeviceId || null,
     remoteChunkCount: 0,
     pending: Boolean(meta.pending),

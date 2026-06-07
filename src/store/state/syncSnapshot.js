@@ -139,6 +139,48 @@ function mergeLists(primaryLists, secondaryLists) {
   return merged;
 }
 
+function applyDeletedHistoryToLists(lists, deletedHistory = []) {
+  const globalDeletedAtById = new Map();
+  const deletedAtByList = new Map();
+  function rememberDeletedAt(map, id, deletedAt) {
+    map.set(id, Math.max(Number(map.get(id)) || 0, deletedAt));
+  }
+  deletedHistory.forEach((entry) => {
+    const id = typeof entry?.id === "string" ? entry.id : "";
+    const deletedAt = Number(entry?.deletedAt) || 0;
+    if (!id) return;
+    if (typeof entry?.listId === "string" && entry.listId) {
+      if (!deletedAtByList.has(entry.listId)) {
+        deletedAtByList.set(entry.listId, new Map());
+      }
+      rememberDeletedAt(deletedAtByList.get(entry.listId), id, deletedAt);
+    } else {
+      rememberDeletedAt(globalDeletedAtById, id, deletedAt);
+    }
+  });
+  Object.values(lists || {}).forEach((list) => {
+    if (!Array.isArray(list?.queue) || !list.queue.length) return;
+    list.queue = list.queue.filter((entry) => {
+      const listDeletedAt =
+        Number(deletedAtByList.get(list.id)?.get(entry?.id)) || 0;
+      const globalDeletedAt = Number(globalDeletedAtById.get(entry?.id)) || 0;
+      const deletedAt = Math.max(listDeletedAt, globalDeletedAt);
+      const addedAt = Number(entry?.addedAt) || 0;
+      return !deletedAt || (addedAt && addedAt > deletedAt);
+    });
+    if (!list.queue.length) {
+      list.currentIndex = null;
+    } else if (
+      list.currentIndex === null ||
+      list.currentIndex < 0 ||
+      list.currentIndex >= list.queue.length
+    ) {
+      list.currentIndex = 0;
+    }
+  });
+  return lists;
+}
+
 function mergeListOrder(primaryOrder = [], secondaryOrder = [], lists = {}) {
   const result = [];
   [...primaryOrder, ...secondaryOrder, DEFAULT_LIST_ID].forEach((id) => {
@@ -211,18 +253,22 @@ function mergeVideoProgress(primary = {}, secondary = {}) {
 export function mergeSyncStatesConservatively(localInput, remoteInput) {
   const local = buildSyncState(localInput);
   const remote = buildSyncState(remoteInput);
-  const lists = mergeLists(remote.lists, local.lists);
+  const deletedHistory = mergeDatedEntries(
+    remote.deletedHistory,
+    local.deletedHistory,
+    "deletedAt"
+  );
+  const lists = applyDeletedHistoryToLists(
+    mergeLists(remote.lists, local.lists),
+    deletedHistory
+  );
   return buildSyncState({
     lists,
     listOrder: mergeListOrder(remote.listOrder, local.listOrder, lists),
     currentListId: local.currentListId,
     currentVideoId: local.currentVideoId,
     history: mergeDatedEntries(remote.history, local.history, "watchedAt"),
-    deletedHistory: mergeDatedEntries(
-      remote.deletedHistory,
-      local.deletedHistory,
-      "deletedAt"
-    ),
+    deletedHistory,
     autoCollect: mergeAutoCollect(remote.autoCollect, local.autoCollect),
     videoProgress: mergeVideoProgress(remote.videoProgress, local.videoProgress),
   });

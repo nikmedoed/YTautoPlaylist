@@ -746,7 +746,7 @@ function buildSyncState(stateInput) {
     videoProgress: deepClone(state.videoProgress)
   });
 }
-function getSyncStateFingerprint(stateInput) {
+function getSyncStateFingerprint2(stateInput) {
   return hashString(JSON.stringify(buildSyncState(stateInput)));
 }
 function hasSyncableUserData(stateInput) {
@@ -812,6 +812,42 @@ function mergeLists(primaryLists, secondaryLists) {
     merged[id] = mergeList(primaryLists?.[id], secondaryLists?.[id], id);
   });
   return merged;
+}
+function applyDeletedHistoryToLists(lists, deletedHistory = []) {
+  const globalDeletedAtById = /* @__PURE__ */ new Map();
+  const deletedAtByList = /* @__PURE__ */ new Map();
+  function rememberDeletedAt(map, id, deletedAt) {
+    map.set(id, Math.max(Number(map.get(id)) || 0, deletedAt));
+  }
+  deletedHistory.forEach((entry) => {
+    const id = typeof entry?.id === "string" ? entry.id : "";
+    const deletedAt = Number(entry?.deletedAt) || 0;
+    if (!id) return;
+    if (typeof entry?.listId === "string" && entry.listId) {
+      if (!deletedAtByList.has(entry.listId)) {
+        deletedAtByList.set(entry.listId, /* @__PURE__ */ new Map());
+      }
+      rememberDeletedAt(deletedAtByList.get(entry.listId), id, deletedAt);
+    } else {
+      rememberDeletedAt(globalDeletedAtById, id, deletedAt);
+    }
+  });
+  Object.values(lists || {}).forEach((list) => {
+    if (!Array.isArray(list?.queue) || !list.queue.length) return;
+    list.queue = list.queue.filter((entry) => {
+      const listDeletedAt = Number(deletedAtByList.get(list.id)?.get(entry?.id)) || 0;
+      const globalDeletedAt = Number(globalDeletedAtById.get(entry?.id)) || 0;
+      const deletedAt = Math.max(listDeletedAt, globalDeletedAt);
+      const addedAt = Number(entry?.addedAt) || 0;
+      return !deletedAt || addedAt && addedAt > deletedAt;
+    });
+    if (!list.queue.length) {
+      list.currentIndex = null;
+    } else if (list.currentIndex === null || list.currentIndex < 0 || list.currentIndex >= list.queue.length) {
+      list.currentIndex = 0;
+    }
+  });
+  return lists;
 }
 function mergeListOrder(primaryOrder = [], secondaryOrder = [], lists = {}) {
   const result = [];
@@ -879,18 +915,22 @@ function mergeVideoProgress(primary = {}, secondary = {}) {
 function mergeSyncStatesConservatively(localInput, remoteInput) {
   const local = buildSyncState(localInput);
   const remote = buildSyncState(remoteInput);
-  const lists = mergeLists(remote.lists, local.lists);
+  const deletedHistory = mergeDatedEntries(
+    remote.deletedHistory,
+    local.deletedHistory,
+    "deletedAt"
+  );
+  const lists = applyDeletedHistoryToLists(
+    mergeLists(remote.lists, local.lists),
+    deletedHistory
+  );
   return buildSyncState({
     lists,
     listOrder: mergeListOrder(remote.listOrder, local.listOrder, lists),
     currentListId: local.currentListId,
     currentVideoId: local.currentVideoId,
     history: mergeDatedEntries(remote.history, local.history, "watchedAt"),
-    deletedHistory: mergeDatedEntries(
-      remote.deletedHistory,
-      local.deletedHistory,
-      "deletedAt"
-    ),
+    deletedHistory,
     autoCollect: mergeAutoCollect(remote.autoCollect, local.autoCollect),
     videoProgress: mergeVideoProgress(remote.videoProgress, local.videoProgress)
   });
@@ -991,7 +1031,7 @@ async function recordImportedPlaylistSyncSnapshot(snapshot, stateInput, { force 
   if (!snapshot?.state) return;
   const now = Date.now();
   const state = sanitizeState(stateInput);
-  const localHash = getSyncStateFingerprint(state);
+  const localHash = getSyncStateFingerprint2(state);
   const remoteHash = typeof snapshot.hash === "string" ? snapshot.hash : "";
   const localMeta = await readLocalSyncMeta();
   const mergedNeedsPush = !force && localHash !== remoteHash;
@@ -1004,6 +1044,7 @@ async function recordImportedPlaylistSyncSnapshot(snapshot, stateInput, { force 
     syncedHash: force || !mergedNeedsPush ? remoteHash || localHash : localHash,
     remoteUpdatedAt: normalizeSyncTimestamp(snapshot.updatedAt),
     remoteHash,
+    remoteDeviceId: snapshot.manifest?.deviceId || localMeta.remoteDeviceId || null,
     pending: mergedNeedsPush,
     pendingSince: null,
     flushAfter,
@@ -1014,7 +1055,7 @@ async function recordImportedPlaylistSyncSnapshot(snapshot, stateInput, { force 
 async function recordPushedPlaylistSyncSnapshot(snapshot) {
   if (!snapshot?.state) return;
   const now = Date.now();
-  const localHash = getSyncStateFingerprint(snapshot.state);
+  const localHash = getSyncStateFingerprint2(snapshot.state);
   const remoteHash = typeof snapshot.hash === "string" ? snapshot.hash : localHash;
   const localMeta = await readLocalSyncMeta();
   await writeLocalSyncMeta({
@@ -1047,7 +1088,9 @@ async function getPlaylistSyncStatus() {
   return {
     localDeviceId: meta.deviceId || null,
     localUpdatedAt: normalizeSyncTimestamp(meta.localUpdatedAt),
+    localHash: meta.localHash || null,
     remoteUpdatedAt: normalizeSyncTimestamp(meta.remoteUpdatedAt),
+    remoteHash: meta.remoteHash || null,
     remoteDeviceId: meta.remoteDeviceId || null,
     remoteChunkCount: 0,
     pending: Boolean(meta.pending),
@@ -1060,7 +1103,7 @@ async function getPlaylistSyncStatus() {
 async function schedulePlaylistSync(stateInput, { immediate = false } = {}) {
   if (!hasChromeLocalStorage()) return;
   const localMeta = await readLocalSyncMeta();
-  const localHash = getSyncStateFingerprint(stateInput);
+  const localHash = getSyncStateFingerprint2(stateInput);
   if (localHash === localMeta.localHash && !immediate) {
     if (localMeta.pending) {
       const flushAfter = normalizeSyncTimestamp(localMeta.flushAfter) || Date.now() + SYNC_DEBOUNCE_MS;
@@ -1327,15 +1370,18 @@ async function buildLocalPlaylistSyncSnapshot(deviceId, options = {}) {
     });
   });
 }
-async function importPlaylistSyncSnapshot(snapshot, { force = false } = {}) {
+async function importPlaylistSyncSnapshot(snapshot, { force = false, mergePending = false } = {}) {
   return enqueueStateWrite(async () => {
     if (!snapshot?.state) return { imported: false, reason: "invalid-snapshot" };
     const localRaw = await loadLocalRawState();
     const status = await getPlaylistSyncStatus();
     const remoteUpdatedAt = Number(snapshot.updatedAt) || 0;
+    const remoteHash = typeof snapshot.hash === "string" && snapshot.hash ? snapshot.hash : getSyncStateFingerprint(snapshot.state);
     const localUpdatedAt = Number(status.localUpdatedAt) || 0;
     const localHasUserData = hasSyncableUserData(localRaw);
-    const shouldImport = force || !localHasUserData || !status.pending && remoteUpdatedAt > localUpdatedAt;
+    const remoteChanged = remoteHash && remoteHash !== status.remoteHash && remoteHash !== status.localHash;
+    const shouldMergeChangedRemote = mergePending && localHasUserData && remoteChanged;
+    const shouldImport = force || !localHasUserData || shouldMergeChangedRemote || !status.pending && remoteUpdatedAt > localUpdatedAt;
     if (!shouldImport) {
       return {
         imported: false,
@@ -1356,6 +1402,288 @@ async function flushPendingPlaylistSync() {
     const localRaw = await loadRawState({ checkRemoteSync: false });
     return writePendingPlaylistSync(localRaw);
   });
+}
+
+// src/store/state/driveSync.js
+var DRIVE_API = "https://www.googleapis.com/drive/v3";
+var DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3";
+var DRIVE_SYNC_VERSION = 1;
+function formatDriveError(status, text) {
+  try {
+    const parsed = JSON.parse(text);
+    const error = parsed?.error;
+    const reason = error?.errors?.[0]?.reason || error?.status || "";
+    const message = error?.message || text;
+    return [`Drive API failed: ${status}`, reason, message].filter(Boolean).join(" - ").slice(0, 500);
+  } catch {
+    return `Drive API failed: ${status}${text ? ` - ${text.slice(0, 300)}` : ""}`;
+  }
+}
+function hasChromeStorage2() {
+  return typeof chrome !== "undefined" && chrome?.storage?.local;
+}
+async function storageGet2(key) {
+  return hasChromeStorage2() ? chrome.storage.local.get(key) : {};
+}
+async function storageSet2(payload) {
+  if (hasChromeStorage2()) await chrome.storage.local.set(payload);
+}
+function createDeviceId2() {
+  const random = typeof crypto !== "undefined" && crypto?.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+  return `drive_${Date.now().toString(36)}_${random}`;
+}
+async function readLocalMeta() {
+  const stored = await storageGet2(DRIVE_SYNC_LOCAL_META_STORAGE_KEY);
+  const meta = stored?.[DRIVE_SYNC_LOCAL_META_STORAGE_KEY];
+  return meta && typeof meta === "object" ? meta : {};
+}
+async function writeLocalMeta(meta) {
+  await storageSet2({
+    [DRIVE_SYNC_LOCAL_META_STORAGE_KEY]: {
+      ...meta,
+      deviceId: meta.deviceId || createDeviceId2()
+    }
+  });
+}
+async function ensureDeviceId(meta = null) {
+  const current = meta || await readLocalMeta();
+  if (typeof current.deviceId === "string" && current.deviceId) {
+    return current.deviceId;
+  }
+  const deviceId = createDeviceId2();
+  await writeLocalMeta({ ...current, deviceId });
+  return deviceId;
+}
+async function driveFetch(url, init = {}, { interactive = false } = {}) {
+  const token = await getToken({ interactive });
+  const headers = {
+    ...init.headers || {},
+    Authorization: `Bearer ${token}`
+  };
+  let response = await fetch(url, { ...init, headers });
+  if ((response.status === 401 || response.status === 403) && interactive) {
+    clearToken();
+    const refreshed = await signInUser();
+    response = await fetch(url, {
+      ...init,
+      headers: { ...headers, Authorization: `Bearer ${refreshed}` }
+    });
+  }
+  if (!response.ok) {
+    const text = await response.text();
+    const err = new Error(formatDriveError(response.status, text));
+    err.status = response.status;
+    err.body = text;
+    throw err;
+  }
+  return response;
+}
+function encodePlaylistSnapshot(snapshot) {
+  if (!snapshot) return null;
+  return {
+    manifest: snapshot.manifest,
+    state: snapshot.state
+  };
+}
+function parseDrivePlaylistSnapshot(raw) {
+  if (!raw || typeof raw !== "object" || !raw.state) return null;
+  const state = buildSyncState(raw.state);
+  const hash = getSyncStateFingerprint2(state);
+  const manifest = raw.manifest && typeof raw.manifest === "object" ? raw.manifest : {};
+  if (typeof manifest.hash === "string" && manifest.hash && manifest.hash !== hash) {
+    return null;
+  }
+  return {
+    manifest: { ...manifest, hash },
+    state,
+    updatedAt: normalizeSyncTimestamp(manifest.updatedAt),
+    hash
+  };
+}
+function parseDrivePayload(raw) {
+  if (!raw || typeof raw !== "object" || raw.version !== DRIVE_SYNC_VERSION) {
+    return null;
+  }
+  const playlist = parseDrivePlaylistSnapshot(raw.playlist);
+  if (!playlist) return null;
+  const updatedAt = normalizeSyncTimestamp(raw.updatedAt) || normalizeSyncTimestamp(playlist.updatedAt);
+  return {
+    updatedAt,
+    deviceId: typeof raw.deviceId === "string" ? raw.deviceId : null,
+    playlist
+  };
+}
+async function findDriveFile({ interactive = false } = {}) {
+  const params = new URLSearchParams({
+    spaces: "appDataFolder",
+    fields: "files(id,name,modifiedTime)",
+    q: `name='${DRIVE_SYNC_FILE_NAME}' and trashed=false`
+  });
+  const response = await driveFetch(`${DRIVE_API}/files?${params}`, {}, { interactive });
+  const data = await response.json();
+  return Array.isArray(data.files) && data.files.length ? data.files[0] : null;
+}
+async function readDrivePayload({ interactive = false } = {}) {
+  const file = await findDriveFile({ interactive });
+  if (!file?.id) return { file: null, payload: null };
+  const response = await driveFetch(
+    `${DRIVE_API}/files/${encodeURIComponent(file.id)}?alt=media`,
+    {},
+    { interactive }
+  );
+  return { file, payload: parseDrivePayload(await response.json()) };
+}
+function buildMultipartBody(metadata, payload) {
+  const boundary = `yta_drive_sync_${Date.now()}`;
+  const body = [
+    `--${boundary}`,
+    "Content-Type: application/json; charset=UTF-8",
+    "",
+    JSON.stringify(metadata),
+    `--${boundary}`,
+    "Content-Type: application/json; charset=UTF-8",
+    "",
+    JSON.stringify(payload),
+    `--${boundary}--`,
+    ""
+  ].join("\r\n");
+  return { boundary, body };
+}
+async function writeDrivePayload(payload, { interactive = true, existing = null } = {}) {
+  const existingFile = existing || await findDriveFile({ interactive });
+  const metadata = existingFile?.id ? { name: DRIVE_SYNC_FILE_NAME } : { name: DRIVE_SYNC_FILE_NAME, parents: ["appDataFolder"] };
+  const { boundary, body } = buildMultipartBody(metadata, payload);
+  const target = existingFile?.id ? `${DRIVE_UPLOAD_API}/files/${encodeURIComponent(existingFile.id)}` : `${DRIVE_UPLOAD_API}/files`;
+  const params = new URLSearchParams({
+    uploadType: "multipart",
+    fields: "id,modifiedTime"
+  });
+  const response = await driveFetch(`${target}?${params}`, {
+    method: existingFile?.id ? "PATCH" : "POST",
+    headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
+    body
+  }, { interactive });
+  return response.json();
+}
+async function pushLocalDriveSyncNow({ interactive = true } = {}) {
+  const meta = await readLocalMeta();
+  const deviceId = await ensureDeviceId(meta);
+  try {
+    const remote = await readDrivePayload({ interactive });
+    let playlist = await buildLocalPlaylistSyncSnapshot(deviceId);
+    const playlistStatus = await getPlaylistSyncStatus();
+    const remoteHash = remote.payload?.playlist?.hash || "";
+    const knownRemoteHash = typeof playlistStatus.remoteHash === "string" ? playlistStatus.remoteHash : "";
+    if (remoteHash && remoteHash !== knownRemoteHash && remoteHash !== playlist.hash) {
+      await importPlaylistSyncSnapshot(remote.payload.playlist, { mergePending: true });
+      playlist = await buildLocalPlaylistSyncSnapshot(deviceId);
+    }
+    const payload = {
+      version: DRIVE_SYNC_VERSION,
+      updatedAt: playlist.manifest.updatedAt,
+      deviceId,
+      playlist: encodePlaylistSnapshot(playlist)
+    };
+    const file = await writeDrivePayload(payload, {
+      interactive,
+      existing: remote.file
+    });
+    const now = Date.now();
+    await recordPushedPlaylistSyncSnapshot(playlist);
+    await writeLocalMeta({
+      ...meta,
+      deviceId,
+      fileId: file.id,
+      remoteUpdatedAt: payload.updatedAt,
+      remoteDeviceId: deviceId,
+      remoteAvailable: true,
+      lastWriteAt: now,
+      lastReadAt: now,
+      lastError: null
+    });
+    return { pushed: true, updatedAt: payload.updatedAt };
+  } catch (err) {
+    await recordPlaylistSyncError(err);
+    await writeLocalMeta({ ...meta, deviceId, lastError: err.message });
+    return { pushed: false, reason: err.message };
+  }
+}
+async function importDriveSync({ force = false, interactive = true } = {}) {
+  const meta = await readLocalMeta();
+  const deviceId = await ensureDeviceId(meta);
+  try {
+    const { file, payload } = await readDrivePayload({ interactive });
+    if (!payload) return { imported: false, reason: "no-drive-remote" };
+    const playlist = payload.playlist ? await importPlaylistSyncSnapshot(payload.playlist, { force }) : { imported: false };
+    await writeLocalMeta({
+      ...meta,
+      deviceId,
+      fileId: file?.id || meta.fileId || null,
+      remoteUpdatedAt: payload.updatedAt,
+      remoteDeviceId: payload.deviceId,
+      remoteAvailable: true,
+      lastReadAt: Date.now(),
+      lastError: null
+    });
+    return {
+      imported: Boolean(playlist.imported),
+      playlistImported: Boolean(playlist.imported),
+      settingsImported: false,
+      updatedAt: payload.updatedAt
+    };
+  } catch (err) {
+    await writeLocalMeta({ ...meta, deviceId, lastError: err.message });
+    return { imported: false, reason: err.message };
+  }
+}
+async function getDriveSyncStatus({ refreshRemote = false } = {}) {
+  const meta = await readLocalMeta();
+  if (!refreshRemote) {
+    return {
+      remoteAvailable: Boolean(meta.remoteAvailable || meta.remoteUpdatedAt),
+      remoteUpdatedAt: normalizeSyncTimestamp(meta.remoteUpdatedAt),
+      remoteDeviceId: meta.remoteDeviceId || null,
+      lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
+      lastReadAt: normalizeSyncTimestamp(meta.lastReadAt),
+      lastError: meta.lastError || null
+    };
+  }
+  try {
+    const { file, payload } = await readDrivePayload({ interactive: false });
+    const now = Date.now();
+    await writeLocalMeta({
+      ...meta,
+      fileId: file?.id || meta.fileId || null,
+      remoteAvailable: Boolean(payload),
+      remoteUpdatedAt: normalizeSyncTimestamp(payload?.updatedAt),
+      remoteDeviceId: payload?.deviceId || meta.remoteDeviceId || null,
+      lastReadAt: now,
+      lastError: null
+    });
+    return {
+      remoteAvailable: Boolean(payload),
+      remoteUpdatedAt: normalizeSyncTimestamp(payload?.updatedAt),
+      playlistRemoteUpdatedAt: normalizeSyncTimestamp(payload?.playlist?.updatedAt),
+      settingsRemoteUpdatedAt: 0,
+      remoteDeviceId: payload?.deviceId || null,
+      fileModifiedTime: file?.modifiedTime || null,
+      lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
+      lastReadAt: now,
+      lastError: meta.lastError || null
+    };
+  } catch (err) {
+    return {
+      remoteAvailable: false,
+      remoteUpdatedAt: 0,
+      playlistRemoteUpdatedAt: 0,
+      settingsRemoteUpdatedAt: 0,
+      remoteDeviceId: null,
+      fileModifiedTime: null,
+      lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
+      lastReadAt: normalizeSyncTimestamp(meta.lastReadAt),
+      lastError: err.message
+    };
+  }
 }
 
 // src/store/state/settingsSyncSnapshot.js
@@ -1511,10 +1839,10 @@ function mergeFiltersConservatively(localInput, remoteInput) {
 function hasChromeStorageArea2(area) {
   return typeof chrome !== "undefined" && chrome?.storage?.[area];
 }
-async function storageGet2(area, keys) {
+async function storageGet3(area, keys) {
   return hasChromeStorageArea2(area) ? chrome.storage[area].get(keys) : {};
 }
-async function storageSet2(area, payload) {
+async function storageSet3(area, payload) {
   if (hasChromeStorageArea2(area)) {
     await chrome.storage[area].set(payload);
   }
@@ -1524,7 +1852,7 @@ async function storageRemove(area, keys) {
     await chrome.storage[area].remove(keys);
   }
 }
-function createDeviceId2() {
+function createDeviceId3() {
   const random = typeof crypto !== "undefined" && crypto?.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
   return `device_${Date.now().toString(36)}_${random}`;
 }
@@ -1535,26 +1863,26 @@ function parseStoredFilters(raw) {
     return normalizeSettingsFilters(null);
   }
 }
-async function readLocalMeta() {
-  const stored = await storageGet2("local", SETTINGS_SYNC_LOCAL_META_STORAGE_KEY);
+async function readLocalMeta2() {
+  const stored = await storageGet3("local", SETTINGS_SYNC_LOCAL_META_STORAGE_KEY);
   const meta = stored?.[SETTINGS_SYNC_LOCAL_META_STORAGE_KEY];
   return meta && typeof meta === "object" ? meta : {};
 }
-async function writeLocalMeta(meta) {
-  await storageSet2("local", {
+async function writeLocalMeta2(meta) {
+  await storageSet3("local", {
     [SETTINGS_SYNC_LOCAL_META_STORAGE_KEY]: {
       ...meta,
-      deviceId: typeof meta.deviceId === "string" && meta.deviceId ? meta.deviceId : createDeviceId2()
+      deviceId: typeof meta.deviceId === "string" && meta.deviceId ? meta.deviceId : createDeviceId3()
     }
   });
 }
-async function ensureDeviceId(meta = null) {
-  const current = meta || await readLocalMeta();
+async function ensureDeviceId2(meta = null) {
+  const current = meta || await readLocalMeta2();
   if (typeof current.deviceId === "string" && current.deviceId) {
     return current.deviceId;
   }
-  const deviceId = createDeviceId2();
-  await writeLocalMeta({ ...current, deviceId });
+  const deviceId = createDeviceId3();
+  await writeLocalMeta2({ ...current, deviceId });
   return deviceId;
 }
 async function scheduleAlarm(dueAt) {
@@ -1568,36 +1896,36 @@ function isSettingsSyncStorageChange(changes = {}) {
   );
 }
 async function readRemoteSettingsSyncSnapshot() {
-  const storedManifest = await storageGet2("sync", SETTINGS_SYNC_MANIFEST_STORAGE_KEY);
+  const storedManifest = await storageGet3("sync", SETTINGS_SYNC_MANIFEST_STORAGE_KEY);
   const manifest = storedManifest?.[SETTINGS_SYNC_MANIFEST_STORAGE_KEY];
   if (!manifest || !Number.isInteger(manifest.chunkCount)) return null;
   const keys = Array.from(
     { length: manifest.chunkCount },
     (_, index) => getSettingsChunkKey(index)
   );
-  const storedChunks = await storageGet2("sync", keys);
+  const storedChunks = await storageGet3("sync", keys);
   return parseSettingsSnapshot(manifest, keys.map((key) => storedChunks?.[key]));
 }
 async function readLocalSettingsFilters() {
-  const stored = await storageGet2("local", FILTERS_STORAGE_KEY);
+  const stored = await storageGet3("local", FILTERS_STORAGE_KEY);
   return parseStoredFilters(stored?.[FILTERS_STORAGE_KEY]);
 }
 async function writeLocalSettingsFilters(filters) {
-  await storageSet2("local", {
+  await storageSet3("local", {
     [FILTERS_STORAGE_KEY]: JSON.stringify(normalizeSettingsFilters(filters))
   });
 }
 async function scheduleSettingsSync(filtersInput, { immediate = false } = {}) {
   if (!hasChromeStorageArea2("sync") || !hasChromeStorageArea2("local")) return;
-  const meta = await readLocalMeta();
+  const meta = await readLocalMeta2();
   if (!immediate && !meta.remoteHash && !meta.syncedHash) return;
   const localHash = settingsFingerprint(filtersInput);
   if (localHash === meta.localHash && !immediate) return;
   const now = Date.now();
   const dueAt = immediate ? now : now + SYNC_DEBOUNCE_MS;
-  await writeLocalMeta({
+  await writeLocalMeta2({
     ...meta,
-    deviceId: await ensureDeviceId(meta),
+    deviceId: await ensureDeviceId2(meta),
     localHash,
     localUpdatedAt: now,
     baseRemoteHash: meta.pending ? meta.baseRemoteHash || null : meta.remoteHash || meta.syncedHash || null,
@@ -1612,7 +1940,7 @@ async function flushPendingSettingsSync({ force = false } = {}) {
   if (!hasChromeStorageArea2("sync") || !hasChromeStorageArea2("local")) {
     return { wrote: false, reason: "storage-unavailable" };
   }
-  const meta = await readLocalMeta();
+  const meta = await readLocalMeta2();
   if (!meta.pending) return { wrote: false, reason: "not-pending" };
   const now = Date.now();
   const flushAfter = normalizeSyncTimestamp(meta.flushAfter);
@@ -1626,10 +1954,10 @@ async function flushPendingSettingsSync({ force = false } = {}) {
     await scheduleSettingsSync(localFilters);
     return { wrote: false, reason: "state-changed" };
   }
-  const deviceId = await ensureDeviceId(meta);
+  const deviceId = await ensureDeviceId2(meta);
   const remote = await readRemoteSettingsSyncSnapshot();
   if (!force && !remote && !meta.remoteHash && !meta.syncedHash && !meta.baseRemoteHash) {
-    await writeLocalMeta({
+    await writeLocalMeta2({
       ...meta,
       pending: false,
       flushAfter: null,
@@ -1647,7 +1975,7 @@ async function flushPendingSettingsSync({ force = false } = {}) {
   try {
     snapshot = buildSettingsSnapshot(filtersToWrite, { updatedAt, deviceId });
   } catch (err) {
-    await writeLocalMeta({
+    await writeLocalMeta2({
       ...meta,
       pending: false,
       lastError: err?.message || String(err),
@@ -1659,7 +1987,7 @@ async function flushPendingSettingsSync({ force = false } = {}) {
   snapshot.chunks.forEach((chunk, index) => {
     payload[getSettingsChunkKey(index)] = chunk;
   });
-  await storageSet2("sync", payload);
+  await storageSet3("sync", payload);
   const previousCount = remote?.manifest?.chunkCount || 0;
   const staleKeys = [];
   for (let index = snapshot.chunks.length; index < previousCount; index += 1) {
@@ -1667,7 +1995,7 @@ async function flushPendingSettingsSync({ force = false } = {}) {
   }
   await storageRemove("sync", staleKeys);
   if (conflict) await writeLocalSettingsFilters(filtersToWrite);
-  await writeLocalMeta({
+  await writeLocalMeta2({
     ...meta,
     deviceId,
     localHash: settingsFingerprint(filtersToWrite),
@@ -1692,37 +2020,9 @@ async function pushLocalSettingsSyncNow() {
   const result = await flushPendingSettingsSync({ force: true });
   return { ...result, pushed: Boolean(result?.wrote) };
 }
-async function buildLocalSettingsSyncSnapshot(deviceId) {
-  const filters = await readLocalSettingsFilters();
-  return buildSettingsSnapshot(filters, { updatedAt: Date.now(), deviceId });
-}
-async function importSettingsSyncSnapshot(snapshot, { force = false } = {}) {
-  if (!snapshot?.filters) return { imported: false, reason: "invalid-snapshot" };
-  const localFilters = await readLocalSettingsFilters();
-  const filters = force ? snapshot.filters : mergeFiltersConservatively(localFilters, snapshot.filters);
-  const now = Date.now();
-  await writeLocalSettingsFilters(filters);
-  await writeLocalMeta({
-    ...await readLocalMeta(),
-    localHash: settingsFingerprint(filters),
-    localUpdatedAt: force ? snapshot.updatedAt : now,
-    syncedHash: force ? snapshot.hash : settingsFingerprint(filters),
-    syncedUpdatedAt: force ? snapshot.updatedAt : now,
-    remoteHash: snapshot.hash,
-    remoteUpdatedAt: snapshot.updatedAt,
-    baseRemoteHash: null,
-    pending: !force && settingsFingerprint(filters) !== snapshot.hash,
-    flushAfter: !force ? now + SYNC_DEBOUNCE_MS : null,
-    lastError: null
-  });
-  if (!force && settingsFingerprint(filters) !== snapshot.hash) {
-    await scheduleSettingsSync(filters);
-  }
-  return { imported: true, force, updatedAt: snapshot.updatedAt };
-}
 async function resolveRemoteSettingsSyncFilters(localFiltersInput) {
   const localFilters = normalizeSettingsFilters(localFiltersInput);
-  const meta = await readLocalMeta();
+  const meta = await readLocalMeta2();
   if (meta.pending) {
     await scheduleAlarm(
       normalizeSyncTimestamp(meta.flushAfter) || Date.now() + SYNC_DEBOUNCE_MS
@@ -1735,11 +2035,11 @@ async function resolveRemoteSettingsSyncFilters(localFiltersInput) {
   const localUpdatedAt = normalizeSyncTimestamp(meta.localUpdatedAt);
   const shouldImport = !meta.pending && (localUpdatedAt <= 0 || remote.updatedAt > localUpdatedAt);
   if (!shouldImport) {
-    await writeLocalMeta({ ...meta, remoteHash: remote.hash, remoteUpdatedAt: remote.updatedAt });
+    await writeLocalMeta2({ ...meta, remoteHash: remote.hash, remoteUpdatedAt: remote.updatedAt });
     return { filters: localFilters, imported: false };
   }
   await writeLocalSettingsFilters(remote.filters);
-  await writeLocalMeta({
+  await writeLocalMeta2({
     ...meta,
     localHash: settingsFingerprint(remote.filters),
     localUpdatedAt: remote.updatedAt,
@@ -1757,13 +2057,13 @@ async function importRemoteSettingsSync({ force = false } = {}) {
   const localFilters = await readLocalSettingsFilters();
   const remote = await readRemoteSettingsSyncSnapshot();
   if (!remote) return { imported: false, reason: "no-remote" };
-  const meta = await readLocalMeta();
+  const meta = await readLocalMeta2();
   const localUpdatedAt = normalizeSyncTimestamp(meta.localUpdatedAt);
   const shouldImport = force || !meta.pending || remote.updatedAt > localUpdatedAt;
   if (!shouldImport) return { imported: false, reason: "local-pending" };
   const filters = force ? remote.filters : mergeFiltersConservatively(localFilters, remote.filters);
   await writeLocalSettingsFilters(filters);
-  await writeLocalMeta({
+  await writeLocalMeta2({
     ...meta,
     localHash: settingsFingerprint(filters),
     localUpdatedAt: force ? remote.updatedAt : Date.now(),
@@ -1783,7 +2083,7 @@ async function importRemoteSettingsSync({ force = false } = {}) {
 }
 async function getSettingsSyncStatus() {
   const [meta, remote] = await Promise.all([
-    readLocalMeta(),
+    readLocalMeta2(),
     readRemoteSettingsSyncSnapshot()
   ]);
   return {
@@ -1797,308 +2097,6 @@ async function getSettingsSyncStatus() {
     lastError: meta.lastError || null,
     remoteAvailable: Boolean(remote)
   };
-}
-
-// src/store/state/driveSync.js
-var DRIVE_API = "https://www.googleapis.com/drive/v3";
-var DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3";
-var DRIVE_SYNC_VERSION = 1;
-function formatDriveError(status, text) {
-  try {
-    const parsed = JSON.parse(text);
-    const error = parsed?.error;
-    const reason = error?.errors?.[0]?.reason || error?.status || "";
-    const message = error?.message || text;
-    return [`Drive API failed: ${status}`, reason, message].filter(Boolean).join(" - ").slice(0, 500);
-  } catch {
-    return `Drive API failed: ${status}${text ? ` - ${text.slice(0, 300)}` : ""}`;
-  }
-}
-function hasChromeStorage2() {
-  return typeof chrome !== "undefined" && chrome?.storage?.local;
-}
-async function storageGet3(key) {
-  return hasChromeStorage2() ? chrome.storage.local.get(key) : {};
-}
-async function storageSet3(payload) {
-  if (hasChromeStorage2()) await chrome.storage.local.set(payload);
-}
-function createDeviceId3() {
-  const random = typeof crypto !== "undefined" && crypto?.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
-  return `drive_${Date.now().toString(36)}_${random}`;
-}
-async function readLocalMeta2() {
-  const stored = await storageGet3(DRIVE_SYNC_LOCAL_META_STORAGE_KEY);
-  const meta = stored?.[DRIVE_SYNC_LOCAL_META_STORAGE_KEY];
-  return meta && typeof meta === "object" ? meta : {};
-}
-async function writeLocalMeta2(meta) {
-  await storageSet3({
-    [DRIVE_SYNC_LOCAL_META_STORAGE_KEY]: {
-      ...meta,
-      deviceId: meta.deviceId || createDeviceId3()
-    }
-  });
-}
-async function ensureDeviceId2(meta = null) {
-  const current = meta || await readLocalMeta2();
-  if (typeof current.deviceId === "string" && current.deviceId) {
-    return current.deviceId;
-  }
-  const deviceId = createDeviceId3();
-  await writeLocalMeta2({ ...current, deviceId });
-  return deviceId;
-}
-async function driveFetch(url, init = {}, { interactive = false } = {}) {
-  const token = await getToken({ interactive });
-  const headers = {
-    ...init.headers || {},
-    Authorization: `Bearer ${token}`
-  };
-  let response = await fetch(url, { ...init, headers });
-  if ((response.status === 401 || response.status === 403) && interactive) {
-    clearToken();
-    const refreshed = await signInUser();
-    response = await fetch(url, {
-      ...init,
-      headers: { ...headers, Authorization: `Bearer ${refreshed}` }
-    });
-  }
-  if (!response.ok) {
-    const text = await response.text();
-    const err = new Error(formatDriveError(response.status, text));
-    err.status = response.status;
-    err.body = text;
-    throw err;
-  }
-  return response;
-}
-function encodePlaylistSnapshot(snapshot) {
-  if (!snapshot) return null;
-  return {
-    manifest: snapshot.manifest,
-    state: snapshot.state
-  };
-}
-function encodeSettingsSnapshot(snapshot) {
-  if (!snapshot) return null;
-  return {
-    manifest: snapshot.manifest,
-    filters: snapshot.filters
-  };
-}
-function parseDrivePlaylistSnapshot(raw) {
-  if (!raw || typeof raw !== "object" || !raw.state) return null;
-  const state = buildSyncState(raw.state);
-  const hash = getSyncStateFingerprint(state);
-  const manifest = raw.manifest && typeof raw.manifest === "object" ? raw.manifest : {};
-  if (typeof manifest.hash === "string" && manifest.hash && manifest.hash !== hash) {
-    return null;
-  }
-  return {
-    manifest: { ...manifest, hash },
-    state,
-    updatedAt: normalizeSyncTimestamp(manifest.updatedAt),
-    hash
-  };
-}
-function parseDriveSettingsSnapshot(raw) {
-  if (!raw || typeof raw !== "object" || !raw.filters) return null;
-  const filters = normalizeSettingsFilters(raw.filters);
-  const hash = settingsFingerprint(filters);
-  const manifest = raw.manifest && typeof raw.manifest === "object" ? raw.manifest : {};
-  if (typeof manifest.hash === "string" && manifest.hash && manifest.hash !== hash) {
-    return null;
-  }
-  return {
-    manifest: { ...manifest, hash },
-    filters,
-    updatedAt: normalizeSyncTimestamp(manifest.updatedAt),
-    hash
-  };
-}
-function parseDrivePayload(raw) {
-  if (!raw || typeof raw !== "object" || raw.version !== DRIVE_SYNC_VERSION) {
-    return null;
-  }
-  const playlist = parseDrivePlaylistSnapshot(raw.playlist);
-  const settings = parseDriveSettingsSnapshot(raw.settings);
-  if (!playlist && !settings) return null;
-  const updatedAt = normalizeSyncTimestamp(raw.updatedAt) || Math.max(playlist?.updatedAt || 0, settings?.updatedAt || 0);
-  return {
-    updatedAt,
-    deviceId: typeof raw.deviceId === "string" ? raw.deviceId : null,
-    playlist,
-    settings
-  };
-}
-async function findDriveFile({ interactive = false } = {}) {
-  const params = new URLSearchParams({
-    spaces: "appDataFolder",
-    fields: "files(id,name,modifiedTime)",
-    q: `name='${DRIVE_SYNC_FILE_NAME}' and trashed=false`
-  });
-  const response = await driveFetch(`${DRIVE_API}/files?${params}`, {}, { interactive });
-  const data = await response.json();
-  return Array.isArray(data.files) && data.files.length ? data.files[0] : null;
-}
-async function readDrivePayload({ interactive = false } = {}) {
-  const file = await findDriveFile({ interactive });
-  if (!file?.id) return { file: null, payload: null };
-  const response = await driveFetch(
-    `${DRIVE_API}/files/${encodeURIComponent(file.id)}?alt=media`,
-    {},
-    { interactive }
-  );
-  return { file, payload: parseDrivePayload(await response.json()) };
-}
-function buildMultipartBody(metadata, payload) {
-  const boundary = `yta_drive_sync_${Date.now()}`;
-  const body = [
-    `--${boundary}`,
-    "Content-Type: application/json; charset=UTF-8",
-    "",
-    JSON.stringify(metadata),
-    `--${boundary}`,
-    "Content-Type: application/json; charset=UTF-8",
-    "",
-    JSON.stringify(payload),
-    `--${boundary}--`,
-    ""
-  ].join("\r\n");
-  return { boundary, body };
-}
-async function writeDrivePayload(payload, { interactive = true } = {}) {
-  const existing = await findDriveFile({ interactive });
-  const metadata = existing?.id ? { name: DRIVE_SYNC_FILE_NAME } : { name: DRIVE_SYNC_FILE_NAME, parents: ["appDataFolder"] };
-  const { boundary, body } = buildMultipartBody(metadata, payload);
-  const target = existing?.id ? `${DRIVE_UPLOAD_API}/files/${encodeURIComponent(existing.id)}` : `${DRIVE_UPLOAD_API}/files`;
-  const params = new URLSearchParams({
-    uploadType: "multipart",
-    fields: "id,modifiedTime"
-  });
-  const response = await driveFetch(`${target}?${params}`, {
-    method: existing?.id ? "PATCH" : "POST",
-    headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
-    body
-  }, { interactive });
-  return response.json();
-}
-async function pushLocalDriveSyncNow({ interactive = true } = {}) {
-  const meta = await readLocalMeta2();
-  const deviceId = await ensureDeviceId2(meta);
-  const [playlist, settings] = await Promise.all([
-    buildLocalPlaylistSyncSnapshot(deviceId),
-    buildLocalSettingsSyncSnapshot(deviceId)
-  ]);
-  const payload = {
-    version: DRIVE_SYNC_VERSION,
-    updatedAt: Math.max(playlist.manifest.updatedAt, settings.manifest.updatedAt),
-    deviceId,
-    playlist: encodePlaylistSnapshot(playlist),
-    settings: encodeSettingsSnapshot(settings)
-  };
-  try {
-    const file = await writeDrivePayload(payload, { interactive });
-    const now = Date.now();
-    await recordPushedPlaylistSyncSnapshot(playlist);
-    await writeLocalMeta2({
-      ...meta,
-      deviceId,
-      fileId: file.id,
-      remoteUpdatedAt: payload.updatedAt,
-      remoteDeviceId: deviceId,
-      remoteAvailable: true,
-      lastWriteAt: now,
-      lastReadAt: now,
-      lastError: null
-    });
-    return { pushed: true, updatedAt: payload.updatedAt };
-  } catch (err) {
-    await recordPlaylistSyncError(err);
-    await writeLocalMeta2({ ...meta, deviceId, lastError: err.message });
-    return { pushed: false, reason: err.message };
-  }
-}
-async function importDriveSync({ force = false, interactive = true } = {}) {
-  const meta = await readLocalMeta2();
-  const deviceId = await ensureDeviceId2(meta);
-  try {
-    const { file, payload } = await readDrivePayload({ interactive });
-    if (!payload) return { imported: false, reason: "no-drive-remote" };
-    const [playlist, settings] = await Promise.all([
-      payload.playlist ? importPlaylistSyncSnapshot(payload.playlist, { force }) : { imported: false },
-      payload.settings ? importSettingsSyncSnapshot(payload.settings, { force }) : { imported: false }
-    ]);
-    await writeLocalMeta2({
-      ...meta,
-      deviceId,
-      fileId: file?.id || meta.fileId || null,
-      remoteUpdatedAt: payload.updatedAt,
-      remoteDeviceId: payload.deviceId,
-      remoteAvailable: true,
-      lastReadAt: Date.now(),
-      lastError: null
-    });
-    return {
-      imported: Boolean(playlist.imported || settings.imported),
-      playlistImported: Boolean(playlist.imported),
-      settingsImported: Boolean(settings.imported),
-      updatedAt: payload.updatedAt
-    };
-  } catch (err) {
-    await writeLocalMeta2({ ...meta, deviceId, lastError: err.message });
-    return { imported: false, reason: err.message };
-  }
-}
-async function getDriveSyncStatus({ refreshRemote = false } = {}) {
-  const meta = await readLocalMeta2();
-  if (!refreshRemote) {
-    return {
-      remoteAvailable: Boolean(meta.remoteAvailable || meta.remoteUpdatedAt),
-      remoteUpdatedAt: normalizeSyncTimestamp(meta.remoteUpdatedAt),
-      remoteDeviceId: meta.remoteDeviceId || null,
-      lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
-      lastReadAt: normalizeSyncTimestamp(meta.lastReadAt),
-      lastError: meta.lastError || null
-    };
-  }
-  try {
-    const { file, payload } = await readDrivePayload({ interactive: false });
-    const now = Date.now();
-    await writeLocalMeta2({
-      ...meta,
-      fileId: file?.id || meta.fileId || null,
-      remoteAvailable: Boolean(payload),
-      remoteUpdatedAt: normalizeSyncTimestamp(payload?.updatedAt),
-      remoteDeviceId: payload?.deviceId || meta.remoteDeviceId || null,
-      lastReadAt: now,
-      lastError: null
-    });
-    return {
-      remoteAvailable: Boolean(payload),
-      remoteUpdatedAt: normalizeSyncTimestamp(payload?.updatedAt),
-      playlistRemoteUpdatedAt: normalizeSyncTimestamp(payload?.playlist?.updatedAt),
-      settingsRemoteUpdatedAt: normalizeSyncTimestamp(payload?.settings?.updatedAt),
-      remoteDeviceId: payload?.deviceId || null,
-      fileModifiedTime: file?.modifiedTime || null,
-      lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
-      lastReadAt: now,
-      lastError: meta.lastError || null
-    };
-  } catch (err) {
-    return {
-      remoteAvailable: false,
-      remoteUpdatedAt: 0,
-      playlistRemoteUpdatedAt: 0,
-      settingsRemoteUpdatedAt: 0,
-      remoteDeviceId: null,
-      fileModifiedTime: null,
-      lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
-      lastReadAt: normalizeSyncTimestamp(meta.lastReadAt),
-      lastError: err.message
-    };
-  }
 }
 
 // src/store/actions/core.js
@@ -5549,11 +5547,11 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   clearCurrentTab(tabId).then(() => notifyState());
 });
 async function flushPendingAccountSync() {
-  const [playlist, settings] = await Promise.all([
+  const [playlist] = await Promise.all([
     flushPendingPlaylistSync(),
     flushPendingSettingsSync()
   ]);
-  if (playlist?.ready || settings?.wrote) {
+  if (playlist?.ready) {
     await pushLocalDriveSyncNow({ interactive: false });
   }
 }

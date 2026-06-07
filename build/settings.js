@@ -766,7 +766,11 @@ function renderSyncStatus(target, status, message = "") {
     playlist.localUpdatedAt,
     settings.localUpdatedAt
   );
-  const remoteUpdatedAt = Number(drive.remoteUpdatedAt) || 0;
+  const remoteUpdatedAt = maxTimestamp(
+    drive.remoteUpdatedAt,
+    settings.remoteUpdatedAt
+  );
+  const lastWriteAt = maxTimestamp(drive.lastWriteAt, settings.lastWriteAt);
   const pending = Boolean(playlist.pending || settings.pending);
   const errors = friendlyErrors(status);
   target.textContent = "";
@@ -792,7 +796,7 @@ function renderSyncStatus(target, status, message = "") {
   target.appendChild(summary);
   target.append(
     createRow(doc, "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u043E", formatDate(localUpdatedAt)),
-    createDateOffsetRow(doc, "\u041E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u043E", drive.lastWriteAt, localUpdatedAt),
+    createDateOffsetRow(doc, "\u041E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u043E", lastWriteAt, localUpdatedAt),
     createDateOffsetRow(doc, "\u0412 \u043E\u0431\u043B\u0430\u043A\u0435", remoteUpdatedAt, localUpdatedAt),
     createDateOffsetRow(doc, "\u041F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E", drive.lastReadAt, localUpdatedAt)
   );

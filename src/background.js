@@ -50,11 +50,11 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 });
 
 async function flushPendingAccountSync() {
-  const [playlist, settings] = await Promise.all([
+  const [playlist] = await Promise.all([
     flushPendingPlaylistSync(),
     flushPendingSettingsSync(),
   ]);
-  if (playlist?.ready || settings?.wrote) {
+  if (playlist?.ready) {
     await pushLocalDriveSyncNow({ interactive: false });
   }
 }

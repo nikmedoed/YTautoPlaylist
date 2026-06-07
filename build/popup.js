@@ -3157,7 +3157,10 @@ function describeSyncStatus(status) {
     playlist.localUpdatedAt,
     settings.localUpdatedAt
   );
-  const remoteUpdatedAt = Number(drive.remoteUpdatedAt) || 0;
+  const remoteUpdatedAt = maxTimestamp(
+    drive.remoteUpdatedAt,
+    settings.remoteUpdatedAt
+  );
   const errors = [
     playlist.lastError,
     settings.lastError,

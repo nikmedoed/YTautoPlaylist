@@ -335,17 +335,31 @@ export async function buildLocalPlaylistSyncSnapshot(deviceId, options = {}) {
   });
 }
 
-export async function importPlaylistSyncSnapshot(snapshot, { force = false } = {}) {
+export async function importPlaylistSyncSnapshot(
+  snapshot,
+  { force = false, mergePending = false } = {}
+) {
   return enqueueStateWrite(async () => {
     if (!snapshot?.state) return { imported: false, reason: "invalid-snapshot" };
     const localRaw = await loadLocalRawState();
     const status = await getPlaylistSyncStatus();
     const remoteUpdatedAt = Number(snapshot.updatedAt) || 0;
+    const remoteHash =
+      typeof snapshot.hash === "string" && snapshot.hash
+        ? snapshot.hash
+        : getSyncStateFingerprint(snapshot.state);
     const localUpdatedAt = Number(status.localUpdatedAt) || 0;
     const localHasUserData = hasSyncableUserData(localRaw);
+    const remoteChanged =
+      remoteHash &&
+      remoteHash !== status.remoteHash &&
+      remoteHash !== status.localHash;
+    const shouldMergeChangedRemote =
+      mergePending && localHasUserData && remoteChanged;
     const shouldImport =
       force ||
       !localHasUserData ||
+      shouldMergeChangedRemote ||
       (!status.pending && remoteUpdatedAt > localUpdatedAt);
     if (!shouldImport) {
       return {

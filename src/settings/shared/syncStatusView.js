@@ -102,7 +102,11 @@ export function renderSyncStatus(target, status, message = "") {
     playlist.localUpdatedAt,
     settings.localUpdatedAt
   );
-  const remoteUpdatedAt = Number(drive.remoteUpdatedAt) || 0;
+  const remoteUpdatedAt = maxTimestamp(
+    drive.remoteUpdatedAt,
+    settings.remoteUpdatedAt
+  );
+  const lastWriteAt = maxTimestamp(drive.lastWriteAt, settings.lastWriteAt);
   const pending = Boolean(playlist.pending || settings.pending);
   const errors = friendlyErrors(status);
   target.textContent = "";
@@ -128,7 +132,7 @@ export function renderSyncStatus(target, status, message = "") {
   target.appendChild(summary);
   target.append(
     createRow(doc, "Локально", formatDate(localUpdatedAt)),
-    createDateOffsetRow(doc, "Отправлено", drive.lastWriteAt, localUpdatedAt),
+    createDateOffsetRow(doc, "Отправлено", lastWriteAt, localUpdatedAt),
     createDateOffsetRow(doc, "В облаке", remoteUpdatedAt, localUpdatedAt),
     createDateOffsetRow(doc, "Проверено", drive.lastReadAt, localUpdatedAt)
   );
