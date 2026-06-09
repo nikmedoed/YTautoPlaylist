@@ -25,6 +25,7 @@ import {
   forceRemotePlaylistSyncState,
   writePendingPlaylistSync,
 } from "./sync.js";
+import { normalizeSyncTimestamp } from "./syncSnapshot.js";
 import { deepClone } from "../../utils.js";
 
 const hasChromeStorage =
@@ -327,10 +328,15 @@ export async function pushLocalPlaylistSyncNow() {
 export async function buildLocalPlaylistSyncSnapshot(deviceId, options = {}) {
   return enqueueStateWrite(async () => {
     const localRaw = await loadRawState({ checkRemoteSync: false });
+    const status = await getPlaylistSyncStatus();
+    const updatedAt =
+      normalizeSyncTimestamp(options.updatedAt) ||
+      normalizeSyncTimestamp(status.localUpdatedAt) ||
+      Date.now();
     return buildSyncSnapshot(localRaw, {
-      updatedAt: Date.now(),
       deviceId,
       ...options,
+      updatedAt,
     });
   });
 }
@@ -371,7 +377,10 @@ export async function importPlaylistSyncSnapshot(
       ? mergeRemoteSyncState(localRaw, snapshot.state)
       : mergeSyncStatesConservatively(localRaw, snapshot.state);
     await persistState(nextState, { scheduleSync: false });
-    await recordImportedPlaylistSyncSnapshot(snapshot, nextState, { force });
+    await recordImportedPlaylistSyncSnapshot(snapshot, nextState, {
+      force,
+      pending: shouldMergeChangedRemote,
+    });
     return { imported: true, state: sanitizeState(nextState) };
   });
 }

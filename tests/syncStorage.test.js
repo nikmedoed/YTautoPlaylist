@@ -116,6 +116,50 @@ function installChromeStorageMock() {
 {
   const chromeMock = installChromeStorageMock();
   try {
+    const remoteSnapshot = buildSyncSnapshot({
+      lists: {
+        default: {
+          id: 'default',
+          name: 'Основной',
+          freeze: false,
+          queue: [],
+          currentIndex: null,
+          revision: 0,
+        },
+        imported: {
+          id: 'imported',
+          name: 'Imported',
+          freeze: false,
+          queue: [{ id: 'remoteOnly2', addedAt: 1 }],
+          currentIndex: 0,
+          revision: 1,
+        },
+      },
+      listOrder: ['default', 'imported'],
+      currentListId: 'imported',
+      currentVideoId: 'remoteOnly2',
+    });
+    const imported = await importPlaylistSyncSnapshot({
+      state: remoteSnapshot.state,
+      hash: remoteSnapshot.hash,
+      updatedAt: remoteSnapshot.manifest.updatedAt,
+    });
+    const meta = chromeMock.stores.local[SYNC_LOCAL_META_STORAGE_KEY];
+    assert.strictEqual(imported.imported, true);
+    assert.notStrictEqual(meta.localHash, remoteSnapshot.hash);
+    assert.strictEqual(meta.pending, false);
+    assert.strictEqual(meta.remoteHash, remoteSnapshot.hash);
+    assert.strictEqual(meta.localUpdatedAt, remoteSnapshot.manifest.updatedAt);
+    assert.strictEqual(chromeMock.alarms.length, 0);
+    console.log('drive playlist imports do not push idle runtime-only hash drift');
+  } finally {
+    chromeMock.restore();
+  }
+}
+
+{
+  const chromeMock = installChromeStorageMock();
+  try {
     const baseState = buildSyncState({
       lists: {
         default: {

@@ -97,7 +97,7 @@ export async function forceRemotePlaylistSyncState(localStateInput) {
 export async function recordImportedPlaylistSyncSnapshot(
   snapshot,
   stateInput,
-  { force = false } = {}
+  { force = false, pending = null } = {}
 ) {
   if (!snapshot?.state) return;
   const now = Date.now();
@@ -105,15 +105,26 @@ export async function recordImportedPlaylistSyncSnapshot(
   const localHash = getSyncStateFingerprint(state);
   const remoteHash = typeof snapshot.hash === "string" ? snapshot.hash : "";
   const localMeta = await readLocalSyncMeta();
-  const mergedNeedsPush = !force && localHash !== remoteHash;
+  const remoteUpdatedAt = normalizeSyncTimestamp(snapshot.updatedAt);
+  const mergedNeedsPush =
+    !force &&
+    (typeof pending === "boolean" ? pending : localHash !== remoteHash);
   const flushAfter = mergedNeedsPush ? now + SYNC_DEBOUNCE_MS : null;
+  const baselineUpdatedAt =
+    force || !mergedNeedsPush
+      ? remoteUpdatedAt || now
+      : Math.max(
+          normalizeSyncTimestamp(localMeta.localUpdatedAt),
+          remoteUpdatedAt,
+          now
+        );
   await writeLocalSyncMeta({
     ...localMeta,
-    localUpdatedAt: force ? snapshot.updatedAt : now,
+    localUpdatedAt: baselineUpdatedAt,
     localHash,
-    syncedUpdatedAt: force ? snapshot.updatedAt : now,
-    syncedHash: force || !mergedNeedsPush ? remoteHash || localHash : localHash,
-    remoteUpdatedAt: normalizeSyncTimestamp(snapshot.updatedAt),
+    syncedUpdatedAt: baselineUpdatedAt,
+    syncedHash: localHash,
+    remoteUpdatedAt,
     remoteHash,
     remoteDeviceId: snapshot.manifest?.deviceId || localMeta.remoteDeviceId || null,
     pending: mergedNeedsPush,

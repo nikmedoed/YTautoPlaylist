@@ -1027,22 +1027,28 @@ async function configurePlaylistSyncAccess() {
 async function resolveRemotePlaylistSyncState(localStateInput) {
   return { state: sanitizeState(localStateInput), imported: false };
 }
-async function recordImportedPlaylistSyncSnapshot(snapshot, stateInput, { force = false } = {}) {
+async function recordImportedPlaylistSyncSnapshot(snapshot, stateInput, { force = false, pending = null } = {}) {
   if (!snapshot?.state) return;
   const now = Date.now();
   const state = sanitizeState(stateInput);
   const localHash = getSyncStateFingerprint2(state);
   const remoteHash = typeof snapshot.hash === "string" ? snapshot.hash : "";
   const localMeta = await readLocalSyncMeta();
-  const mergedNeedsPush = !force && localHash !== remoteHash;
+  const remoteUpdatedAt = normalizeSyncTimestamp(snapshot.updatedAt);
+  const mergedNeedsPush = !force && (typeof pending === "boolean" ? pending : localHash !== remoteHash);
   const flushAfter = mergedNeedsPush ? now + SYNC_DEBOUNCE_MS : null;
+  const baselineUpdatedAt = force || !mergedNeedsPush ? remoteUpdatedAt || now : Math.max(
+    normalizeSyncTimestamp(localMeta.localUpdatedAt),
+    remoteUpdatedAt,
+    now
+  );
   await writeLocalSyncMeta({
     ...localMeta,
-    localUpdatedAt: force ? snapshot.updatedAt : now,
+    localUpdatedAt: baselineUpdatedAt,
     localHash,
-    syncedUpdatedAt: force ? snapshot.updatedAt : now,
-    syncedHash: force || !mergedNeedsPush ? remoteHash || localHash : localHash,
-    remoteUpdatedAt: normalizeSyncTimestamp(snapshot.updatedAt),
+    syncedUpdatedAt: baselineUpdatedAt,
+    syncedHash: localHash,
+    remoteUpdatedAt,
     remoteHash,
     remoteDeviceId: snapshot.manifest?.deviceId || localMeta.remoteDeviceId || null,
     pending: mergedNeedsPush,
@@ -1363,10 +1369,12 @@ async function mutateState(mutator) {
 async function buildLocalPlaylistSyncSnapshot(deviceId, options = {}) {
   return enqueueStateWrite(async () => {
     const localRaw = await loadRawState({ checkRemoteSync: false });
+    const status = await getPlaylistSyncStatus();
+    const updatedAt = normalizeSyncTimestamp(options.updatedAt) || normalizeSyncTimestamp(status.localUpdatedAt) || Date.now();
     return buildSyncSnapshot(localRaw, {
-      updatedAt: Date.now(),
       deviceId,
-      ...options
+      ...options,
+      updatedAt
     });
   });
 }
@@ -1390,7 +1398,10 @@ async function importPlaylistSyncSnapshot(snapshot, { force = false, mergePendin
     }
     const nextState = force || !localHasUserData ? mergeRemoteSyncState(localRaw, snapshot.state) : mergeSyncStatesConservatively(localRaw, snapshot.state);
     await persistState(nextState, { scheduleSync: false });
-    await recordImportedPlaylistSyncSnapshot(snapshot, nextState, { force });
+    await recordImportedPlaylistSyncSnapshot(snapshot, nextState, {
+      force,
+      pending: shouldMergeChangedRemote
+    });
     return { imported: true, state: sanitizeState(nextState) };
   });
 }
