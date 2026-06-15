@@ -5,7 +5,9 @@ import {
   ensureListExists,
   sanitizeHistoryEntry,
   sanitizeDeletedHistoryEntry,
+  sanitizeQueueRemovalEntry,
   HISTORY_LIMIT,
+  QUEUE_REMOVAL_LOG_LIMIT,
   DEFAULT_LIST_ID,
   sanitizeAutoCollectSeenIds,
   normalizeAutoCollectTimestamp,
@@ -170,9 +172,20 @@ export function findVideo(state, videoId, { preferListId = null } = {}) {
   return null;
 }
 
-export function appendHistory(state, entry, listId) {
+function normalizeActionTimestamp(value) {
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) && timestamp > 0
+    ? Math.trunc(timestamp)
+    : Date.now();
+}
+
+export function appendHistory(state, entry, listId, options = {}) {
   state.history.unshift(
-    sanitizeHistoryEntry({ ...entry, listId, watchedAt: Date.now() })
+    sanitizeHistoryEntry({
+      ...entry,
+      listId,
+      watchedAt: normalizeActionTimestamp(options.watchedAt),
+    })
   );
   state.history = state.history.slice(0, HISTORY_LIMIT);
 }
@@ -184,17 +197,60 @@ export function ensureDeletedHistory(state) {
   return state.deletedHistory;
 }
 
-export function appendDeletedHistory(state, entry, listId) {
+function deletedHistoryKey(entry) {
+  const id = typeof entry?.id === "string" ? entry.id : "";
+  const scopedListId = typeof entry?.listId === "string" ? entry.listId : "";
+  return `${scopedListId}\0${id}`;
+}
+
+export function ensureQueueRemovals(state) {
+  if (!Array.isArray(state.queueRemovals)) {
+    state.queueRemovals = [];
+  }
+  return state.queueRemovals;
+}
+
+export function appendQueueRemoval(state, entry, listId, options = {}) {
+  try {
+    const removals = ensureQueueRemovals(state);
+    const sanitized = sanitizeQueueRemovalEntry({
+      id: entry?.id,
+      listId,
+      removedAt: normalizeActionTimestamp(options.removedAt),
+    });
+    const key = deletedHistoryKey(sanitized);
+    state.queueRemovals = removals.filter(
+      (item) => deletedHistoryKey(item) !== key
+    );
+    state.queueRemovals.unshift(sanitized);
+    state.queueRemovals = state.queueRemovals.slice(0, QUEUE_REMOVAL_LOG_LIMIT);
+  } catch {
+    /* ignore invalid entry */
+  }
+}
+
+export function appendDeletedHistory(state, entry, listId, options = {}) {
   try {
     const history = ensureDeletedHistory(state);
+    const reason =
+      typeof options.reason === "string" && options.reason
+        ? options.reason
+        : null;
     const sanitized = sanitizeDeletedHistoryEntry({
       ...entry,
+      ...(reason ? { reason } : {}),
       listId,
-      deletedAt: Date.now(),
+      deletedAt: normalizeActionTimestamp(options.deletedAt),
     });
-    state.deletedHistory = history.filter((item) => item.id !== sanitized.id);
+    const key = deletedHistoryKey(sanitized);
+    state.deletedHistory = history.filter(
+      (item) => deletedHistoryKey(item) !== key
+    );
     state.deletedHistory.unshift(sanitized);
     state.deletedHistory = state.deletedHistory.slice(0, HISTORY_LIMIT);
+    appendQueueRemoval(state, sanitized, listId, {
+      removedAt: sanitized.deletedAt,
+    });
   } catch {
     /* ignore invalid entry */
   }

@@ -28,11 +28,13 @@ import {
 import { normalizeSyncTimestamp } from "./syncSnapshot.js";
 import { deepClone } from "../../utils.js";
 
-const hasChromeStorage =
-  typeof chrome !== "undefined" && chrome?.storage?.local;
 let memoryState = null;
 let stateWriteQueue = Promise.resolve();
 let checkedRemotePlaylistSync = false;
+
+function hasChromeStorage() {
+  return typeof chrome !== "undefined" && chrome?.storage?.local;
+}
 
 // Serializes read-modify-write operations so parallel add/remove calls cannot
 // read the same old state and then overwrite each other.
@@ -44,7 +46,7 @@ function enqueueStateWrite(operation) {
 
 // Loads every split state key from chrome.storage and falls back to legacy monolithic state when needed.
 async function loadLocalRawState() {
-  if (!hasChromeStorage) {
+  if (!hasChromeStorage()) {
     const source = memoryState ?? defaultState;
     return deepClone(source);
   }
@@ -202,7 +204,7 @@ async function loadLocalRawState() {
 
 async function loadRawState({ checkRemoteSync = true } = {}) {
   const localRaw = await loadLocalRawState();
-  if (!hasChromeStorage || !checkRemoteSync || checkedRemotePlaylistSync) {
+  if (!hasChromeStorage() || !checkRemoteSync || checkedRemotePlaylistSync) {
     return localRaw;
   }
   checkedRemotePlaylistSync = true;
@@ -214,7 +216,7 @@ async function loadRawState({ checkRemoteSync = true } = {}) {
 }
 
 async function persistState(state, { scheduleSync = true } = {}) {
-  if (!hasChromeStorage) {
+  if (!hasChromeStorage()) {
     memoryState = deepClone(state);
     return state;
   }

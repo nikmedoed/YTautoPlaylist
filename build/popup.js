@@ -1493,6 +1493,12 @@ function createQueueController({
 }
 
 // src/popup/modules/history/index.js
+function getDeletedHistoryItems(state) {
+  const source = Array.isArray(state?.deletedHistory) ? state.deletedHistory : [];
+  return source.map(
+    (entry, index) => entry && typeof entry === "object" ? { ...entry, __historyPosition: index } : entry
+  ).filter((entry) => entry?.reason !== "watched");
+}
 var MODE_CONFIG = {
   latest: {
     limit: 1,
@@ -1508,7 +1514,7 @@ var MODE_CONFIG = {
   },
   deleted: {
     limit: 10,
-    source: (state) => Array.isArray(state?.deletedHistory) ? state.deletedHistory : [],
+    source: getDeletedHistoryItems,
     emptyText: "\u0423\u0434\u0430\u043B\u0451\u043D\u043D\u044B\u0445 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442",
     restore: "deleted"
   }
@@ -1596,7 +1602,8 @@ function createHistoryController({
       if (typeof limit === "number" && rendered >= limit) {
         return;
       }
-      const dataset = { id: entry.id, position: index };
+      const position = Number.isInteger(entry.__historyPosition) ? entry.__historyPosition : index;
+      const dataset = { id: entry.id, position };
       const detailParts = buildDetailParts(entry, {
         listIdKey: "listId",
         getListName: getListName2

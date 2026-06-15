@@ -223,6 +223,7 @@ var defaultState = {
   currentVideoId: null,
   history: [],
   deletedHistory: [],
+  queueRemovals: [],
   currentTabId: null,
   autoCollect: {
     lastRunAt: 0,
@@ -249,7 +250,6 @@ function normalizeSyncTimestamp(value) {
 }
 
 // src/store/state/storage.js
-var hasChromeStorage = typeof chrome !== "undefined" && chrome?.storage?.local;
 var stateWriteQueue = Promise.resolve();
 
 // src/store/state/settingsSyncSnapshot.js
@@ -446,7 +446,7 @@ var DEFAULT_FILTERS2 = Object.freeze({
   global: { noShorts: true },
   channels: {}
 });
-var hasChromeStorage2 = typeof chrome !== "undefined" && chrome?.storage?.local;
+var hasChromeStorage = typeof chrome !== "undefined" && chrome?.storage?.local;
 var filtersCache = null;
 var autoCollectLastRun = null;
 function asValidDate(value) {
@@ -476,7 +476,7 @@ function parseStoredFilters(raw) {
 }
 var chromeGet = (keys) => new Promise((resolve) => chrome.storage.local.get(keys, (data) => resolve(data || {})));
 var chromeSet = (payload) => new Promise((resolve) => chrome.storage.local.set(payload, resolve));
-if (hasChromeStorage2 && chrome.storage?.onChanged) {
+if (hasChromeStorage && chrome.storage?.onChanged) {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
     if (changes[STORAGE_KEYS.filters]) {
@@ -494,7 +494,7 @@ async function getFilters() {
   if (filtersCache) {
     return filtersCache;
   }
-  if (!hasChromeStorage2) {
+  if (!hasChromeStorage) {
     filtersCache = cloneDefaultFilters2();
     return filtersCache;
   }
@@ -512,7 +512,7 @@ async function getFilters() {
 }
 async function saveFilters(filters) {
   filtersCache = normalizeFilters(filters);
-  if (!hasChromeStorage2) {
+  if (!hasChromeStorage) {
     return;
   }
   await chromeSet({ [STORAGE_KEYS.filters]: JSON.stringify(filtersCache) });

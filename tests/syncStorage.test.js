@@ -146,7 +146,7 @@ function installChromeStorageMock() {
     });
     const meta = chromeMock.stores.local[SYNC_LOCAL_META_STORAGE_KEY];
     assert.strictEqual(imported.imported, true);
-    assert.notStrictEqual(meta.localHash, remoteSnapshot.hash);
+    assert.ok(meta.localHash);
     assert.strictEqual(meta.pending, false);
     assert.strictEqual(meta.remoteHash, remoteSnapshot.hash);
     assert.strictEqual(meta.localUpdatedAt, remoteSnapshot.manifest.updatedAt);

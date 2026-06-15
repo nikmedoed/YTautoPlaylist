@@ -146,6 +146,7 @@ export function splitStateForStorage(state) {
     currentListId: state.currentListId,
     currentVideoId: state.currentVideoId,
     history: state.history,
+    queueRemovals: state.queueRemovals,
     currentTabId: state.currentTabId,
   });
 

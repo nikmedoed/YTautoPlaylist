@@ -27,6 +27,8 @@ var DEFAULT_LIST_ID = "default";
 var DEFAULT_LIST_NAME = "\u041E\u0441\u043D\u043E\u0432\u043D\u043E\u0439";
 var VIDEO_PROGRESS_LIMIT = 500;
 var AUTO_COLLECT_SEEN_IDS_LIMIT = 2e3;
+var QUEUE_REMOVAL_LOG_LIMIT = 2e3;
+var WATCHED_PROGRESS_THRESHOLD = 95;
 var SYNC_DEBOUNCE_MS = 15 * 1e3;
 var SYNC_CHUNK_TARGET_BYTES = 7600;
 var SETTINGS_SYNC_TOTAL_TARGET_BYTES = 32 * 1024;
@@ -47,6 +49,7 @@ var defaultState = {
   currentVideoId: null,
   history: [],
   deletedHistory: [],
+  queueRemovals: [],
   currentTabId: null,
   autoCollect: {
     lastRunAt: 0,
@@ -462,6 +465,7 @@ function splitStateForStorage(state) {
     currentListId: state.currentListId,
     currentVideoId: state.currentVideoId,
     history: state.history,
+    queueRemovals: state.queueRemovals,
     currentTabId: state.currentTabId
   });
   const autoCollect = deepClone(state.autoCollect);
@@ -575,6 +579,22 @@ function sanitizeDeletedHistoryEntry(entry) {
     listId: entry?.listId || null
   };
 }
+function sanitizeQueueRemovalEntry(entry) {
+  const id = typeof entry?.id === "string" ? entry.id.trim() : "";
+  if (!id) {
+    throw new TypeError("Queue removal entry must include id");
+  }
+  const listId = typeof entry?.listId === "string" ? entry.listId.trim() : "";
+  const removedAt = Number(entry?.removedAt);
+  if (!Number.isFinite(removedAt) || removedAt <= 0) {
+    throw new TypeError("Queue removal entry must include removedAt");
+  }
+  return {
+    id,
+    listId: listId || null,
+    removedAt: Math.trunc(removedAt)
+  };
+}
 function ensureDefaultList(state) {
   if (!state.lists[DEFAULT_LIST_ID]) {
     state.lists[DEFAULT_LIST_ID] = {
@@ -655,6 +675,13 @@ function sanitizeState(raw) {
         return null;
       }
     }).filter(Boolean).slice(0, HISTORY_LIMIT) : [],
+    queueRemovals: Array.isArray(raw.queueRemovals) ? raw.queueRemovals.map((item) => {
+      try {
+        return sanitizeQueueRemovalEntry(item);
+      } catch {
+        return null;
+      }
+    }).filter(Boolean).slice(0, QUEUE_REMOVAL_LOG_LIMIT) : [],
     currentTabId: typeof raw.currentTabId === "number" && Number.isInteger(raw.currentTabId) ? raw.currentTabId : null,
     autoCollect: raw.autoCollect && typeof raw.autoCollect === "object" ? {
       lastRunAt: normalizeAutoCollectTimestamp(raw.autoCollect.lastRunAt),
@@ -742,6 +769,7 @@ function buildSyncState(stateInput) {
     currentTabId: null,
     history: deepClone(state.history),
     deletedHistory: deepClone(state.deletedHistory),
+    queueRemovals: deepClone(state.queueRemovals),
     autoCollect: deepClone(state.autoCollect),
     videoProgress: deepClone(state.videoProgress)
   });
@@ -759,7 +787,7 @@ function hasSyncableUserData(stateInput) {
     const queue = state.lists[id]?.queue;
     return Array.isArray(queue) && queue.length > 0;
   });
-  return hasQueuedVideos || Boolean(state.history?.length) || Boolean(state.deletedHistory?.length) || Boolean(Object.keys(state.videoProgress || {}).length) || Boolean(state.autoCollect?.lastRunAt) || Boolean(state.autoCollect?.seenIds?.length);
+  return hasQueuedVideos || Boolean(state.history?.length) || Boolean(state.deletedHistory?.length) || Boolean(state.queueRemovals?.length) || Boolean(Object.keys(state.videoProgress || {}).length) || Boolean(state.autoCollect?.lastRunAt) || Boolean(state.autoCollect?.seenIds?.length);
 }
 function findVideoInLists(lists, videoId) {
   if (!videoId || !lists || typeof lists !== "object") {
@@ -775,15 +803,25 @@ function findVideoInLists(lists, videoId) {
   return null;
 }
 function mergeUniqueQueue(primaryQueue = [], secondaryQueue = []) {
-  const seen = /* @__PURE__ */ new Set();
+  const indexById = /* @__PURE__ */ new Map();
   const merged = [];
   [...primaryQueue, ...secondaryQueue].forEach((entry) => {
     const id = typeof entry?.id === "string" ? entry.id : "";
-    if (!id || seen.has(id)) {
+    if (!id) {
       return;
     }
-    seen.add(id);
-    merged.push(deepClone(entry));
+    const existingIndex = indexById.get(id);
+    if (existingIndex === void 0) {
+      indexById.set(id, merged.length);
+      merged.push(deepClone(entry));
+      return;
+    }
+    const existing = merged[existingIndex];
+    const existingAddedAt = Number(existing?.addedAt) || 0;
+    const nextAddedAt = Number(entry?.addedAt) || 0;
+    if (nextAddedAt > existingAddedAt) {
+      merged[existingIndex] = deepClone(entry);
+    }
   });
   return merged;
 }
@@ -813,23 +851,65 @@ function mergeLists(primaryLists, secondaryLists) {
   });
   return merged;
 }
-function applyDeletedHistoryToLists(lists, deletedHistory = []) {
+function rememberTimestamp(map, id, timestamp) {
+  map.set(id, Math.max(Number(map.get(id)) || 0, timestamp));
+}
+function ensureListTimestampMap(root, listId) {
+  if (!root.has(listId)) {
+    root.set(listId, /* @__PURE__ */ new Map());
+  }
+  return root.get(listId);
+}
+function applyRemovalMarkersToLists(lists, { queueRemovals = [], deletedHistory = [], history = [], videoProgress = {} } = {}) {
   const globalDeletedAtById = /* @__PURE__ */ new Map();
   const deletedAtByList = /* @__PURE__ */ new Map();
-  function rememberDeletedAt(map, id, deletedAt) {
-    map.set(id, Math.max(Number(map.get(id)) || 0, deletedAt));
-  }
+  const watchedAtByList = /* @__PURE__ */ new Map();
+  queueRemovals.forEach((entry) => {
+    const id = typeof entry?.id === "string" ? entry.id : "";
+    const listId = typeof entry?.listId === "string" ? entry.listId : "";
+    const removedAt = Number(entry?.removedAt) || 0;
+    if (!id || !removedAt) return;
+    if (listId) {
+      rememberTimestamp(
+        ensureListTimestampMap(deletedAtByList, listId),
+        id,
+        removedAt
+      );
+    } else {
+      rememberTimestamp(globalDeletedAtById, id, removedAt);
+    }
+  });
   deletedHistory.forEach((entry) => {
     const id = typeof entry?.id === "string" ? entry.id : "";
     const deletedAt = Number(entry?.deletedAt) || 0;
     if (!id) return;
     if (typeof entry?.listId === "string" && entry.listId) {
-      if (!deletedAtByList.has(entry.listId)) {
-        deletedAtByList.set(entry.listId, /* @__PURE__ */ new Map());
-      }
-      rememberDeletedAt(deletedAtByList.get(entry.listId), id, deletedAt);
+      rememberTimestamp(
+        ensureListTimestampMap(deletedAtByList, entry.listId),
+        id,
+        deletedAt
+      );
     } else {
-      rememberDeletedAt(globalDeletedAtById, id, deletedAt);
+      rememberTimestamp(globalDeletedAtById, id, deletedAt);
+    }
+  });
+  history.forEach((entry) => {
+    const id = typeof entry?.id === "string" ? entry.id : "";
+    const listId = typeof entry?.listId === "string" ? entry.listId : "";
+    const watchedAt = Number(entry?.watchedAt) || 0;
+    if (!id || !listId || !watchedAt) return;
+    rememberTimestamp(
+      ensureListTimestampMap(watchedAtByList, listId),
+      id,
+      watchedAt
+    );
+  });
+  const watchedProgressById = /* @__PURE__ */ new Map();
+  Object.entries(videoProgress || {}).forEach(([id, progress]) => {
+    const percent = Number(progress?.percent) || 0;
+    const updatedAt = Number(progress?.updatedAt) || 0;
+    if (percent > WATCHED_PROGRESS_THRESHOLD && updatedAt > 0) {
+      rememberTimestamp(watchedProgressById, id, updatedAt);
     }
   });
   Object.values(lists || {}).forEach((list) => {
@@ -837,7 +917,14 @@ function applyDeletedHistoryToLists(lists, deletedHistory = []) {
     list.queue = list.queue.filter((entry) => {
       const listDeletedAt = Number(deletedAtByList.get(list.id)?.get(entry?.id)) || 0;
       const globalDeletedAt = Number(globalDeletedAtById.get(entry?.id)) || 0;
-      const deletedAt = Math.max(listDeletedAt, globalDeletedAt);
+      const watchedAt = list.freeze ? 0 : Number(watchedAtByList.get(list.id)?.get(entry?.id)) || 0;
+      const progressWatchedAt = !list.freeze && list.id === DEFAULT_LIST_ID ? Number(watchedProgressById.get(entry?.id)) || 0 : 0;
+      const deletedAt = Math.max(
+        listDeletedAt,
+        globalDeletedAt,
+        watchedAt,
+        progressWatchedAt
+      );
       const addedAt = Number(entry?.addedAt) || 0;
       return !deletedAt || addedAt && addedAt > deletedAt;
     });
@@ -858,21 +945,35 @@ function mergeListOrder(primaryOrder = [], secondaryOrder = [], lists = {}) {
   });
   return result;
 }
-function mergeDatedEntries(primary = [], secondary = [], timestampField) {
+function datedEntryIdKey(entry) {
+  return typeof entry?.id === "string" ? entry.id : "";
+}
+function listScopedDatedEntryKey(entry) {
+  const id = datedEntryIdKey(entry);
+  const listId = typeof entry?.listId === "string" ? entry.listId : "";
+  return id ? `${listId}\0${id}` : "";
+}
+function mergeDatedEntries(primary = [], secondary = [], timestampField, { limit = HISTORY_LIMIT, keyFn = datedEntryIdKey } = {}) {
   const byId = /* @__PURE__ */ new Map();
   [...primary, ...secondary].forEach((entry) => {
-    const id = typeof entry?.id === "string" ? entry.id : "";
-    if (!id) {
+    const key = keyFn(entry);
+    if (!key) {
       return;
     }
-    const current = byId.get(id);
+    const current = byId.get(key);
     const currentTime = Number(current?.[timestampField]) || 0;
     const nextTime = Number(entry?.[timestampField]) || 0;
     if (!current || nextTime >= currentTime) {
-      byId.set(id, deepClone(entry));
+      byId.set(key, deepClone(entry));
     }
   });
-  return Array.from(byId.values()).sort((a, b) => (Number(b?.[timestampField]) || 0) - (Number(a?.[timestampField]) || 0)).slice(0, HISTORY_LIMIT);
+  return Array.from(byId.values()).sort((a, b) => (Number(b?.[timestampField]) || 0) - (Number(a?.[timestampField]) || 0)).slice(0, limit);
+}
+function mergeQueueRemovals(primary = [], secondary = []) {
+  return mergeDatedEntries(primary, secondary, "removedAt", {
+    limit: QUEUE_REMOVAL_LOG_LIMIT,
+    keyFn: listScopedDatedEntryKey
+  });
 }
 function mergeAutoCollect(primary = {}, secondary = {}) {
   const primaryLastRunAt = normalizeSyncTimestamp(primary.lastRunAt);
@@ -915,24 +1016,36 @@ function mergeVideoProgress(primary = {}, secondary = {}) {
 function mergeSyncStatesConservatively(localInput, remoteInput) {
   const local = buildSyncState(localInput);
   const remote = buildSyncState(remoteInput);
+  const history = mergeDatedEntries(remote.history, local.history, "watchedAt");
   const deletedHistory = mergeDatedEntries(
     remote.deletedHistory,
     local.deletedHistory,
     "deletedAt"
   );
-  const lists = applyDeletedHistoryToLists(
-    mergeLists(remote.lists, local.lists),
-    deletedHistory
+  const queueRemovals = mergeQueueRemovals(
+    remote.queueRemovals,
+    local.queueRemovals
   );
+  const videoProgress = mergeVideoProgress(
+    remote.videoProgress,
+    local.videoProgress
+  );
+  const lists = applyRemovalMarkersToLists(mergeLists(remote.lists, local.lists), {
+    queueRemovals,
+    deletedHistory,
+    history,
+    videoProgress
+  });
   return buildSyncState({
     lists,
     listOrder: mergeListOrder(remote.listOrder, local.listOrder, lists),
     currentListId: local.currentListId,
     currentVideoId: local.currentVideoId,
-    history: mergeDatedEntries(remote.history, local.history, "watchedAt"),
+    history,
     deletedHistory,
+    queueRemovals,
     autoCollect: mergeAutoCollect(remote.autoCollect, local.autoCollect),
-    videoProgress: mergeVideoProgress(remote.videoProgress, local.videoProgress)
+    videoProgress
   });
 }
 function mergeRemoteSyncState(localInput, remoteInput) {
@@ -1159,10 +1272,12 @@ async function writePendingPlaylistSync(stateInput = null) {
 }
 
 // src/store/state/storage.js
-var hasChromeStorage = typeof chrome !== "undefined" && chrome?.storage?.local;
 var memoryState = null;
 var stateWriteQueue = Promise.resolve();
 var checkedRemotePlaylistSync = false;
+function hasChromeStorage() {
+  return typeof chrome !== "undefined" && chrome?.storage?.local;
+}
 function enqueueStateWrite(operation) {
   const result = stateWriteQueue.then(operation, operation);
   stateWriteQueue = result.catch(() => {
@@ -1170,7 +1285,7 @@ function enqueueStateWrite(operation) {
   return result;
 }
 async function loadLocalRawState() {
-  if (!hasChromeStorage) {
+  if (!hasChromeStorage()) {
     const source = memoryState ?? defaultState;
     return deepClone(source);
   }
@@ -1294,7 +1409,7 @@ async function loadLocalRawState() {
 }
 async function loadRawState({ checkRemoteSync = true } = {}) {
   const localRaw = await loadLocalRawState();
-  if (!hasChromeStorage || !checkRemoteSync || checkedRemotePlaylistSync) {
+  if (!hasChromeStorage() || !checkRemoteSync || checkedRemotePlaylistSync) {
     return localRaw;
   }
   checkedRemotePlaylistSync = true;
@@ -1305,7 +1420,7 @@ async function loadRawState({ checkRemoteSync = true } = {}) {
   return resolved.state;
 }
 async function persistState(state, { scheduleSync = true } = {}) {
-  if (!hasChromeStorage) {
+  if (!hasChromeStorage()) {
     memoryState = deepClone(state);
     return state;
   }
@@ -2251,9 +2366,17 @@ function findVideo(state, videoId, { preferListId = null } = {}) {
   }
   return null;
 }
-function appendHistory(state, entry, listId) {
+function normalizeActionTimestamp(value) {
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) && timestamp > 0 ? Math.trunc(timestamp) : Date.now();
+}
+function appendHistory(state, entry, listId, options = {}) {
   state.history.unshift(
-    sanitizeHistoryEntry({ ...entry, listId, watchedAt: Date.now() })
+    sanitizeHistoryEntry({
+      ...entry,
+      listId,
+      watchedAt: normalizeActionTimestamp(options.watchedAt)
+    })
   );
   state.history = state.history.slice(0, HISTORY_LIMIT);
 }
@@ -2263,17 +2386,53 @@ function ensureDeletedHistory(state) {
   }
   return state.deletedHistory;
 }
-function appendDeletedHistory(state, entry, listId) {
+function deletedHistoryKey(entry) {
+  const id = typeof entry?.id === "string" ? entry.id : "";
+  const scopedListId = typeof entry?.listId === "string" ? entry.listId : "";
+  return `${scopedListId}\0${id}`;
+}
+function ensureQueueRemovals(state) {
+  if (!Array.isArray(state.queueRemovals)) {
+    state.queueRemovals = [];
+  }
+  return state.queueRemovals;
+}
+function appendQueueRemoval(state, entry, listId, options = {}) {
+  try {
+    const removals = ensureQueueRemovals(state);
+    const sanitized = sanitizeQueueRemovalEntry({
+      id: entry?.id,
+      listId,
+      removedAt: normalizeActionTimestamp(options.removedAt)
+    });
+    const key = deletedHistoryKey(sanitized);
+    state.queueRemovals = removals.filter(
+      (item) => deletedHistoryKey(item) !== key
+    );
+    state.queueRemovals.unshift(sanitized);
+    state.queueRemovals = state.queueRemovals.slice(0, QUEUE_REMOVAL_LOG_LIMIT);
+  } catch {
+  }
+}
+function appendDeletedHistory(state, entry, listId, options = {}) {
   try {
     const history = ensureDeletedHistory(state);
+    const reason = typeof options.reason === "string" && options.reason ? options.reason : null;
     const sanitized = sanitizeDeletedHistoryEntry({
       ...entry,
+      ...reason ? { reason } : {},
       listId,
-      deletedAt: Date.now()
+      deletedAt: normalizeActionTimestamp(options.deletedAt)
     });
-    state.deletedHistory = history.filter((item) => item.id !== sanitized.id);
+    const key = deletedHistoryKey(sanitized);
+    state.deletedHistory = history.filter(
+      (item) => deletedHistoryKey(item) !== key
+    );
     state.deletedHistory.unshift(sanitized);
     state.deletedHistory = state.deletedHistory.slice(0, HISTORY_LIMIT);
+    appendQueueRemoval(state, sanitized, listId, {
+      removedAt: sanitized.deletedAt
+    });
   } catch {
   }
 }
@@ -2555,14 +2714,16 @@ async function markVideoWatched(videoId, { listId = null } = {}) {
       return state;
     }
     const entry = list.queue[index];
+    const watchedAt = Date.now();
     if (list.id === DEFAULT_LIST_ID && entry?.id) {
       rememberAutoCollectSeenIds(state, [entry.id]);
     }
-    appendHistory(state, entry, list.id);
-    applyVideoProgress(state, videoId, 100, { timestamp: Date.now() });
+    appendHistory(state, entry, list.id, { watchedAt });
+    applyVideoProgress(state, videoId, 100, { timestamp: watchedAt });
     const shouldRemove = list.id === DEFAULT_LIST_ID || !list.freeze;
     let listChanged = false;
     if (shouldRemove) {
+      appendQueueRemoval(state, entry, list.id, { removedAt: watchedAt });
       list.queue.splice(index, 1);
       adjustIndexAfterRemoval(list, index);
       listChanged = true;
@@ -2657,7 +2818,9 @@ function moveVideoInState(state, videoId, targetListId) {
   if (!located) return false;
   const { list, index } = located;
   if (list.id === targetListId) return false;
+  const movedAt = Date.now();
   const [entry] = list.queue.splice(index, 1);
+  appendQueueRemoval(state, entry, list.id, { removedAt: movedAt });
   adjustIndexAfterRemoval(list, index);
   bumpListRevision(list);
   if (list.id === DEFAULT_LIST_ID) {
@@ -2675,7 +2838,7 @@ function moveVideoInState(state, videoId, targetListId) {
   if (list.id === DEFAULT_LIST_ID || target.id === DEFAULT_LIST_ID) {
     rememberAutoCollectSeenIds(state, [entry.id]);
   }
-  target.queue.push(entry);
+  target.queue.push({ ...entry, addedAt: movedAt });
   bumpListRevision(target);
   if (target.currentIndex === null) {
     target.currentIndex = 0;
@@ -4133,6 +4296,12 @@ function collectAutoCollectSeenIds(state, { listId = DEFAULT_LIST_ID } = {}) {
   }
   const deletedHistory = Array.isArray(state?.deletedHistory) ? state.deletedHistory : [];
   for (const entry of deletedHistory) {
+    if (entry?.listId === listId || !entry?.listId && listId === DEFAULT_LIST_ID) {
+      addEntryIds(seenIds, [entry]);
+    }
+  }
+  const queueRemovals = Array.isArray(state?.queueRemovals) ? state.queueRemovals : [];
+  for (const entry of queueRemovals) {
     if (entry?.listId === listId || !entry?.listId && listId === DEFAULT_LIST_ID) {
       addEntryIds(seenIds, [entry]);
     }

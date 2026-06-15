@@ -185,6 +185,132 @@ import {
 }
 
 {
+  const merged = mergeSyncStatesConservatively(
+    {
+      lists: {
+        default: {
+          id: 'default',
+          name: 'Основной',
+          freeze: false,
+          queue: [
+            { id: 'watched001A', title: 'Already watched', addedAt: 1000 },
+            { id: 'localKeep01', title: 'Local keep', addedAt: 2000 },
+          ],
+          currentIndex: 0,
+          revision: 3,
+        },
+      },
+      listOrder: ['default'],
+    },
+    {
+      lists: {
+        default: {
+          id: 'default',
+          name: 'Основной',
+          freeze: false,
+          queue: [{ id: 'remoteKeep1', title: 'Remote keep', addedAt: 3000 }],
+          currentIndex: 0,
+          revision: 4,
+        },
+      },
+      listOrder: ['default'],
+      videoProgress: {
+        watched001A: { percent: 100, updatedAt: 5000 },
+      },
+    }
+  );
+  assert.deepStrictEqual(
+    merged.lists.default.queue.map((entry) => entry.id),
+    ['remoteKeep1', 'localKeep01']
+  );
+  console.log('playlist sync conflict merge does not resurrect watched default videos');
+}
+
+{
+  const merged = mergeSyncStatesConservatively(
+    {
+      lists: {
+        default: {
+          id: 'default',
+          name: 'Основной',
+          freeze: false,
+          queue: [{ id: 'removed001', title: 'Old local', addedAt: 1000 }],
+          currentIndex: 0,
+          revision: 1,
+        },
+      },
+      listOrder: ['default'],
+    },
+    {
+      lists: {
+        default: {
+          id: 'default',
+          name: 'Основной',
+          freeze: false,
+          queue: [],
+          currentIndex: null,
+          revision: 2,
+        },
+      },
+      listOrder: ['default'],
+      queueRemovals: [{
+        id: 'removed001',
+        listId: 'default',
+        removedAt: 5000,
+      }],
+    }
+  );
+  assert.deepStrictEqual(merged.lists.default.queue, []);
+  assert.deepStrictEqual(merged.queueRemovals, [{
+    id: 'removed001',
+    listId: 'default',
+    removedAt: 5000,
+  }]);
+  console.log('playlist sync conflict merge respects compact queue removals');
+}
+
+{
+  const merged = mergeSyncStatesConservatively(
+    {
+      lists: {
+        default: {
+          id: 'default',
+          name: 'Основной',
+          freeze: false,
+          queue: [{ id: 'readd00001', title: 'Re-added local', addedAt: 6000 }],
+          currentIndex: 0,
+          revision: 3,
+        },
+      },
+      listOrder: ['default'],
+      queueRemovals: [{
+        id: 'readd00001',
+        listId: 'default',
+        removedAt: 5000,
+      }],
+    },
+    {
+      lists: {
+        default: {
+          id: 'default',
+          name: 'Основной',
+          freeze: false,
+          queue: [{ id: 'readd00001', title: 'Old remote', addedAt: 1000 }],
+          currentIndex: 0,
+          revision: 1,
+        },
+      },
+      listOrder: ['default'],
+    }
+  );
+  assert.deepStrictEqual(
+    merged.lists.default.queue.map((entry) => `${entry.id}:${entry.addedAt}`),
+    ['readd00001:6000']
+  );
+  console.log('playlist sync merge keeps explicit re-adds newer than removals');
+}
+
+{
   const localDeleted = {
     lists: {
       default: {
@@ -246,6 +372,31 @@ import {
     ['deletedVid1']
   );
   console.log('playlist sync conflict merge respects delete tombstones');
+}
+
+{
+  const queueRemovals = Array.from({ length: 20 }, (_, index) => ({
+    id: `delVid${String(index).padStart(5, '0')}`,
+    listId: 'default',
+    removedAt: 5000 + index,
+  }));
+  const syncState = buildSyncState({
+    lists: {
+      default: {
+        id: 'default',
+        name: 'Основной',
+        freeze: false,
+        queue: [],
+        currentIndex: null,
+        revision: 0,
+      },
+    },
+    listOrder: ['default'],
+    queueRemovals,
+  });
+  assert.strictEqual(syncState.queueRemovals.length, 20);
+  assert.strictEqual(syncState.deletedHistory.length, 0);
+  console.log('playlist sync keeps compact queue removals separate from UI history');
 }
 
 {

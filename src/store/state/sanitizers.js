@@ -4,6 +4,7 @@ import {
   DEFAULT_LIST_ID,
   DEFAULT_LIST_NAME,
   HISTORY_LIMIT,
+  QUEUE_REMOVAL_LOG_LIMIT,
   VIDEO_ID_PATTERN,
   defaultState,
 } from "./constants.js";
@@ -114,6 +115,23 @@ export function sanitizeDeletedHistoryEntry(entry) {
     ...base,
     deletedAt: entry?.deletedAt || Date.now(),
     listId: entry?.listId || null,
+  };
+}
+
+export function sanitizeQueueRemovalEntry(entry) {
+  const id = typeof entry?.id === "string" ? entry.id.trim() : "";
+  if (!id) {
+    throw new TypeError("Queue removal entry must include id");
+  }
+  const listId = typeof entry?.listId === "string" ? entry.listId.trim() : "";
+  const removedAt = Number(entry?.removedAt);
+  if (!Number.isFinite(removedAt) || removedAt <= 0) {
+    throw new TypeError("Queue removal entry must include removedAt");
+  }
+  return {
+    id,
+    listId: listId || null,
+    removedAt: Math.trunc(removedAt),
   };
 }
 
@@ -230,6 +248,18 @@ export function sanitizeState(raw) {
           })
           .filter(Boolean)
           .slice(0, HISTORY_LIMIT)
+      : [],
+    queueRemovals: Array.isArray(raw.queueRemovals)
+      ? raw.queueRemovals
+          .map((item) => {
+            try {
+              return sanitizeQueueRemovalEntry(item);
+            } catch {
+              return null;
+            }
+          })
+          .filter(Boolean)
+          .slice(0, QUEUE_REMOVAL_LOG_LIMIT)
       : [],
     currentTabId:
       typeof raw.currentTabId === "number" &&

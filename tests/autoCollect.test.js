@@ -9,6 +9,40 @@ import { __setCallApi } from '../src/youtube-api/transport.js';
 
 {
   const previousLastRunAt = Date.now() - 86_400_000;
+  const localStore = { channelCache: {} };
+  function readStore(keys) {
+    if (keys == null) return { ...localStore };
+    if (typeof keys === 'string') return { [keys]: localStore[keys] };
+    if (Array.isArray(keys)) {
+      return Object.fromEntries(keys.map((key) => [key, localStore[key]]));
+    }
+    return {};
+  }
+  globalThis.chrome = {
+    runtime: {
+      sendMessage: async () => {},
+    },
+    storage: {
+      local: {
+        get(keys, callback) {
+          const result = readStore(keys);
+          if (typeof callback === 'function') {
+            callback(result);
+            return undefined;
+          }
+          return Promise.resolve(result);
+        },
+        set(payload) {
+          Object.assign(localStore, payload);
+          return Promise.resolve();
+        },
+        remove(keys) {
+          (Array.isArray(keys) ? keys : [keys]).forEach((key) => delete localStore[key]);
+          return Promise.resolve();
+        },
+      },
+    },
+  };
   await replaceState({
     autoCollect: {
       lastRunAt: previousLastRunAt,
@@ -18,19 +52,6 @@ import { __setCallApi } from '../src/youtube-api/transport.js';
       seenIds: [],
     },
   });
-  globalThis.chrome = {
-    runtime: {
-      sendMessage: async () => {},
-    },
-    storage: {
-      local: {
-        get(_keys, callback) {
-          callback({ channelCache: {} });
-        },
-        set() {},
-      },
-    },
-  };
   __setCallApi(async () => {
     throw new Error('subscription fetch failed');
   });

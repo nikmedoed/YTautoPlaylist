@@ -199,6 +199,9 @@ import { __setCallApi } from '../src/youtube-api/transport.js';
   await markVideoWatched('watchVid001', { listId: 'default' });
   const stateAfterWatch = await getState();
   assert.ok(stateAfterWatch.autoCollect.seenIds.includes('watchVid001'));
+  assert.deepStrictEqual(stateAfterWatch.deletedHistory, []);
+  assert.strictEqual(stateAfterWatch.queueRemovals[0].id, 'watchVid001');
+  assert.strictEqual(stateAfterWatch.queueRemovals[0].listId, 'default');
   console.log('watched default videos are persisted in auto-collect dedupe memory');
 }
 
@@ -228,6 +231,8 @@ import { __setCallApi } from '../src/youtube-api/transport.js';
   await removeVideos(['removeVid00'], { listId: 'default' });
   const stateAfterRemoval = await getState();
   assert.ok(stateAfterRemoval.autoCollect.seenIds.includes('removeVid00'));
+  assert.strictEqual(stateAfterRemoval.deletedHistory[0].id, 'removeVid00');
+  assert.strictEqual(stateAfterRemoval.queueRemovals[0].id, 'removeVid00');
   console.log('removed default videos are persisted in auto-collect dedupe memory');
 }
 
@@ -264,6 +269,10 @@ import { __setCallApi } from '../src/youtube-api/transport.js';
     stateAfterMove.lists.target.queue.map((entry) => entry.id),
     ['targetKeep1', 'moveBatch01', 'moveBatch02']
   );
+  assert.deepStrictEqual(
+    stateAfterMove.queueRemovals.map((entry) => `${entry.listId}:${entry.id}`),
+    ['default:moveBatch02', 'default:moveBatch01']
+  );
   console.log('batch queue moves persist several videos in one action');
 }
 
@@ -288,6 +297,10 @@ import { __setCallApi } from '../src/youtube-api/transport.js';
       { id: 'deletedOne1', listId: 'default' },
       { id: 'otherList01', listId: 'listother01' },
     ],
+    queueRemovals: [
+      { id: 'removedOne1', listId: 'default', removedAt: 1234 },
+      { id: 'removedElse', listId: 'listother01', removedAt: 1235 },
+    ],
   });
   assert.deepStrictEqual(
     Array.from(seenIds).sort(),
@@ -296,6 +309,7 @@ import { __setCallApi } from '../src/youtube-api/transport.js';
       'historyOne1',
       'queueVid001',
       'queueVid002',
+      'removedOne1',
       'storedSee01',
       'storedSee02',
     ]

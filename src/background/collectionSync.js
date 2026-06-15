@@ -60,6 +60,14 @@ export function collectAutoCollectSeenIds(
       addEntryIds(seenIds, [entry]);
     }
   }
+  const queueRemovals = Array.isArray(state?.queueRemovals)
+    ? state.queueRemovals
+    : [];
+  for (const entry of queueRemovals) {
+    if (entry?.listId === listId || (!entry?.listId && listId === DEFAULT_LIST)) {
+      addEntryIds(seenIds, [entry]);
+    }
+  }
   return seenIds;
 }
 
