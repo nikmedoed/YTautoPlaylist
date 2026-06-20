@@ -11,6 +11,10 @@ import {
   SETTINGS_SYNC_MANIFEST_STORAGE_KEY,
 } from "../../store/index.js";
 import { parseVideoId } from "../../utils.js";
+import {
+  flushPendingAccountSync,
+  refreshRemoteAccountSync,
+} from "../accountSync.js";
 
 export const optionsHandlers = {
   async "options:openQuickFilter"(message) {
@@ -54,6 +58,10 @@ export const optionsHandlers = {
   },
 
   async "sync:getStatus"(message = {}) {
+    if (message.refreshRemote) {
+      await refreshRemoteAccountSync({ force: true });
+      await flushPendingAccountSync();
+    }
     const [playlist, settings, drive] = await Promise.all([
       getPlaylistSyncStorageStatus(),
       getSettingsSyncStatus(),

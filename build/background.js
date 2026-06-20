@@ -31,6 +31,7 @@ var AUTO_COLLECT_SEEN_IDS_LIMIT = 2e3;
 var QUEUE_REMOVAL_LOG_LIMIT = 2e3;
 var WATCHED_PROGRESS_THRESHOLD = 95;
 var SYNC_DEBOUNCE_MS = 15 * 1e3;
+var SYNC_RETRY_MS = 60 * 1e3;
 var SYNC_CHUNK_TARGET_BYTES = 7600;
 var SETTINGS_SYNC_TOTAL_TARGET_BYTES = 32 * 1024;
 var VIDEO_ID_PATTERN = /^[\w-]{11}$/;
@@ -1196,12 +1197,17 @@ async function recordPushedPlaylistSyncSnapshot(snapshot) {
 }
 async function recordPlaylistSyncError(error) {
   const localMeta = await readLocalSyncMeta();
+  const now = Date.now();
+  const pending = Boolean(localMeta.pending);
+  const flushAfter = pending ? now + SYNC_RETRY_MS : null;
   await writeLocalSyncMeta({
     ...localMeta,
-    pending: Boolean(localMeta.pending),
+    pending,
+    flushAfter,
     lastError: error?.message || String(error),
-    lastErrorAt: Date.now()
+    lastErrorAt: now
   });
+  if (flushAfter) await scheduleSyncAlarm(flushAfter);
 }
 async function getPlaylistSyncStatus() {
   const meta = await readLocalSyncMeta();
@@ -3358,7 +3364,10 @@ async function getPresentationState() {
 }
 
 // src/background/accountSync.js
+var REMOTE_REFRESH_THROTTLE_MS = 30 * 1e3;
 var flushPromise = null;
+var remoteRefreshPromise = null;
+var lastRemoteRefreshAt = 0;
 async function flushPendingAccountSync(options = {}) {
   if (flushPromise) {
     return flushPromise;
@@ -3369,15 +3378,33 @@ async function flushPendingAccountSync(options = {}) {
       flushPendingPlaylistSync({ force: forcePlaylist }),
       flushPendingSettingsSync()
     ]);
+    let drive = null;
     if (playlist?.ready) {
-      await pushLocalDriveSyncNow({ interactive: false });
+      drive = await pushLocalDriveSyncNow({ interactive: false });
     }
-    return { playlist };
+    return { playlist, drive };
   })();
   try {
     return await flushPromise;
   } finally {
     flushPromise = null;
+  }
+}
+async function refreshRemoteAccountSync(options = {}) {
+  const force = Boolean(options.force);
+  const now = Date.now();
+  if (!force && now - lastRemoteRefreshAt < REMOTE_REFRESH_THROTTLE_MS) {
+    return { imported: false, skipped: true, reason: "throttled" };
+  }
+  if (remoteRefreshPromise) {
+    return remoteRefreshPromise;
+  }
+  lastRemoteRefreshAt = now;
+  remoteRefreshPromise = importDriveSync({ interactive: false });
+  try {
+    return await remoteRefreshPromise;
+  } finally {
+    remoteRefreshPromise = null;
   }
 }
 
@@ -5129,6 +5156,10 @@ var optionsHandlers = {
     }
   },
   async "sync:getStatus"(message = {}) {
+    if (message.refreshRemote) {
+      await refreshRemoteAccountSync({ force: true });
+      await flushPendingAccountSync();
+    }
     const [playlist, settings, drive] = await Promise.all([
       getPlaylistSyncStorageStatus(),
       getSettingsSyncStatus(),
@@ -5776,7 +5807,13 @@ var playbackHandlers = {
 
 // src/background/handlers/queue.js
 var queueHandlers = {
-  "playlist:getState": getPresentationState,
+  async "playlist:getState"(message, sender) {
+    await refreshRemoteAccountSync({
+      force: !sender?.tab || Boolean(message?.refreshRemote)
+    });
+    await flushPendingAccountSync();
+    return getPresentationState();
+  },
   async "playlist:setCurrentList"(message) {
     if (!message?.listId) return getPresentationState();
     return mutateAndPresent(() => setCurrentList(message.listId));
@@ -5901,10 +5938,14 @@ var messageHandlers = {
 
 // src/background.js
 configurePlaylistSyncAccess();
-importDriveSync({ interactive: false }).then((result) => {
+refreshRemoteAccountSync({ force: true }).then((result) => {
   if (result?.playlistImported) notifyState();
 }).catch((err) => {
   console.debug("Initial Drive sync check skipped", err);
+}).finally(() => {
+  flushPendingAccountSync().catch((err) => {
+    console.error("Initial account sync flush failed", err);
+  });
 });
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message.type !== "string") {

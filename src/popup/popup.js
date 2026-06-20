@@ -241,7 +241,7 @@ chrome.runtime.onMessage.addListener((message) => {
 });
 
 refreshState();
-popupSyncController.refresh();
+popupSyncController.refresh({ refreshRemote: true });
 
 addActionsController.updateControlCapabilities().catch(() => {});
 
@@ -304,7 +304,7 @@ function renderState(state) {
 async function refreshState() {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const state = await sendMessage("playlist:getState");
+      const state = await sendMessage("playlist:getState", { refreshRemote: true });
       renderState(state || {});
       return;
     } catch (err) {

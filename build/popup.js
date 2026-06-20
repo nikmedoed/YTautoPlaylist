@@ -3138,7 +3138,7 @@ function formatDelta(fromTimestamp, toTimestamp) {
   const label = formatDuration2(diff).replace(" \u043D\u0430\u0437\u0430\u0434", "");
   return label === "\u0441\u0435\u0439\u0447\u0430\u0441" ? "\u043C\u0435\u043D\u044C\u0448\u0435 \u043C\u0438\u043D\u0443\u0442\u044B" : label;
 }
-function createSummary(statusText2, kind, localUpdatedAt, remoteUpdatedAt, { backupCount = 0 } = {}) {
+function createSummary(statusText2, kind, localUpdatedAt, remoteUpdatedAt, { backupCount = 0, metaOverride = "" } = {}) {
   const localAge = formatAge(localUpdatedAt);
   const remoteAge = formatAge(remoteUpdatedAt);
   const hasRemote = Boolean(remoteUpdatedAt);
@@ -3150,9 +3150,13 @@ function createSummary(statusText2, kind, localUpdatedAt, remoteUpdatedAt, { bac
   } else if (hasRemote) {
     meta = `\u041E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u043E ${remoteAge}`;
   }
+  if (metaOverride) {
+    meta = metaOverride;
+  }
   const title = [
     `\u041D\u0430 \u0443\u0441\u0442\u0440\u043E\u0439\u0441\u0442\u0432\u0435: ${formatFullTime(localUpdatedAt)} (${localAge})`,
     `\u0412 \u043E\u0431\u043B\u0430\u043A\u0435: ${formatFullTime(remoteUpdatedAt)} (${remoteAge})`,
+    metaOverride ? `\u041E\u0448\u0438\u0431\u043A\u0430: ${metaOverride}` : "",
     backupCount ? `\u0420\u0435\u0437\u0435\u0440\u0432\u043D\u044B\u0445 \u0432\u0435\u0440\u0441\u0438\u0439: ${backupCount}` : ""
   ].join("\n");
   return { text: statusText2, meta, title, kind };
@@ -3176,8 +3180,10 @@ function describeSyncStatus(status) {
     drive.lastError
   ].filter((error) => !isBenignSyncError(error));
   if (errors.length) {
+    const metaOverride = String(errors[0]).slice(0, 120);
     return createSummary("\u041E\u0448\u0438\u0431\u043A\u0430 \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u0438", "error", localUpdatedAt, remoteUpdatedAt, {
-      backupCount
+      backupCount,
+      metaOverride
     });
   }
   if (!remoteUpdatedAt) {
@@ -3283,7 +3289,10 @@ function createPopupSyncController({
       if (afterLocalChange && (result?.playlistImported || result?.driveImported)) {
         await refreshState2();
       }
-      setStatus2(message(result), "success", 2200);
+      const outcome = message(result);
+      const text = typeof outcome === "object" ? outcome.text : outcome;
+      const kind = typeof outcome === "object" ? outcome.kind || "success" : "success";
+      setStatus2(text, kind, 2200);
     } catch (err) {
       console.error("Popup sync action failed", err);
       await refresh();
@@ -3302,7 +3311,7 @@ function createPopupSyncController({
   pushBtn?.addEventListener("click", () => {
     runAction(
       () => sendMessage2("sync:pushLocal"),
-      (result) => result?.drivePushed || result?.playlistPushed || result?.settingsPushed ? "\u0414\u0430\u043D\u043D\u044B\u0435 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u044B \u0432 \u043E\u0431\u043B\u0430\u043A\u043E" : "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435"
+      (result) => result?.drivePushed || result?.playlistPushed || result?.settingsPushed ? "\u0414\u0430\u043D\u043D\u044B\u0435 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u044B \u0432 \u043E\u0431\u043B\u0430\u043A\u043E" : { text: result?.driveReason || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435", kind: "error" }
     );
   });
   restoreBtn?.addEventListener("click", () => {
@@ -3318,7 +3327,7 @@ function createPopupSyncController({
     }
     runAction(
       () => sendMessage2("sync:restoreCloudVersion", { offset: 1 }),
-      (result) => result?.restored ? "\u041E\u0442\u043A\u0430\u0442 \u0432\u044B\u043F\u043E\u043B\u043D\u0435\u043D" : "\u0420\u0435\u0437\u0435\u0440\u0432\u043D\u0430\u044F \u0432\u0435\u0440\u0441\u0438\u044F \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430",
+      (result) => result?.restored ? "\u041E\u0442\u043A\u0430\u0442 \u0432\u044B\u043F\u043E\u043B\u043D\u0435\u043D" : { text: result?.reason || "\u0420\u0435\u0437\u0435\u0440\u0432\u043D\u0430\u044F \u0432\u0435\u0440\u0441\u0438\u044F \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430", kind: "error" },
       true
     );
   });
@@ -4039,7 +4048,7 @@ chrome.runtime.onMessage.addListener((message) => {
   }
 });
 refreshState();
-popupSyncController.refresh();
+popupSyncController.refresh({ refreshRemote: true });
 addActionsController.updateControlCapabilities().catch(() => {
 });
 function getListName(listId) {
@@ -4093,7 +4102,7 @@ function renderState(state) {
 async function refreshState() {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const state = await sendMessage("playlist:getState");
+      const state = await sendMessage("playlist:getState", { refreshRemote: true });
       renderState(state || {});
       return;
     } catch (err) {

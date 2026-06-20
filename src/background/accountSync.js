@@ -4,10 +4,15 @@
 import {
   flushPendingPlaylistSync,
   flushPendingSettingsSync,
+  importDriveSync,
   pushLocalDriveSyncNow,
 } from "../store/index.js";
 
+const REMOTE_REFRESH_THROTTLE_MS = 30 * 1000;
+
 let flushPromise = null;
+let remoteRefreshPromise = null;
+let lastRemoteRefreshAt = 0;
 
 export async function flushPendingAccountSync(options = {}) {
   if (flushPromise) {
@@ -19,14 +24,33 @@ export async function flushPendingAccountSync(options = {}) {
       flushPendingPlaylistSync({ force: forcePlaylist }),
       flushPendingSettingsSync(),
     ]);
+    let drive = null;
     if (playlist?.ready) {
-      await pushLocalDriveSyncNow({ interactive: false });
+      drive = await pushLocalDriveSyncNow({ interactive: false });
     }
-    return { playlist };
+    return { playlist, drive };
   })();
   try {
     return await flushPromise;
   } finally {
     flushPromise = null;
+  }
+}
+
+export async function refreshRemoteAccountSync(options = {}) {
+  const force = Boolean(options.force);
+  const now = Date.now();
+  if (!force && now - lastRemoteRefreshAt < REMOTE_REFRESH_THROTTLE_MS) {
+    return { imported: false, skipped: true, reason: "throttled" };
+  }
+  if (remoteRefreshPromise) {
+    return remoteRefreshPromise;
+  }
+  lastRemoteRefreshAt = now;
+  remoteRefreshPromise = importDriveSync({ interactive: false });
+  try {
+    return await remoteRefreshPromise;
+  } finally {
+    remoteRefreshPromise = null;
   }
 }

@@ -12,6 +12,10 @@ import {
   setCurrentList,
 } from "../../store/index.js";
 import { parsePlaylistId, parseVideoId } from "../../utils.js";
+import {
+  flushPendingAccountSync,
+  refreshRemoteAccountSync,
+} from "../accountSync.js";
 import { fetchPlaylistVideoIds } from "../collector.js";
 import {
   addEntries,
@@ -24,7 +28,13 @@ import {
 // Queue/list-item message handlers. This table is the Chrome runtime boundary:
 // every key is a message type sent by popup or content scripts.
 export const queueHandlers = {
-  "playlist:getState": getPresentationState,
+  async "playlist:getState"(message, sender) {
+    await refreshRemoteAccountSync({
+      force: !sender?.tab || Boolean(message?.refreshRemote),
+    });
+    await flushPendingAccountSync();
+    return getPresentationState();
+  },
 
   async "playlist:setCurrentList"(message) {
     if (!message?.listId) return getPresentationState();

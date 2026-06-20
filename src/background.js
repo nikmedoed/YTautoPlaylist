@@ -1,24 +1,31 @@
 // Background service worker entrypoint. Routes runtime messages to background handlers and clears playback tab ownership when tabs close.
 import { MESSAGE_SOURCE } from "./background/constants.js";
-import { flushPendingAccountSync } from "./background/accountSync.js";
+import {
+  flushPendingAccountSync,
+  refreshRemoteAccountSync,
+} from "./background/accountSync.js";
 import { messageHandlers } from "./background/messages.js";
 import { notifyState } from "./background/channel.js";
 import {
   clearCurrentTab,
   configurePlaylistSyncAccess,
-  importDriveSync,
   importRemoteSettingsSync,
   isSettingsSyncStorageChange,
   SYNC_ALARM_NAME,
 } from "./store/index.js";
 
 configurePlaylistSyncAccess();
-importDriveSync({ interactive: false })
+refreshRemoteAccountSync({ force: true })
   .then((result) => {
     if (result?.playlistImported) notifyState();
   })
   .catch((err) => {
     console.debug("Initial Drive sync check skipped", err);
+  })
+  .finally(() => {
+    flushPendingAccountSync().catch((err) => {
+      console.error("Initial account sync flush failed", err);
+    });
   });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

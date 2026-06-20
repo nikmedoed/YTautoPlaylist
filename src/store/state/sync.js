@@ -4,6 +4,7 @@ import {
   SYNC_ALARM_NAME,
   SYNC_DEBOUNCE_MS,
   SYNC_LOCAL_META_STORAGE_KEY,
+  SYNC_RETRY_MS,
 } from "./constants.js";
 import { sanitizeState } from "./sanitizers.js";
 import {
@@ -160,12 +161,17 @@ export async function recordPushedPlaylistSyncSnapshot(snapshot) {
 
 export async function recordPlaylistSyncError(error) {
   const localMeta = await readLocalSyncMeta();
+  const now = Date.now();
+  const pending = Boolean(localMeta.pending);
+  const flushAfter = pending ? now + SYNC_RETRY_MS : null;
   await writeLocalSyncMeta({
     ...localMeta,
-    pending: Boolean(localMeta.pending),
+    pending,
+    flushAfter,
     lastError: error?.message || String(error),
-    lastErrorAt: Date.now(),
+    lastErrorAt: now,
   });
+  if (flushAfter) await scheduleSyncAlarm(flushAfter);
 }
 
 export async function getPlaylistSyncStatus() {

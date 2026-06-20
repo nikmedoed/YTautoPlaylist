@@ -7,6 +7,7 @@ import {
   getState,
   importPlaylistSyncSnapshot,
   pushLocalPlaylistSyncNow,
+  recordPlaylistSyncError,
   recordImportedPlaylistSyncSnapshot,
   setCurrentVideo,
   SYNC_LOCAL_META_STORAGE_KEY,
@@ -77,6 +78,23 @@ function installChromeStorageMock() {
     assert.deepStrictEqual(Object.keys(chromeMock.stores.sync), []);
     assert.strictEqual(chromeMock.alarms.length, 1);
     console.log('playlist changes mark Drive sync pending without storage.sync writes');
+  } finally {
+    chromeMock.restore();
+  }
+}
+
+{
+  const chromeMock = installChromeStorageMock();
+  try {
+    await addVideos([{ id: 'retryPush01', addedAt: 1 }], 'default');
+    const ready = await pushLocalPlaylistSyncNow();
+    assert.strictEqual(ready.pushed, true);
+    await recordPlaylistSyncError(new Error('Drive unavailable'));
+    const meta = chromeMock.stores.local[SYNC_LOCAL_META_STORAGE_KEY];
+    assert.strictEqual(meta.pending, true);
+    assert.ok(meta.flushAfter > Date.now());
+    assert.strictEqual(chromeMock.alarms.length >= 2, true);
+    console.log('failed Drive pushes keep pending state scheduled for retry');
   } finally {
     chromeMock.restore();
   }

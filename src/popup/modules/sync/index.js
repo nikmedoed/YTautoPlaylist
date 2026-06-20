@@ -62,7 +62,7 @@ function createSummary(
   kind,
   localUpdatedAt,
   remoteUpdatedAt,
-  { backupCount = 0 } = {}
+  { backupCount = 0, metaOverride = "" } = {}
 ) {
   const localAge = formatAge(localUpdatedAt);
   const remoteAge = formatAge(remoteUpdatedAt);
@@ -75,9 +75,13 @@ function createSummary(
   } else if (hasRemote) {
     meta = `Обновлено ${remoteAge}`;
   }
+  if (metaOverride) {
+    meta = metaOverride;
+  }
   const title = [
     `На устройстве: ${formatFullTime(localUpdatedAt)} (${localAge})`,
     `В облаке: ${formatFullTime(remoteUpdatedAt)} (${remoteAge})`,
+    metaOverride ? `Ошибка: ${metaOverride}` : "",
     backupCount ? `Резервных версий: ${backupCount}` : "",
   ].join("\n");
   return { text: statusText, meta, title, kind };
@@ -102,8 +106,10 @@ function describeSyncStatus(status) {
     drive.lastError,
   ].filter((error) => !isBenignSyncError(error));
   if (errors.length) {
+    const metaOverride = String(errors[0]).slice(0, 120);
     return createSummary("Ошибка синхронизации", "error", localUpdatedAt, remoteUpdatedAt, {
       backupCount,
+      metaOverride,
     });
   }
   if (!remoteUpdatedAt) {
@@ -215,7 +221,10 @@ export function createPopupSyncController({
       if (afterLocalChange && (result?.playlistImported || result?.driveImported)) {
         await refreshState();
       }
-      setStatus(message(result), "success", 2200);
+      const outcome = message(result);
+      const text = typeof outcome === "object" ? outcome.text : outcome;
+      const kind = typeof outcome === "object" ? outcome.kind || "success" : "success";
+      setStatus(text, kind, 2200);
     } catch (err) {
       console.error("Popup sync action failed", err);
       await refresh();
@@ -242,7 +251,7 @@ export function createPopupSyncController({
       (result) =>
         result?.drivePushed || result?.playlistPushed || result?.settingsPushed
           ? "Данные отправлены в облако"
-          : "Не удалось отправить данные"
+          : { text: result?.driveReason || "Не удалось отправить данные", kind: "error" }
     );
   });
 
@@ -262,7 +271,7 @@ export function createPopupSyncController({
       (result) =>
         result?.restored
           ? "Откат выполнен"
-          : "Резервная версия не найдена",
+          : { text: result?.reason || "Резервная версия не найдена", kind: "error" },
       true
     );
   });
