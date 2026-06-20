@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>YT Auto Playlist — Списки</title>
     <link rel="stylesheet" href="styles/base.css" />
+    <link rel="stylesheet" href="styles/sync.css" />
     <link rel="stylesheet" href="styles/video-item.css" />
     <link rel="stylesheet" href="styles/status.css" />
     <link rel="stylesheet" href="styles/collection.css" />
@@ -26,6 +27,40 @@
           </button>
         </div>
       </header>
+      <section class="popup-sync manager-sync" aria-label="Синхронизация">
+        <span id="managerSyncState" class="popup-sync__state">Синхронизация...</span>
+        <span id="managerSyncMeta" class="popup-sync__meta"></span>
+        <div class="popup-sync__actions" role="group" aria-label="Действия синхронизации">
+          <button
+            id="managerSyncPull"
+            class="icon-button popup-sync__button"
+            type="button"
+            title="Слить с облаком"
+            aria-label="Слить с облаком"
+          >
+            <span aria-hidden="true">⇣</span>
+          </button>
+          <button
+            id="managerSyncPush"
+            class="icon-button popup-sync__button"
+            type="button"
+            title="Отправить в облако"
+            aria-label="Отправить в облако"
+          >
+            <span aria-hidden="true">⇡</span>
+          </button>
+          <button
+            id="managerSyncRestore"
+            class="icon-button popup-sync__button"
+            type="button"
+            title="Откатить облако на предыдущую версию"
+            aria-label="Откатить облако на предыдущую версию"
+            disabled
+          >
+            <span aria-hidden="true">↶</span>
+          </button>
+        </div>
+      </section>
       <section id="status" hidden>
         <span id="statusText"></span>
         <div id="statusProgress" class="status-progress" hidden>

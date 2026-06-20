@@ -99,7 +99,7 @@ export const queueHandlers = {
     }
     return mutateAndPresent(
       () => postponeVideo(videoId, { listId: message.listId || null }),
-      { notify: true }
+      { notify: true, sync: "immediate" }
     );
   },
 
@@ -111,6 +111,7 @@ export const queueHandlers = {
     return mutateAndPresent(() => restoreDeletedEntry(position), {
       dispatch: true,
       ensureDefault: true,
+      sync: "immediate",
     });
   },
 
@@ -127,8 +128,10 @@ export const queueHandlers = {
     if (!message?.videoId) {
       return getPresentationState();
     }
-    return mutateAndPresent(() =>
-      reorderQueue(message.videoId, message.targetIndex, message.listId || null)
+    return mutateAndPresent(
+      () =>
+        reorderQueue(message.videoId, message.targetIndex, message.listId || null),
+      { sync: "immediate" }
     );
   },
 
@@ -138,7 +141,7 @@ export const queueHandlers = {
     }
     return mutateAndPresent(
       () => moveVideoToList(message.videoId, message.targetListId),
-      { dispatch: true, ensureDefault: true }
+      { dispatch: true, ensureDefault: true, sync: "immediate" }
     );
   },
 
@@ -152,7 +155,7 @@ export const queueHandlers = {
     }
     return mutateAndPresent(
       () => moveAllVideos(message.sourceListId, message.targetListId),
-      { dispatch: true, ensureDefault: true }
+      { dispatch: true, ensureDefault: true, sync: "immediate" }
     );
   },
 };

@@ -8,6 +8,7 @@ import {
   importPlaylistSyncSnapshot,
   pushLocalPlaylistSyncNow,
   recordImportedPlaylistSyncSnapshot,
+  setCurrentVideo,
   SYNC_LOCAL_META_STORAGE_KEY,
 } from '../src/store/index.js';
 
@@ -108,6 +109,111 @@ function installChromeStorageMock() {
     assert.strictEqual(meta.remoteHash, snapshot.hash);
     assert.strictEqual(chromeMock.alarms.length, 0);
     console.log('drive playlist imports without local conflicts become synced baseline');
+  } finally {
+    chromeMock.restore();
+  }
+}
+
+{
+  const chromeMock = installChromeStorageMock();
+  try {
+    const staleSnapshot = buildSyncSnapshot({
+      lists: {
+        default: {
+          id: 'default',
+          name: 'Основной',
+          freeze: false,
+          queue: [{ id: 'raceLocal1', addedAt: 1000 }],
+          currentIndex: 0,
+          revision: 1,
+        },
+      },
+      listOrder: ['default'],
+      currentListId: 'default',
+      currentVideoId: null,
+    }, { updatedAt: 1000 });
+    await importPlaylistSyncSnapshot({
+      state: staleSnapshot.state,
+      hash: staleSnapshot.hash,
+      updatedAt: staleSnapshot.manifest.updatedAt,
+    }, { force: true });
+    await setCurrentVideo('raceLocal1', 'default');
+    const remoteSnapshot = buildSyncSnapshot({
+      lists: {
+        default: {
+          id: 'default',
+          name: 'Основной',
+          freeze: false,
+          queue: [{ id: 'raceRemote', addedAt: 2000 }],
+          currentIndex: 0,
+          revision: 2,
+        },
+      },
+      listOrder: ['default'],
+    }, { updatedAt: 2000 });
+    const imported = await importPlaylistSyncSnapshot({
+      state: remoteSnapshot.state,
+      hash: remoteSnapshot.hash,
+      updatedAt: remoteSnapshot.manifest.updatedAt,
+    });
+    const state = await getState();
+    assert.strictEqual(imported.imported, true);
+    assert.deepStrictEqual(
+      state.lists.default.queue.map((entry) => entry.id),
+      ['raceRemote']
+    );
+    console.log('fresh startup runtime pending does not block newer Drive import');
+  } finally {
+    chromeMock.restore();
+  }
+}
+
+{
+  const chromeMock = installChromeStorageMock();
+  try {
+    const staleSnapshot = buildSyncSnapshot({
+      lists: {
+        default: {
+          id: 'default',
+          name: 'Основной',
+          freeze: false,
+          queue: [{ id: 'staleLocal1', addedAt: 1000 }],
+          currentIndex: 0,
+          revision: 1,
+        },
+      },
+      listOrder: ['default'],
+    }, { updatedAt: 1000 });
+    await importPlaylistSyncSnapshot({
+      state: staleSnapshot.state,
+      hash: staleSnapshot.hash,
+      updatedAt: staleSnapshot.manifest.updatedAt,
+    }, { force: true });
+    const remoteSnapshot = buildSyncSnapshot({
+      lists: {
+        default: {
+          id: 'default',
+          name: 'Основной',
+          freeze: false,
+          queue: [{ id: 'remoteFresh', addedAt: 2000 }],
+          currentIndex: 0,
+          revision: 2,
+        },
+      },
+      listOrder: ['default'],
+    }, { updatedAt: 2000 });
+    const imported = await importPlaylistSyncSnapshot({
+      state: remoteSnapshot.state,
+      hash: remoteSnapshot.hash,
+      updatedAt: remoteSnapshot.manifest.updatedAt,
+    });
+    const state = await getState();
+    assert.strictEqual(imported.imported, true);
+    assert.deepStrictEqual(
+      state.lists.default.queue.map((entry) => entry.id),
+      ['remoteFresh']
+    );
+    console.log('newer Drive imports replace stale local queues instead of merging them');
   } finally {
     chromeMock.restore();
   }

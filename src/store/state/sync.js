@@ -174,11 +174,15 @@ export async function getPlaylistSyncStatus() {
     localDeviceId: meta.deviceId || null,
     localUpdatedAt: normalizeSyncTimestamp(meta.localUpdatedAt),
     localHash: meta.localHash || null,
+    syncedUpdatedAt: normalizeSyncTimestamp(meta.syncedUpdatedAt),
+    syncedHash: meta.syncedHash || null,
     remoteUpdatedAt: normalizeSyncTimestamp(meta.remoteUpdatedAt),
     remoteHash: meta.remoteHash || null,
     remoteDeviceId: meta.remoteDeviceId || null,
     remoteChunkCount: 0,
     pending: Boolean(meta.pending),
+    pendingSince: normalizeSyncTimestamp(meta.pendingSince),
+    flushAfter: normalizeSyncTimestamp(meta.flushAfter),
     lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
     lastError: meta.lastError || null,
     remoteAvailable: Boolean(meta.remoteUpdatedAt),
@@ -213,17 +217,18 @@ export async function schedulePlaylistSync(stateInput, { immediate = false } = {
   await scheduleSyncAlarm(dueAt);
 }
 
-export async function writePendingPlaylistSync(stateInput = null) {
+export async function writePendingPlaylistSync(stateInput = null, options = {}) {
   if (!hasChromeLocalStorage()) {
     return { wrote: false, reason: "storage-unavailable" };
   }
+  const force = Boolean(options.force);
   const localMeta = await readLocalSyncMeta();
   if (!localMeta.pending) {
     return { wrote: false, reason: "not-pending" };
   }
   const now = Date.now();
   const flushAfter = normalizeSyncTimestamp(localMeta.flushAfter);
-  if (flushAfter && flushAfter > now) {
+  if (!force && flushAfter && flushAfter > now) {
     await scheduleSyncAlarm(flushAfter);
     return { wrote: false, reason: "debounced" };
   }

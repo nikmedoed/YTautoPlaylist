@@ -1,16 +1,14 @@
 // Background service worker entrypoint. Routes runtime messages to background handlers and clears playback tab ownership when tabs close.
 import { MESSAGE_SOURCE } from "./background/constants.js";
+import { flushPendingAccountSync } from "./background/accountSync.js";
 import { messageHandlers } from "./background/messages.js";
 import { notifyState } from "./background/channel.js";
 import {
   clearCurrentTab,
   configurePlaylistSyncAccess,
-  flushPendingPlaylistSync,
-  flushPendingSettingsSync,
   importDriveSync,
   importRemoteSettingsSync,
   isSettingsSyncStorageChange,
-  pushLocalDriveSyncNow,
   SYNC_ALARM_NAME,
 } from "./store/index.js";
 
@@ -48,16 +46,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   clearCurrentTab(tabId).then(() => notifyState());
 });
-
-async function flushPendingAccountSync() {
-  const [playlist] = await Promise.all([
-    flushPendingPlaylistSync(),
-    flushPendingSettingsSync(),
-  ]);
-  if (playlist?.ready) {
-    await pushLocalDriveSyncNow({ interactive: false });
-  }
-}
 
 if (chrome.alarms?.onAlarm) {
   chrome.alarms.onAlarm.addListener((alarm) => {

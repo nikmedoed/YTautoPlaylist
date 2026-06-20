@@ -26,6 +26,7 @@ import {
   writePendingPlaylistSync,
 } from "./sync.js";
 import { normalizeSyncTimestamp } from "./syncSnapshot.js";
+import { resolvePlaylistImportDecision } from "./syncImportDecision.js";
 import { deepClone } from "../../utils.js";
 
 let memoryState = null;
@@ -356,32 +357,29 @@ export async function importPlaylistSyncSnapshot(
       typeof snapshot.hash === "string" && snapshot.hash
         ? snapshot.hash
         : getSyncStateFingerprint(snapshot.state);
-    const localUpdatedAt = Number(status.localUpdatedAt) || 0;
     const localHasUserData = hasSyncableUserData(localRaw);
-    const remoteChanged =
-      remoteHash &&
-      remoteHash !== status.remoteHash &&
-      remoteHash !== status.localHash;
-    const shouldMergeChangedRemote =
-      mergePending && localHasUserData && remoteChanged;
-    const shouldImport =
-      force ||
-      !localHasUserData ||
-      shouldMergeChangedRemote ||
-      (!status.pending && remoteUpdatedAt > localUpdatedAt);
+    const decision = resolvePlaylistImportDecision({
+      force,
+      localHasUserData,
+      mergePending,
+      remoteHash,
+      remoteUpdatedAt,
+      status,
+    });
+    const shouldImport = decision.shouldImport;
     if (!shouldImport) {
       return {
         imported: false,
         reason: status.pending ? "local-pending" : "local-newer",
       };
     }
-    const nextState = force || !localHasUserData
+    const nextState = decision.shouldReplace
       ? mergeRemoteSyncState(localRaw, snapshot.state)
       : mergeSyncStatesConservatively(localRaw, snapshot.state);
     await persistState(nextState, { scheduleSync: false });
     await recordImportedPlaylistSyncSnapshot(snapshot, nextState, {
       force,
-      pending: shouldMergeChangedRemote,
+      pending: decision.shouldMerge,
     });
     return { imported: true, state: sanitizeState(nextState) };
   });
@@ -391,9 +389,9 @@ export async function getPlaylistSyncStorageStatus() {
   return getPlaylistSyncStatus();
 }
 
-export async function flushPendingPlaylistSync() {
+export async function flushPendingPlaylistSync(options = {}) {
   return enqueueStateWrite(async () => {
     const localRaw = await loadRawState({ checkRemoteSync: false });
-    return writePendingPlaylistSync(localRaw);
+    return writePendingPlaylistSync(localRaw, options);
   });
 }

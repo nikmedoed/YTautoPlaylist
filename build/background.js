@@ -20,6 +20,7 @@ var SETTINGS_SYNC_MANIFEST_STORAGE_KEY = "runtimeSettingsSyncManifest";
 var SETTINGS_SYNC_CHUNK_STORAGE_PREFIX = "runtimeSettingsSyncChunk:";
 var DRIVE_SYNC_LOCAL_META_STORAGE_KEY = "runtimeDriveSyncLocal";
 var DRIVE_SYNC_FILE_NAME = "ytautoplaylist-sync.json";
+var DRIVE_PLAYLIST_BACKUP_LIMIT = 3;
 var SYNC_ALARM_NAME = "runtimePlaylistSyncFlush";
 var LIST_CONTENT_PREFIX = "runtimePlaylistList:";
 var HISTORY_LIMIT = 10;
@@ -1208,11 +1209,15 @@ async function getPlaylistSyncStatus() {
     localDeviceId: meta.deviceId || null,
     localUpdatedAt: normalizeSyncTimestamp(meta.localUpdatedAt),
     localHash: meta.localHash || null,
+    syncedUpdatedAt: normalizeSyncTimestamp(meta.syncedUpdatedAt),
+    syncedHash: meta.syncedHash || null,
     remoteUpdatedAt: normalizeSyncTimestamp(meta.remoteUpdatedAt),
     remoteHash: meta.remoteHash || null,
     remoteDeviceId: meta.remoteDeviceId || null,
     remoteChunkCount: 0,
     pending: Boolean(meta.pending),
+    pendingSince: normalizeSyncTimestamp(meta.pendingSince),
+    flushAfter: normalizeSyncTimestamp(meta.flushAfter),
     lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
     lastError: meta.lastError || null,
     remoteAvailable: Boolean(meta.remoteUpdatedAt),
@@ -1243,17 +1248,18 @@ async function schedulePlaylistSync(stateInput, { immediate = false } = {}) {
   });
   await scheduleSyncAlarm(dueAt);
 }
-async function writePendingPlaylistSync(stateInput = null) {
+async function writePendingPlaylistSync(stateInput = null, options = {}) {
   if (!hasChromeLocalStorage()) {
     return { wrote: false, reason: "storage-unavailable" };
   }
+  const force = Boolean(options.force);
   const localMeta = await readLocalSyncMeta();
   if (!localMeta.pending) {
     return { wrote: false, reason: "not-pending" };
   }
   const now = Date.now();
   const flushAfter = normalizeSyncTimestamp(localMeta.flushAfter);
-  if (flushAfter && flushAfter > now) {
+  if (!force && flushAfter && flushAfter > now) {
     await scheduleSyncAlarm(flushAfter);
     return { wrote: false, reason: "debounced" };
   }
@@ -1268,6 +1274,33 @@ async function writePendingPlaylistSync(stateInput = null) {
     wrote: false,
     ready: true,
     reason: "drive-pending"
+  };
+}
+
+// src/store/state/syncImportDecision.js
+var STARTUP_PENDING_GRACE_MS = 2 * 60 * 1e3;
+function resolvePlaylistImportDecision({
+  force = false,
+  localHasUserData = false,
+  mergePending = false,
+  remoteHash = "",
+  remoteUpdatedAt = 0,
+  status = {},
+  now = Date.now()
+} = {}) {
+  const localUpdatedAt = Number(status.localUpdatedAt) || 0;
+  const syncedUpdatedAt = Number(status.syncedUpdatedAt) || 0;
+  const pendingSince = Number(status.pendingSince) || 0;
+  const remoteChanged = remoteHash && remoteHash !== status.remoteHash && remoteHash !== status.localHash;
+  const freshPendingOnStaleBase = Boolean(
+    status.pending && pendingSince && now - pendingSince < STARTUP_PENDING_GRACE_MS && remoteUpdatedAt > syncedUpdatedAt
+  );
+  const shouldMerge = mergePending && status.pending && !freshPendingOnStaleBase && localHasUserData && remoteChanged;
+  const remoteIsNewerBaseline = !status.pending && remoteUpdatedAt > localUpdatedAt || freshPendingOnStaleBase;
+  return {
+    shouldImport: force || !localHasUserData || shouldMerge || remoteIsNewerBaseline,
+    shouldMerge,
+    shouldReplace: force || !localHasUserData || !shouldMerge && remoteIsNewerBaseline
   };
 }
 
@@ -1500,22 +1533,27 @@ async function importPlaylistSyncSnapshot(snapshot, { force = false, mergePendin
     const status = await getPlaylistSyncStatus();
     const remoteUpdatedAt = Number(snapshot.updatedAt) || 0;
     const remoteHash = typeof snapshot.hash === "string" && snapshot.hash ? snapshot.hash : getSyncStateFingerprint(snapshot.state);
-    const localUpdatedAt = Number(status.localUpdatedAt) || 0;
     const localHasUserData = hasSyncableUserData(localRaw);
-    const remoteChanged = remoteHash && remoteHash !== status.remoteHash && remoteHash !== status.localHash;
-    const shouldMergeChangedRemote = mergePending && localHasUserData && remoteChanged;
-    const shouldImport = force || !localHasUserData || shouldMergeChangedRemote || !status.pending && remoteUpdatedAt > localUpdatedAt;
+    const decision = resolvePlaylistImportDecision({
+      force,
+      localHasUserData,
+      mergePending,
+      remoteHash,
+      remoteUpdatedAt,
+      status
+    });
+    const shouldImport = decision.shouldImport;
     if (!shouldImport) {
       return {
         imported: false,
         reason: status.pending ? "local-pending" : "local-newer"
       };
     }
-    const nextState = force || !localHasUserData ? mergeRemoteSyncState(localRaw, snapshot.state) : mergeSyncStatesConservatively(localRaw, snapshot.state);
+    const nextState = decision.shouldReplace ? mergeRemoteSyncState(localRaw, snapshot.state) : mergeSyncStatesConservatively(localRaw, snapshot.state);
     await persistState(nextState, { scheduleSync: false });
     await recordImportedPlaylistSyncSnapshot(snapshot, nextState, {
       force,
-      pending: shouldMergeChangedRemote
+      pending: decision.shouldMerge
     });
     return { imported: true, state: sanitizeState(nextState) };
   });
@@ -1523,17 +1561,76 @@ async function importPlaylistSyncSnapshot(snapshot, { force = false, mergePendin
 async function getPlaylistSyncStorageStatus() {
   return getPlaylistSyncStatus();
 }
-async function flushPendingPlaylistSync() {
+async function flushPendingPlaylistSync(options = {}) {
   return enqueueStateWrite(async () => {
     const localRaw = await loadRawState({ checkRemoteSync: false });
-    return writePendingPlaylistSync(localRaw);
+    return writePendingPlaylistSync(localRaw, options);
   });
+}
+
+// src/store/state/driveSyncPayload.js
+var DRIVE_SYNC_VERSION = 1;
+function encodePlaylistSnapshot(snapshot) {
+  if (!snapshot) return null;
+  return {
+    manifest: snapshot.manifest,
+    state: snapshot.state
+  };
+}
+function encodePlaylistSnapshots(snapshots = []) {
+  return snapshots.slice(0, DRIVE_PLAYLIST_BACKUP_LIMIT).map((snapshot) => encodePlaylistSnapshot(snapshot)).filter(Boolean);
+}
+function parseDrivePlaylistSnapshot(raw) {
+  if (!raw || typeof raw !== "object" || !raw.state) return null;
+  const state = buildSyncState(raw.state);
+  const hash = getSyncStateFingerprint2(state);
+  const manifest = raw.manifest && typeof raw.manifest === "object" ? raw.manifest : {};
+  if (typeof manifest.hash === "string" && manifest.hash && manifest.hash !== hash) {
+    return null;
+  }
+  return {
+    manifest: { ...manifest, hash },
+    state,
+    updatedAt: normalizeSyncTimestamp(manifest.updatedAt),
+    hash
+  };
+}
+function parseDrivePayload(raw) {
+  if (!raw || typeof raw !== "object" || raw.version !== DRIVE_SYNC_VERSION) {
+    return null;
+  }
+  const playlist = parseDrivePlaylistSnapshot(raw.playlist);
+  if (!playlist) return null;
+  const playlistBackups = Array.isArray(raw.playlistBackups) ? raw.playlistBackups.map((item) => parseDrivePlaylistSnapshot(item)).filter(Boolean).slice(0, DRIVE_PLAYLIST_BACKUP_LIMIT) : [];
+  const updatedAt = normalizeSyncTimestamp(raw.updatedAt) || normalizeSyncTimestamp(playlist.updatedAt);
+  return {
+    updatedAt,
+    deviceId: typeof raw.deviceId === "string" ? raw.deviceId : null,
+    playlist,
+    playlistBackups
+  };
+}
+function buildPlaylistBackups(remotePayload, nextPlaylistHash) {
+  const candidates = [
+    remotePayload?.playlist,
+    ...Array.isArray(remotePayload?.playlistBackups) ? remotePayload.playlistBackups : []
+  ].filter(Boolean);
+  const seenHashes = /* @__PURE__ */ new Set();
+  const backups = [];
+  candidates.forEach((snapshot) => {
+    const hash = typeof snapshot?.hash === "string" ? snapshot.hash : "";
+    if (!hash || hash === nextPlaylistHash || seenHashes.has(hash)) {
+      return;
+    }
+    seenHashes.add(hash);
+    backups.push(snapshot);
+  });
+  return backups.slice(0, DRIVE_PLAYLIST_BACKUP_LIMIT);
 }
 
 // src/store/state/driveSync.js
 var DRIVE_API = "https://www.googleapis.com/drive/v3";
 var DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3";
-var DRIVE_SYNC_VERSION = 1;
 function formatDriveError(status, text) {
   try {
     const parsed = JSON.parse(text);
@@ -1604,41 +1701,6 @@ async function driveFetch(url, init = {}, { interactive = false } = {}) {
   }
   return response;
 }
-function encodePlaylistSnapshot(snapshot) {
-  if (!snapshot) return null;
-  return {
-    manifest: snapshot.manifest,
-    state: snapshot.state
-  };
-}
-function parseDrivePlaylistSnapshot(raw) {
-  if (!raw || typeof raw !== "object" || !raw.state) return null;
-  const state = buildSyncState(raw.state);
-  const hash = getSyncStateFingerprint2(state);
-  const manifest = raw.manifest && typeof raw.manifest === "object" ? raw.manifest : {};
-  if (typeof manifest.hash === "string" && manifest.hash && manifest.hash !== hash) {
-    return null;
-  }
-  return {
-    manifest: { ...manifest, hash },
-    state,
-    updatedAt: normalizeSyncTimestamp(manifest.updatedAt),
-    hash
-  };
-}
-function parseDrivePayload(raw) {
-  if (!raw || typeof raw !== "object" || raw.version !== DRIVE_SYNC_VERSION) {
-    return null;
-  }
-  const playlist = parseDrivePlaylistSnapshot(raw.playlist);
-  if (!playlist) return null;
-  const updatedAt = normalizeSyncTimestamp(raw.updatedAt) || normalizeSyncTimestamp(playlist.updatedAt);
-  return {
-    updatedAt,
-    deviceId: typeof raw.deviceId === "string" ? raw.deviceId : null,
-    playlist
-  };
-}
 async function findDriveFile({ interactive = false } = {}) {
   const params = new URLSearchParams({
     spaces: "appDataFolder",
@@ -1708,7 +1770,10 @@ async function pushLocalDriveSyncNow({ interactive = true } = {}) {
       version: DRIVE_SYNC_VERSION,
       updatedAt: playlist.manifest.updatedAt,
       deviceId,
-      playlist: encodePlaylistSnapshot(playlist)
+      playlist: encodePlaylistSnapshot(playlist),
+      playlistBackups: encodePlaylistSnapshots(
+        buildPlaylistBackups(remote.payload, playlist.hash)
+      )
     };
     const file = await writeDrivePayload(payload, {
       interactive,
@@ -1723,6 +1788,7 @@ async function pushLocalDriveSyncNow({ interactive = true } = {}) {
       remoteUpdatedAt: payload.updatedAt,
       remoteDeviceId: deviceId,
       remoteAvailable: true,
+      playlistBackupCount: payload.playlistBackups.length,
       lastWriteAt: now,
       lastReadAt: now,
       lastError: null
@@ -1748,6 +1814,7 @@ async function importDriveSync({ force = false, interactive = true } = {}) {
       remoteUpdatedAt: payload.updatedAt,
       remoteDeviceId: payload.deviceId,
       remoteAvailable: true,
+      playlistBackupCount: payload.playlistBackups?.length || 0,
       lastReadAt: Date.now(),
       lastError: null
     });
@@ -1755,11 +1822,85 @@ async function importDriveSync({ force = false, interactive = true } = {}) {
       imported: Boolean(playlist.imported),
       playlistImported: Boolean(playlist.imported),
       settingsImported: false,
-      updatedAt: payload.updatedAt
+      updatedAt: payload.updatedAt,
+      playlistBackupCount: payload.playlistBackups?.length || 0
     };
   } catch (err) {
     await writeLocalMeta({ ...meta, deviceId, lastError: err.message });
     return { imported: false, reason: err.message };
+  }
+}
+async function restoreDrivePlaylistBackup({
+  offset = 1,
+  interactive = true
+} = {}) {
+  const meta = await readLocalMeta();
+  const deviceId = await ensureDeviceId(meta);
+  try {
+    const remote = await readDrivePayload({ interactive });
+    const payload = remote.payload;
+    const backups = Array.isArray(payload?.playlistBackups) ? payload.playlistBackups : [];
+    const index = Math.max(0, Math.trunc(Number(offset) || 1) - 1);
+    const target = backups[index] || null;
+    if (!payload?.playlist || !target) {
+      return { restored: false, reason: "no-playlist-backup" };
+    }
+    const restored = buildSyncSnapshot(target.state, {
+      deviceId,
+      updatedAt: Date.now()
+    });
+    const remainingBackups = backups.filter((_, itemIndex) => itemIndex !== index);
+    const nextPayload = {
+      version: DRIVE_SYNC_VERSION,
+      updatedAt: restored.manifest.updatedAt,
+      deviceId,
+      playlist: encodePlaylistSnapshot(restored),
+      playlistBackups: encodePlaylistSnapshots(
+        buildPlaylistBackups(
+          {
+            playlist: payload.playlist,
+            playlistBackups: remainingBackups
+          },
+          restored.hash
+        )
+      )
+    };
+    const file = await writeDrivePayload(nextPayload, {
+      interactive,
+      existing: remote.file
+    });
+    await importPlaylistSyncSnapshot(
+      {
+        state: restored.state,
+        hash: restored.hash,
+        updatedAt: restored.manifest.updatedAt,
+        manifest: restored.manifest
+      },
+      { force: true }
+    );
+    const now = Date.now();
+    await writeLocalMeta({
+      ...meta,
+      deviceId,
+      fileId: file.id,
+      remoteUpdatedAt: nextPayload.updatedAt,
+      remoteDeviceId: deviceId,
+      remoteAvailable: true,
+      playlistBackupCount: nextPayload.playlistBackups.length,
+      lastWriteAt: now,
+      lastReadAt: now,
+      lastError: null
+    });
+    return {
+      restored: true,
+      updatedAt: nextPayload.updatedAt,
+      backupOffset: index + 1,
+      playlistBackupCount: nextPayload.playlistBackups.length
+    };
+  } catch (err) {
+    await recordPlaylistSyncError(err);
+    await writeLocalMeta({ ...meta, deviceId, lastError: err.message });
+    return { restored: false, reason: err.message };
   }
 }
 async function getDriveSyncStatus({ refreshRemote = false } = {}) {
@@ -1769,6 +1910,7 @@ async function getDriveSyncStatus({ refreshRemote = false } = {}) {
       remoteAvailable: Boolean(meta.remoteAvailable || meta.remoteUpdatedAt),
       remoteUpdatedAt: normalizeSyncTimestamp(meta.remoteUpdatedAt),
       remoteDeviceId: meta.remoteDeviceId || null,
+      playlistBackupCount: Number(meta.playlistBackupCount) || 0,
       lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
       lastReadAt: normalizeSyncTimestamp(meta.lastReadAt),
       lastError: meta.lastError || null
@@ -1783,6 +1925,7 @@ async function getDriveSyncStatus({ refreshRemote = false } = {}) {
       remoteAvailable: Boolean(payload),
       remoteUpdatedAt: normalizeSyncTimestamp(payload?.updatedAt),
       remoteDeviceId: payload?.deviceId || meta.remoteDeviceId || null,
+      playlistBackupCount: payload?.playlistBackups?.length || 0,
       lastReadAt: now,
       lastError: null
     });
@@ -1792,6 +1935,12 @@ async function getDriveSyncStatus({ refreshRemote = false } = {}) {
       playlistRemoteUpdatedAt: normalizeSyncTimestamp(payload?.playlist?.updatedAt),
       settingsRemoteUpdatedAt: 0,
       remoteDeviceId: payload?.deviceId || null,
+      playlistBackupCount: payload?.playlistBackups?.length || 0,
+      playlistBackups: (payload?.playlistBackups || []).map((snapshot) => ({
+        updatedAt: normalizeSyncTimestamp(snapshot?.updatedAt),
+        hash: snapshot?.hash || null,
+        deviceId: snapshot?.manifest?.deviceId || null
+      })),
       fileModifiedTime: file?.modifiedTime || null,
       lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
       lastReadAt: now,
@@ -1804,6 +1953,8 @@ async function getDriveSyncStatus({ refreshRemote = false } = {}) {
       playlistRemoteUpdatedAt: 0,
       settingsRemoteUpdatedAt: 0,
       remoteDeviceId: null,
+      playlistBackupCount: Number(meta.playlistBackupCount) || 0,
+      playlistBackups: [],
       fileModifiedTime: null,
       lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
       lastReadAt: normalizeSyncTimestamp(meta.lastReadAt),
@@ -3206,6 +3357,30 @@ async function getPresentationState() {
   };
 }
 
+// src/background/accountSync.js
+var flushPromise = null;
+async function flushPendingAccountSync(options = {}) {
+  if (flushPromise) {
+    return flushPromise;
+  }
+  const forcePlaylist = Boolean(options.forcePlaylist);
+  flushPromise = (async () => {
+    const [playlist] = await Promise.all([
+      flushPendingPlaylistSync({ force: forcePlaylist }),
+      flushPendingSettingsSync()
+    ]);
+    if (playlist?.ready) {
+      await pushLocalDriveSyncNow({ interactive: false });
+    }
+    return { playlist };
+  })();
+  try {
+    return await flushPromise;
+  } finally {
+    flushPromise = null;
+  }
+}
+
 // src/youtube-api/transport.js
 async function defaultCallApi(path, params = {}, method = "GET", body = null, retry) {
   const token = await getToken();
@@ -4518,7 +4693,8 @@ async function applyMutation(mutator, options = {}) {
   const {
     notify = true,
     dispatch = false,
-    ensureDefault = false
+    ensureDefault = false,
+    sync = null
   } = options;
   const result = await mutator();
   if (notify) {
@@ -4529,6 +4705,9 @@ async function applyMutation(mutator, options = {}) {
   }
   if (ensureDefault) {
     await ensureDefaultQueueFilled();
+  }
+  if (sync === "immediate") {
+    await flushPendingAccountSync({ forcePlaylist: true });
   }
   return result;
 }
@@ -4543,7 +4722,8 @@ async function addEntries(entries, listId = null, options = {}) {
   const { ensureDefault = true } = options;
   return mutateAndPresent(() => addVideos(entries, listId), {
     dispatch: true,
-    ensureDefault
+    ensureDefault,
+    sync: "immediate"
   });
 }
 async function handleAddByIds(message, sender = null) {
@@ -4566,7 +4746,8 @@ async function handleAddByIds(message, sender = null) {
   const missing = uniqueIds.filter((id) => !fetchedIds.has(id)).length;
   const afterState = await applyMutation(() => addVideos(entries, targetListId), {
     dispatch: true,
-    ensureDefault: Boolean(message?.ensureDefault)
+    ensureDefault: Boolean(message?.ensureDefault),
+    sync: "immediate"
   });
   const state = await getPresentationState();
   const added = countAddedEntriesInQueue(afterState, targetListId, beforeState);
@@ -4585,7 +4766,7 @@ async function handleRemoveVideos(videoIds, listId = null) {
   }
   return mutateAndPresent(
     () => removeVideos(filtered, { listId }),
-    { dispatch: true, ensureDefault: true }
+    { dispatch: true, ensureDefault: true, sync: "immediate" }
   );
 }
 async function handleMoveVideos(videoIds, targetListId) {
@@ -4598,7 +4779,7 @@ async function handleMoveVideos(videoIds, targetListId) {
   }
   return mutateAndPresent(
     () => moveVideosToList(ids, targetListId),
-    { dispatch: true, ensureDefault: true }
+    { dispatch: true, ensureDefault: true, sync: "immediate" }
   );
 }
 async function handleVideoMetadata(message) {
@@ -4807,19 +4988,23 @@ var listHandlers = {
       () => addList({
         name: message?.name,
         freeze: Boolean(message?.freeze)
-      })
+      }),
+      { sync: "immediate" }
     );
   },
   async "playlist:renameList"(message) {
     if (!message?.listId || !message?.name) {
       return getPresentationState();
     }
-    return mutateAndPresent(() => renameList(message.listId, message.name));
+    return mutateAndPresent(() => renameList(message.listId, message.name), {
+      sync: "immediate"
+    });
   },
   async "playlist:setFreeze"(message) {
     if (!message?.listId) return getPresentationState();
     return mutateAndPresent(
-      () => setListFreeze(message.listId, Boolean(message.freeze))
+      () => setListFreeze(message.listId, Boolean(message.freeze)),
+      { sync: "immediate" }
     );
   },
   async "playlist:removeList"(message) {
@@ -4828,7 +5013,7 @@ var listHandlers = {
       () => removeList(message.listId, {
         mode: message.mode === "discard" ? "delete" : "move"
       }),
-      { dispatch: true }
+      { dispatch: true, sync: "immediate" }
     );
   },
   async "playlist:getList"(message) {
@@ -4900,7 +5085,7 @@ var listHandlers = {
         mode: message.mode === "append" ? "append" : "new",
         targetListId: message.targetListId || null
       }),
-      { dispatch: true, ensureDefault: true }
+      { dispatch: true, ensureDefault: true, sync: "immediate" }
     );
   }
 };
@@ -5004,6 +5189,17 @@ var optionsHandlers = {
       playlistReason: drive?.reason || null,
       settingsPushed: Boolean(settings?.pushed),
       settingsReason: settings?.reason || null
+    };
+  },
+  async "sync:restoreCloudVersion"(message = {}) {
+    const offset = typeof message.offset === "number" && Number.isFinite(message.offset) ? Math.max(1, Math.trunc(message.offset)) : 1;
+    const drive = await restoreDrivePlaylistBackup({ offset });
+    return {
+      ok: true,
+      restored: Boolean(drive?.restored),
+      reason: drive?.reason || null,
+      backupOffset: drive?.backupOffset || offset,
+      playlistBackupCount: drive?.playlistBackupCount || 0
     };
   }
 };
@@ -5238,6 +5434,7 @@ async function advanceToNext(options = {}) {
   await dispatchNotifications();
   const afterPresentation = await getPresentationState();
   if (!afterPresentation.currentVideoId || afterPresentation.currentVideoId === targetId) {
+    await flushPendingAccountSync({ forcePlaylist: true });
     return { handled: false, state: afterPresentation };
   }
   ensureDefaultQueueFilled().catch((err) => {
@@ -5247,6 +5444,7 @@ async function advanceToNext(options = {}) {
     tabId: options.tabId || before.currentTabId,
     ensureCurrent: false
   });
+  await flushPendingAccountSync({ forcePlaylist: true });
   const finalPresentation = await getPresentationState();
   return { handled: true, state: finalPresentation };
 }
@@ -5266,6 +5464,7 @@ async function playFromHistory(options = {}) {
   }
   await notifyState();
   await dispatchNotifications();
+  await flushPendingAccountSync({ forcePlaylist: true });
   const presentation = await getPresentationState();
   if (!presentation.currentVideoId) {
     return { handled: false, state: presentation };
@@ -5306,6 +5505,7 @@ async function postponeCurrent(options = {}) {
   await notifyState();
   await dispatchNotifications();
   await ensureDefaultQueueFilled();
+  await flushPendingAccountSync({ forcePlaylist: true });
   const afterPresentation = await getPresentationState();
   const nextId = afterPresentation.currentVideoId;
   if (!nextId || nextId === previousCurrentId) {
@@ -5640,14 +5840,15 @@ var queueHandlers = {
     }
     return mutateAndPresent(
       () => postponeVideo(videoId, { listId: message.listId || null }),
-      { notify: true }
+      { notify: true, sync: "immediate" }
     );
   },
   async "playlist:restoreDeleted"(message) {
     const position = typeof message?.position === "number" && Number.isInteger(message.position) ? message.position : 0;
     return mutateAndPresent(() => restoreDeletedEntry(position), {
       dispatch: true,
-      ensureDefault: true
+      ensureDefault: true,
+      sync: "immediate"
     });
   },
   async "playlist:getNext"() {
@@ -5662,7 +5863,8 @@ var queueHandlers = {
       return getPresentationState();
     }
     return mutateAndPresent(
-      () => reorderQueue(message.videoId, message.targetIndex, message.listId || null)
+      () => reorderQueue(message.videoId, message.targetIndex, message.listId || null),
+      { sync: "immediate" }
     );
   },
   async "playlist:moveVideo"(message) {
@@ -5671,7 +5873,7 @@ var queueHandlers = {
     }
     return mutateAndPresent(
       () => moveVideoToList(message.videoId, message.targetListId),
-      { dispatch: true, ensureDefault: true }
+      { dispatch: true, ensureDefault: true, sync: "immediate" }
     );
   },
   async "playlist:moveVideos"(message) {
@@ -5683,7 +5885,7 @@ var queueHandlers = {
     }
     return mutateAndPresent(
       () => moveAllVideos(message.sourceListId, message.targetListId),
-      { dispatch: true, ensureDefault: true }
+      { dispatch: true, ensureDefault: true, sync: "immediate" }
     );
   }
 };
@@ -5726,15 +5928,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   clearCurrentTab(tabId).then(() => notifyState());
 });
-async function flushPendingAccountSync() {
-  const [playlist] = await Promise.all([
-    flushPendingPlaylistSync(),
-    flushPendingSettingsSync()
-  ]);
-  if (playlist?.ready) {
-    await pushLocalDriveSyncNow({ interactive: false });
-  }
-}
 if (chrome.alarms?.onAlarm) {
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm?.name !== SYNC_ALARM_NAME) {

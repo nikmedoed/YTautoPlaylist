@@ -3138,7 +3138,7 @@ function formatDelta(fromTimestamp, toTimestamp) {
   const label = formatDuration2(diff).replace(" \u043D\u0430\u0437\u0430\u0434", "");
   return label === "\u0441\u0435\u0439\u0447\u0430\u0441" ? "\u043C\u0435\u043D\u044C\u0448\u0435 \u043C\u0438\u043D\u0443\u0442\u044B" : label;
 }
-function createSummary(statusText2, kind, localUpdatedAt, remoteUpdatedAt) {
+function createSummary(statusText2, kind, localUpdatedAt, remoteUpdatedAt, { backupCount = 0 } = {}) {
   const localAge = formatAge(localUpdatedAt);
   const remoteAge = formatAge(remoteUpdatedAt);
   const hasRemote = Boolean(remoteUpdatedAt);
@@ -3152,7 +3152,8 @@ function createSummary(statusText2, kind, localUpdatedAt, remoteUpdatedAt) {
   }
   const title = [
     `\u041D\u0430 \u0443\u0441\u0442\u0440\u043E\u0439\u0441\u0442\u0432\u0435: ${formatFullTime(localUpdatedAt)} (${localAge})`,
-    `\u0412 \u043E\u0431\u043B\u0430\u043A\u0435: ${formatFullTime(remoteUpdatedAt)} (${remoteAge})`
+    `\u0412 \u043E\u0431\u043B\u0430\u043A\u0435: ${formatFullTime(remoteUpdatedAt)} (${remoteAge})`,
+    backupCount ? `\u0420\u0435\u0437\u0435\u0440\u0432\u043D\u044B\u0445 \u0432\u0435\u0440\u0441\u0438\u0439: ${backupCount}` : ""
   ].join("\n");
   return { text: statusText2, meta, title, kind };
 }
@@ -3168,48 +3169,70 @@ function describeSyncStatus(status) {
     drive.remoteUpdatedAt,
     settings.remoteUpdatedAt
   );
+  const backupCount = Number(drive.playlistBackupCount) || 0;
   const errors = [
     playlist.lastError,
     settings.lastError,
     drive.lastError
   ].filter((error) => !isBenignSyncError(error));
   if (errors.length) {
-    return createSummary("\u041E\u0448\u0438\u0431\u043A\u0430 \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u0438", "error", localUpdatedAt, remoteUpdatedAt);
+    return createSummary("\u041E\u0448\u0438\u0431\u043A\u0430 \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u0438", "error", localUpdatedAt, remoteUpdatedAt, {
+      backupCount
+    });
   }
   if (!remoteUpdatedAt) {
-    return createSummary("\u041E\u0431\u043B\u0430\u043A\u043E \u043D\u0435 \u0441\u043E\u0437\u0434\u0430\u043D\u043E", "warning", localUpdatedAt, remoteUpdatedAt);
+    return createSummary("\u041E\u0431\u043B\u0430\u043A\u043E \u043D\u0435 \u0441\u043E\u0437\u0434\u0430\u043D\u043E", "warning", localUpdatedAt, remoteUpdatedAt, {
+      backupCount
+    });
   }
   if (playlist.pending || settings.pending || localUpdatedAt > remoteUpdatedAt + 1e3) {
-    return createSummary("\u0415\u0441\u0442\u044C \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F", "warning", localUpdatedAt, remoteUpdatedAt);
+    return createSummary("\u0415\u0441\u0442\u044C \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F", "warning", localUpdatedAt, remoteUpdatedAt, {
+      backupCount
+    });
   }
   if (remoteUpdatedAt > localUpdatedAt + 1e3) {
-    return createSummary("\u0412 \u043E\u0431\u043B\u0430\u043A\u0435 \u0441\u0432\u0435\u0436\u0435\u0435", "warning", localUpdatedAt, remoteUpdatedAt);
+    return createSummary("\u0412 \u043E\u0431\u043B\u0430\u043A\u0435 \u0441\u0432\u0435\u0436\u0435\u0435", "warning", localUpdatedAt, remoteUpdatedAt, {
+      backupCount
+    });
   }
-  return createSummary("\u0410\u043A\u0442\u0443\u0430\u043B\u044C\u043D\u043E", "ok", localUpdatedAt, remoteUpdatedAt);
+  return createSummary("\u0410\u043A\u0442\u0443\u0430\u043B\u044C\u043D\u043E", "ok", localUpdatedAt, remoteUpdatedAt, {
+    backupCount
+  });
 }
 function createPopupSyncController({
   stateEl,
   metaEl,
   pullBtn,
   pushBtn,
+  restoreBtn,
   sendMessage: sendMessage2,
   setStatus: setStatus2 = () => {
   },
   refreshState: refreshState2 = () => {
   }
 }) {
-  const buttons = [pullBtn, pushBtn].filter(Boolean);
+  const buttons = [pullBtn, pushBtn, restoreBtn].filter(Boolean);
   let refreshTimer = null;
   let refreshInFlight = false;
-  function setBusy(busy) {
+  let busy = false;
+  let restoreAvailable = false;
+  function updateButtonState() {
     buttons.forEach((button) => {
       button.disabled = busy;
       button.classList.toggle("is-loading", busy);
     });
+    if (restoreBtn) {
+      restoreBtn.disabled = busy || !restoreAvailable;
+    }
+  }
+  function setBusy(value) {
+    busy = Boolean(value);
+    updateButtonState();
   }
   function renderStatus(status) {
     if (!stateEl) return;
     const summary = describeSyncStatus(status);
+    restoreAvailable = Number(status?.drive?.playlistBackupCount) > 0;
     stateEl.textContent = summary.text;
     stateEl.dataset.kind = summary.kind;
     stateEl.title = summary.title;
@@ -3218,6 +3241,7 @@ function createPopupSyncController({
       metaEl.title = summary.title;
       metaEl.dataset.kind = summary.kind;
     }
+    updateButtonState();
   }
   async function refresh({ refreshRemote = false } = {}) {
     if (refreshInFlight) return;
@@ -3279,6 +3303,23 @@ function createPopupSyncController({
     runAction(
       () => sendMessage2("sync:pushLocal"),
       (result) => result?.drivePushed || result?.playlistPushed || result?.settingsPushed ? "\u0414\u0430\u043D\u043D\u044B\u0435 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u044B \u0432 \u043E\u0431\u043B\u0430\u043A\u043E" : "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435"
+    );
+  });
+  restoreBtn?.addEventListener("click", () => {
+    if (!restoreAvailable) {
+      setStatus2("\u0412 \u043E\u0431\u043B\u0430\u043A\u0435 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442 \u0440\u0435\u0437\u0435\u0440\u0432\u043D\u043E\u0439 \u0432\u0435\u0440\u0441\u0438\u0438", "error", 2500);
+      return;
+    }
+    const confirmed = window.confirm(
+      "\u041E\u0442\u043A\u0430\u0442\u0438\u0442\u044C \u043E\u0431\u043B\u0430\u0447\u043D\u044B\u0439 \u0441\u043F\u0438\u0441\u043E\u043A \u043D\u0430 \u043F\u0440\u0435\u0434\u044B\u0434\u0443\u0449\u0443\u044E \u0432\u0435\u0440\u0441\u0438\u044E \u0438 \u0437\u0430\u043C\u0435\u043D\u0438\u0442\u044C \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0441\u043F\u0438\u0441\u043A\u0438?"
+    );
+    if (!confirmed) {
+      return;
+    }
+    runAction(
+      () => sendMessage2("sync:restoreCloudVersion", { offset: 1 }),
+      (result) => result?.restored ? "\u041E\u0442\u043A\u0430\u0442 \u0432\u044B\u043F\u043E\u043B\u043D\u0435\u043D" : "\u0420\u0435\u0437\u0435\u0440\u0432\u043D\u0430\u044F \u0432\u0435\u0440\u0441\u0438\u044F \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430",
+      true
     );
   });
   return { refresh, scheduleRefresh };
@@ -3830,6 +3871,7 @@ var popupSyncState = document.getElementById("popupSyncState");
 var popupSyncMeta = document.getElementById("popupSyncMeta");
 var popupSyncPullBtn = document.getElementById("popupSyncPull");
 var popupSyncPushBtn = document.getElementById("popupSyncPush");
+var popupSyncRestoreBtn = document.getElementById("popupSyncRestore");
 var fallbackThumbnail = chrome.runtime.getURL("icon/icon.png");
 var DEFAULT_LIST_ID = "default";
 var playlistState = null;
@@ -3939,6 +3981,7 @@ var popupSyncController = createPopupSyncController({
   metaEl: popupSyncMeta,
   pullBtn: popupSyncPullBtn,
   pushBtn: popupSyncPushBtn,
+  restoreBtn: popupSyncRestoreBtn,
   sendMessage,
   setStatus,
   refreshState

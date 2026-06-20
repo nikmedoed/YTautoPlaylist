@@ -57,7 +57,13 @@ function formatDelta(fromTimestamp, toTimestamp) {
   return label === "сейчас" ? "меньше минуты" : label;
 }
 
-function createSummary(statusText, kind, localUpdatedAt, remoteUpdatedAt) {
+function createSummary(
+  statusText,
+  kind,
+  localUpdatedAt,
+  remoteUpdatedAt,
+  { backupCount = 0 } = {}
+) {
   const localAge = formatAge(localUpdatedAt);
   const remoteAge = formatAge(remoteUpdatedAt);
   const hasRemote = Boolean(remoteUpdatedAt);
@@ -72,6 +78,7 @@ function createSummary(statusText, kind, localUpdatedAt, remoteUpdatedAt) {
   const title = [
     `На устройстве: ${formatFullTime(localUpdatedAt)} (${localAge})`,
     `В облаке: ${formatFullTime(remoteUpdatedAt)} (${remoteAge})`,
+    backupCount ? `Резервных версий: ${backupCount}` : "",
   ].join("\n");
   return { text: statusText, meta, title, kind };
 }
@@ -88,24 +95,35 @@ function describeSyncStatus(status) {
     drive.remoteUpdatedAt,
     settings.remoteUpdatedAt
   );
+  const backupCount = Number(drive.playlistBackupCount) || 0;
   const errors = [
     playlist.lastError,
     settings.lastError,
     drive.lastError,
   ].filter((error) => !isBenignSyncError(error));
   if (errors.length) {
-    return createSummary("Ошибка синхронизации", "error", localUpdatedAt, remoteUpdatedAt);
+    return createSummary("Ошибка синхронизации", "error", localUpdatedAt, remoteUpdatedAt, {
+      backupCount,
+    });
   }
   if (!remoteUpdatedAt) {
-    return createSummary("Облако не создано", "warning", localUpdatedAt, remoteUpdatedAt);
+    return createSummary("Облако не создано", "warning", localUpdatedAt, remoteUpdatedAt, {
+      backupCount,
+    });
   }
   if (playlist.pending || settings.pending || localUpdatedAt > remoteUpdatedAt + 1000) {
-    return createSummary("Есть изменения", "warning", localUpdatedAt, remoteUpdatedAt);
+    return createSummary("Есть изменения", "warning", localUpdatedAt, remoteUpdatedAt, {
+      backupCount,
+    });
   }
   if (remoteUpdatedAt > localUpdatedAt + 1000) {
-    return createSummary("В облаке свежее", "warning", localUpdatedAt, remoteUpdatedAt);
+    return createSummary("В облаке свежее", "warning", localUpdatedAt, remoteUpdatedAt, {
+      backupCount,
+    });
   }
-  return createSummary("Актуально", "ok", localUpdatedAt, remoteUpdatedAt);
+  return createSummary("Актуально", "ok", localUpdatedAt, remoteUpdatedAt, {
+    backupCount,
+  });
 }
 
 export function createPopupSyncController({
@@ -113,24 +131,36 @@ export function createPopupSyncController({
   metaEl,
   pullBtn,
   pushBtn,
+  restoreBtn,
   sendMessage,
   setStatus = () => {},
   refreshState = () => {},
 }) {
-  const buttons = [pullBtn, pushBtn].filter(Boolean);
+  const buttons = [pullBtn, pushBtn, restoreBtn].filter(Boolean);
   let refreshTimer = null;
   let refreshInFlight = false;
+  let busy = false;
+  let restoreAvailable = false;
 
-  function setBusy(busy) {
+  function updateButtonState() {
     buttons.forEach((button) => {
       button.disabled = busy;
       button.classList.toggle("is-loading", busy);
     });
+    if (restoreBtn) {
+      restoreBtn.disabled = busy || !restoreAvailable;
+    }
+  }
+
+  function setBusy(value) {
+    busy = Boolean(value);
+    updateButtonState();
   }
 
   function renderStatus(status) {
     if (!stateEl) return;
     const summary = describeSyncStatus(status);
+    restoreAvailable = Number(status?.drive?.playlistBackupCount) > 0;
     stateEl.textContent = summary.text;
     stateEl.dataset.kind = summary.kind;
     stateEl.title = summary.title;
@@ -139,6 +169,7 @@ export function createPopupSyncController({
       metaEl.title = summary.title;
       metaEl.dataset.kind = summary.kind;
     }
+    updateButtonState();
   }
 
   async function refresh({ refreshRemote = false } = {}) {
@@ -212,6 +243,27 @@ export function createPopupSyncController({
         result?.drivePushed || result?.playlistPushed || result?.settingsPushed
           ? "Данные отправлены в облако"
           : "Не удалось отправить данные"
+    );
+  });
+
+  restoreBtn?.addEventListener("click", () => {
+    if (!restoreAvailable) {
+      setStatus("В облаке пока нет резервной версии", "error", 2500);
+      return;
+    }
+    const confirmed = window.confirm(
+      "Откатить облачный список на предыдущую версию и заменить локальные списки?"
+    );
+    if (!confirmed) {
+      return;
+    }
+    runAction(
+      () => sendMessage("sync:restoreCloudVersion", { offset: 1 }),
+      (result) =>
+        result?.restored
+          ? "Откат выполнен"
+          : "Резервная версия не найдена",
+      true
     );
   });
 

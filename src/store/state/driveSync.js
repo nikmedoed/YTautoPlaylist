@@ -10,19 +10,24 @@ import {
   importPlaylistSyncSnapshot,
 } from "./storage.js";
 import {
-  buildSyncState,
+  buildSyncSnapshot,
   getPlaylistSyncStatus,
-  getSyncStateFingerprint,
   recordPlaylistSyncError,
   recordPushedPlaylistSyncSnapshot,
 } from "./sync.js";
 import {
   normalizeSyncTimestamp,
 } from "./syncSnapshot.js";
+import {
+  buildPlaylistBackups,
+  DRIVE_SYNC_VERSION,
+  encodePlaylistSnapshot,
+  encodePlaylistSnapshots,
+  parseDrivePayload,
+} from "./driveSyncPayload.js";
 
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3";
-const DRIVE_SYNC_VERSION = 1;
 
 function formatDriveError(status, text) {
   try {
@@ -109,48 +114,6 @@ async function driveFetch(url, init = {}, { interactive = false } = {}) {
   return response;
 }
 
-function encodePlaylistSnapshot(snapshot) {
-  if (!snapshot) return null;
-  return {
-    manifest: snapshot.manifest,
-    state: snapshot.state,
-  };
-}
-
-function parseDrivePlaylistSnapshot(raw) {
-  if (!raw || typeof raw !== "object" || !raw.state) return null;
-  const state = buildSyncState(raw.state);
-  const hash = getSyncStateFingerprint(state);
-  const manifest = raw.manifest && typeof raw.manifest === "object"
-    ? raw.manifest
-    : {};
-  if (typeof manifest.hash === "string" && manifest.hash && manifest.hash !== hash) {
-    return null;
-  }
-  return {
-    manifest: { ...manifest, hash },
-    state,
-    updatedAt: normalizeSyncTimestamp(manifest.updatedAt),
-    hash,
-  };
-}
-
-function parseDrivePayload(raw) {
-  if (!raw || typeof raw !== "object" || raw.version !== DRIVE_SYNC_VERSION) {
-    return null;
-  }
-  const playlist = parseDrivePlaylistSnapshot(raw.playlist);
-  if (!playlist) return null;
-  const updatedAt =
-    normalizeSyncTimestamp(raw.updatedAt) ||
-    normalizeSyncTimestamp(playlist.updatedAt);
-  return {
-    updatedAt,
-    deviceId: typeof raw.deviceId === "string" ? raw.deviceId : null,
-    playlist,
-  };
-}
-
 async function findDriveFile({ interactive = false } = {}) {
   const params = new URLSearchParams({
     spaces: "appDataFolder",
@@ -230,6 +193,9 @@ export async function pushLocalDriveSyncNow({ interactive = true } = {}) {
       updatedAt: playlist.manifest.updatedAt,
       deviceId,
       playlist: encodePlaylistSnapshot(playlist),
+      playlistBackups: encodePlaylistSnapshots(
+        buildPlaylistBackups(remote.payload, playlist.hash)
+      ),
     };
     const file = await writeDrivePayload(payload, {
       interactive,
@@ -244,6 +210,7 @@ export async function pushLocalDriveSyncNow({ interactive = true } = {}) {
       remoteUpdatedAt: payload.updatedAt,
       remoteDeviceId: deviceId,
       remoteAvailable: true,
+      playlistBackupCount: payload.playlistBackups.length,
       lastWriteAt: now,
       lastReadAt: now,
       lastError: null,
@@ -272,6 +239,7 @@ export async function importDriveSync({ force = false, interactive = true } = {}
       remoteUpdatedAt: payload.updatedAt,
       remoteDeviceId: payload.deviceId,
       remoteAvailable: true,
+      playlistBackupCount: payload.playlistBackups?.length || 0,
       lastReadAt: Date.now(),
       lastError: null,
     });
@@ -280,10 +248,87 @@ export async function importDriveSync({ force = false, interactive = true } = {}
       playlistImported: Boolean(playlist.imported),
       settingsImported: false,
       updatedAt: payload.updatedAt,
+      playlistBackupCount: payload.playlistBackups?.length || 0,
     };
   } catch (err) {
     await writeLocalMeta({ ...meta, deviceId, lastError: err.message });
     return { imported: false, reason: err.message };
+  }
+}
+
+export async function restoreDrivePlaylistBackup({
+  offset = 1,
+  interactive = true,
+} = {}) {
+  const meta = await readLocalMeta();
+  const deviceId = await ensureDeviceId(meta);
+  try {
+    const remote = await readDrivePayload({ interactive });
+    const payload = remote.payload;
+    const backups = Array.isArray(payload?.playlistBackups)
+      ? payload.playlistBackups
+      : [];
+    const index = Math.max(0, Math.trunc(Number(offset) || 1) - 1);
+    const target = backups[index] || null;
+    if (!payload?.playlist || !target) {
+      return { restored: false, reason: "no-playlist-backup" };
+    }
+    const restored = buildSyncSnapshot(target.state, {
+      deviceId,
+      updatedAt: Date.now(),
+    });
+    const remainingBackups = backups.filter((_, itemIndex) => itemIndex !== index);
+    const nextPayload = {
+      version: DRIVE_SYNC_VERSION,
+      updatedAt: restored.manifest.updatedAt,
+      deviceId,
+      playlist: encodePlaylistSnapshot(restored),
+      playlistBackups: encodePlaylistSnapshots(
+        buildPlaylistBackups(
+          {
+            playlist: payload.playlist,
+            playlistBackups: remainingBackups,
+          },
+          restored.hash
+        )
+      ),
+    };
+    const file = await writeDrivePayload(nextPayload, {
+      interactive,
+      existing: remote.file,
+    });
+    await importPlaylistSyncSnapshot(
+      {
+        state: restored.state,
+        hash: restored.hash,
+        updatedAt: restored.manifest.updatedAt,
+        manifest: restored.manifest,
+      },
+      { force: true }
+    );
+    const now = Date.now();
+    await writeLocalMeta({
+      ...meta,
+      deviceId,
+      fileId: file.id,
+      remoteUpdatedAt: nextPayload.updatedAt,
+      remoteDeviceId: deviceId,
+      remoteAvailable: true,
+      playlistBackupCount: nextPayload.playlistBackups.length,
+      lastWriteAt: now,
+      lastReadAt: now,
+      lastError: null,
+    });
+    return {
+      restored: true,
+      updatedAt: nextPayload.updatedAt,
+      backupOffset: index + 1,
+      playlistBackupCount: nextPayload.playlistBackups.length,
+    };
+  } catch (err) {
+    await recordPlaylistSyncError(err);
+    await writeLocalMeta({ ...meta, deviceId, lastError: err.message });
+    return { restored: false, reason: err.message };
   }
 }
 
@@ -294,6 +339,7 @@ export async function getDriveSyncStatus({ refreshRemote = false } = {}) {
       remoteAvailable: Boolean(meta.remoteAvailable || meta.remoteUpdatedAt),
       remoteUpdatedAt: normalizeSyncTimestamp(meta.remoteUpdatedAt),
       remoteDeviceId: meta.remoteDeviceId || null,
+      playlistBackupCount: Number(meta.playlistBackupCount) || 0,
       lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
       lastReadAt: normalizeSyncTimestamp(meta.lastReadAt),
       lastError: meta.lastError || null,
@@ -308,6 +354,7 @@ export async function getDriveSyncStatus({ refreshRemote = false } = {}) {
       remoteAvailable: Boolean(payload),
       remoteUpdatedAt: normalizeSyncTimestamp(payload?.updatedAt),
       remoteDeviceId: payload?.deviceId || meta.remoteDeviceId || null,
+      playlistBackupCount: payload?.playlistBackups?.length || 0,
       lastReadAt: now,
       lastError: null,
     });
@@ -317,6 +364,12 @@ export async function getDriveSyncStatus({ refreshRemote = false } = {}) {
       playlistRemoteUpdatedAt: normalizeSyncTimestamp(payload?.playlist?.updatedAt),
       settingsRemoteUpdatedAt: 0,
       remoteDeviceId: payload?.deviceId || null,
+      playlistBackupCount: payload?.playlistBackups?.length || 0,
+      playlistBackups: (payload?.playlistBackups || []).map((snapshot) => ({
+        updatedAt: normalizeSyncTimestamp(snapshot?.updatedAt),
+        hash: snapshot?.hash || null,
+        deviceId: snapshot?.manifest?.deviceId || null,
+      })),
       fileModifiedTime: file?.modifiedTime || null,
       lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
       lastReadAt: now,
@@ -329,6 +382,8 @@ export async function getDriveSyncStatus({ refreshRemote = false } = {}) {
       playlistRemoteUpdatedAt: 0,
       settingsRemoteUpdatedAt: 0,
       remoteDeviceId: null,
+      playlistBackupCount: Number(meta.playlistBackupCount) || 0,
+      playlistBackups: [],
       fileModifiedTime: null,
       lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
       lastReadAt: normalizeSyncTimestamp(meta.lastReadAt),

@@ -2671,6 +2671,11 @@ var MANAGER_ELEMENT_IDS = [
   "statusText",
   "statusProgress",
   "statusProgressBar",
+  "managerSyncState",
+  "managerSyncMeta",
+  "managerSyncPull",
+  "managerSyncPush",
+  "managerSyncRestore",
   "managerCollectionArea",
   "managerCollectSubscriptions",
   "managerCollectionNote",
@@ -3933,6 +3938,229 @@ function createCollectionAvailabilityController({
   };
 }
 
+// src/popup/modules/sync/index.js
+var AUTO_REFRESH_MS = 20 * 1e3;
+function maxTimestamp(...values) {
+  return Math.max(...values.map((value) => Number(value) || 0), 0);
+}
+function isBenignSyncError(error) {
+  const text = String(error || "");
+  return !text || /not initialized/i.test(text) || /no-drive-remote/i.test(text) || /no-remote/i.test(text);
+}
+function formatFullTime(timestamp) {
+  const value = Number(timestamp) || 0;
+  if (!value) return "\u043D\u0435\u0442 \u0434\u0430\u043D\u043D\u044B\u0445";
+  return new Date(value).toLocaleString("ru-RU");
+}
+function formatAge(timestamp) {
+  const value = Number(timestamp) || 0;
+  if (!value) return "\u043D\u0435\u0442";
+  const diff = Math.max(0, Date.now() - value);
+  return formatDuration2(diff);
+}
+function formatDuration2(diff) {
+  const minutes = Math.floor(diff / 6e4);
+  if (minutes < 1) return "\u0441\u0435\u0439\u0447\u0430\u0441";
+  if (minutes < 60) return `${minutes} \u043C\u0438\u043D \u043D\u0430\u0437\u0430\u0434`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} \u0447 \u043D\u0430\u0437\u0430\u0434`;
+  return `${Math.floor(hours / 24)} \u0434 \u043D\u0430\u0437\u0430\u0434`;
+}
+function formatDelta(fromTimestamp, toTimestamp) {
+  const from = Number(fromTimestamp) || 0;
+  const to = Number(toTimestamp) || 0;
+  if (!from || !to) return "";
+  const diff = Math.abs(from - to);
+  const label = formatDuration2(diff).replace(" \u043D\u0430\u0437\u0430\u0434", "");
+  return label === "\u0441\u0435\u0439\u0447\u0430\u0441" ? "\u043C\u0435\u043D\u044C\u0448\u0435 \u043C\u0438\u043D\u0443\u0442\u044B" : label;
+}
+function createSummary(statusText, kind, localUpdatedAt, remoteUpdatedAt, { backupCount = 0 } = {}) {
+  const localAge = formatAge(localUpdatedAt);
+  const remoteAge = formatAge(remoteUpdatedAt);
+  const hasRemote = Boolean(remoteUpdatedAt);
+  let meta = "\u041E\u0431\u043B\u0430\u043A\u0430 \u043D\u0435\u0442";
+  if (hasRemote && localUpdatedAt > remoteUpdatedAt + 1e3) {
+    meta = `\u041E\u0431\u043B\u0430\u043A\u043E \u043E\u0442\u0441\u0442\u0430\u0451\u0442 \u043D\u0430 ${formatDelta(localUpdatedAt, remoteUpdatedAt)}`;
+  } else if (hasRemote && remoteUpdatedAt > localUpdatedAt + 1e3) {
+    meta = `\u041E\u0431\u043B\u0430\u043A\u043E \u043D\u043E\u0432\u0435\u0435 \u043D\u0430 ${formatDelta(remoteUpdatedAt, localUpdatedAt)}`;
+  } else if (hasRemote) {
+    meta = `\u041E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u043E ${remoteAge}`;
+  }
+  const title = [
+    `\u041D\u0430 \u0443\u0441\u0442\u0440\u043E\u0439\u0441\u0442\u0432\u0435: ${formatFullTime(localUpdatedAt)} (${localAge})`,
+    `\u0412 \u043E\u0431\u043B\u0430\u043A\u0435: ${formatFullTime(remoteUpdatedAt)} (${remoteAge})`,
+    backupCount ? `\u0420\u0435\u0437\u0435\u0440\u0432\u043D\u044B\u0445 \u0432\u0435\u0440\u0441\u0438\u0439: ${backupCount}` : ""
+  ].join("\n");
+  return { text: statusText, meta, title, kind };
+}
+function describeSyncStatus(status) {
+  const playlist = status?.playlist || {};
+  const settings = status?.settings || {};
+  const drive = status?.drive || {};
+  const localUpdatedAt = maxTimestamp(
+    playlist.localUpdatedAt,
+    settings.localUpdatedAt
+  );
+  const remoteUpdatedAt = maxTimestamp(
+    drive.remoteUpdatedAt,
+    settings.remoteUpdatedAt
+  );
+  const backupCount = Number(drive.playlistBackupCount) || 0;
+  const errors = [
+    playlist.lastError,
+    settings.lastError,
+    drive.lastError
+  ].filter((error) => !isBenignSyncError(error));
+  if (errors.length) {
+    return createSummary("\u041E\u0448\u0438\u0431\u043A\u0430 \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u0438", "error", localUpdatedAt, remoteUpdatedAt, {
+      backupCount
+    });
+  }
+  if (!remoteUpdatedAt) {
+    return createSummary("\u041E\u0431\u043B\u0430\u043A\u043E \u043D\u0435 \u0441\u043E\u0437\u0434\u0430\u043D\u043E", "warning", localUpdatedAt, remoteUpdatedAt, {
+      backupCount
+    });
+  }
+  if (playlist.pending || settings.pending || localUpdatedAt > remoteUpdatedAt + 1e3) {
+    return createSummary("\u0415\u0441\u0442\u044C \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F", "warning", localUpdatedAt, remoteUpdatedAt, {
+      backupCount
+    });
+  }
+  if (remoteUpdatedAt > localUpdatedAt + 1e3) {
+    return createSummary("\u0412 \u043E\u0431\u043B\u0430\u043A\u0435 \u0441\u0432\u0435\u0436\u0435\u0435", "warning", localUpdatedAt, remoteUpdatedAt, {
+      backupCount
+    });
+  }
+  return createSummary("\u0410\u043A\u0442\u0443\u0430\u043B\u044C\u043D\u043E", "ok", localUpdatedAt, remoteUpdatedAt, {
+    backupCount
+  });
+}
+function createPopupSyncController({
+  stateEl,
+  metaEl,
+  pullBtn,
+  pushBtn,
+  restoreBtn,
+  sendMessage: sendMessage3,
+  setStatus: setStatus2 = () => {
+  },
+  refreshState = () => {
+  }
+}) {
+  const buttons = [pullBtn, pushBtn, restoreBtn].filter(Boolean);
+  let refreshTimer = null;
+  let refreshInFlight = false;
+  let busy = false;
+  let restoreAvailable = false;
+  function updateButtonState() {
+    buttons.forEach((button) => {
+      button.disabled = busy;
+      button.classList.toggle("is-loading", busy);
+    });
+    if (restoreBtn) {
+      restoreBtn.disabled = busy || !restoreAvailable;
+    }
+  }
+  function setBusy(value) {
+    busy = Boolean(value);
+    updateButtonState();
+  }
+  function renderStatus(status) {
+    if (!stateEl) return;
+    const summary = describeSyncStatus(status);
+    restoreAvailable = Number(status?.drive?.playlistBackupCount) > 0;
+    stateEl.textContent = summary.text;
+    stateEl.dataset.kind = summary.kind;
+    stateEl.title = summary.title;
+    if (metaEl) {
+      metaEl.textContent = summary.meta;
+      metaEl.title = summary.title;
+      metaEl.dataset.kind = summary.kind;
+    }
+    updateButtonState();
+  }
+  async function refresh({ refreshRemote = false } = {}) {
+    if (refreshInFlight) return;
+    refreshInFlight = true;
+    try {
+      const status = await sendMessage3("sync:getStatus", { refreshRemote });
+      renderStatus(status);
+    } catch (err) {
+      console.error("Failed to load popup sync status", err);
+      if (stateEl) {
+        stateEl.textContent = "\u0421\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u044F \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0430";
+        stateEl.dataset.kind = "error";
+      }
+      if (metaEl) {
+        metaEl.textContent = "";
+        metaEl.removeAttribute("data-kind");
+      }
+    } finally {
+      refreshInFlight = false;
+    }
+  }
+  function scheduleRefresh(delay2 = 500) {
+    if (refreshTimer) {
+      window.clearTimeout(refreshTimer);
+    }
+    refreshTimer = window.setTimeout(() => {
+      refreshTimer = null;
+      refresh();
+    }, delay2);
+  }
+  window.setInterval(() => {
+    refresh({ refreshRemote: true });
+  }, AUTO_REFRESH_MS);
+  async function runAction(action, message, afterLocalChange = false) {
+    try {
+      setBusy(true);
+      const result = await action();
+      await refresh({ refreshRemote: true });
+      if (afterLocalChange && (result?.playlistImported || result?.driveImported)) {
+        await refreshState();
+      }
+      setStatus2(message(result), "success", 2200);
+    } catch (err) {
+      console.error("Popup sync action failed", err);
+      await refresh();
+      setStatus2("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0432\u044B\u043F\u043E\u043B\u043D\u0438\u0442\u044C \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u044E", "error", 3e3);
+    } finally {
+      setBusy(false);
+    }
+  }
+  pullBtn?.addEventListener("click", () => {
+    runAction(
+      () => sendMessage3("sync:pullRemote"),
+      (result) => result?.playlistImported || result?.settingsImported ? "\u0414\u0430\u043D\u043D\u044B\u0435 \u0441\u043B\u0438\u0442\u044B \u0441 \u043E\u0431\u043B\u0430\u043A\u043E\u043C" : "\u041E\u0431\u043B\u0430\u0447\u043D\u043E\u0439 \u0432\u0435\u0440\u0441\u0438\u0438 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442",
+      true
+    );
+  });
+  pushBtn?.addEventListener("click", () => {
+    runAction(
+      () => sendMessage3("sync:pushLocal"),
+      (result) => result?.drivePushed || result?.playlistPushed || result?.settingsPushed ? "\u0414\u0430\u043D\u043D\u044B\u0435 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u044B \u0432 \u043E\u0431\u043B\u0430\u043A\u043E" : "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435"
+    );
+  });
+  restoreBtn?.addEventListener("click", () => {
+    if (!restoreAvailable) {
+      setStatus2("\u0412 \u043E\u0431\u043B\u0430\u043A\u0435 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442 \u0440\u0435\u0437\u0435\u0440\u0432\u043D\u043E\u0439 \u0432\u0435\u0440\u0441\u0438\u0438", "error", 2500);
+      return;
+    }
+    const confirmed = window.confirm(
+      "\u041E\u0442\u043A\u0430\u0442\u0438\u0442\u044C \u043E\u0431\u043B\u0430\u0447\u043D\u044B\u0439 \u0441\u043F\u0438\u0441\u043E\u043A \u043D\u0430 \u043F\u0440\u0435\u0434\u044B\u0434\u0443\u0449\u0443\u044E \u0432\u0435\u0440\u0441\u0438\u044E \u0438 \u0437\u0430\u043C\u0435\u043D\u0438\u0442\u044C \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0441\u043F\u0438\u0441\u043A\u0438?"
+    );
+    if (!confirmed) {
+      return;
+    }
+    runAction(
+      () => sendMessage3("sync:restoreCloudVersion", { offset: 1 }),
+      (result) => result?.restored ? "\u041E\u0442\u043A\u0430\u0442 \u0432\u044B\u043F\u043E\u043B\u043D\u0435\u043D" : "\u0420\u0435\u0437\u0435\u0440\u0432\u043D\u0430\u044F \u0432\u0435\u0440\u0441\u0438\u044F \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430",
+      true
+    );
+  });
+  return { refresh, scheduleRefresh };
+}
+
 // src/popup/modules/manager/listView.js
 function makeActionButton(text, action, listId, options = {}) {
   const button = document.createElement("button");
@@ -4234,6 +4462,16 @@ managerStateController = createManagerStateController({
     listName: requestedListName
   }
 });
+var managerSyncController = createPopupSyncController({
+  stateEl: elements.managerSyncState,
+  metaEl: elements.managerSyncMeta,
+  pullBtn: elements.managerSyncPull,
+  pushBtn: elements.managerSyncPush,
+  restoreBtn: elements.managerSyncRestore,
+  sendMessage: sendMessage2,
+  setStatus,
+  refreshState: () => managerStateController.loadState()
+});
 var collectionController = createCollectionController({
   progressEl: elements.managerCollectionProgress,
   titleEl: elements.managerCollectionTitle,
@@ -4390,6 +4628,7 @@ chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "playlist:stateUpdated") {
     if (message.state && Array.isArray(message.state.lists)) {
       managerStateController.handleStateUpdated(message.state);
+      managerSyncController.scheduleRefresh();
     }
     return;
   }
@@ -4402,3 +4641,4 @@ managerStateController.loadState().catch((err) => {
   console.error("Failed to load lists state", err);
   setStatus("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043A\u0438", "error", 4e3);
 });
+managerSyncController.refresh();

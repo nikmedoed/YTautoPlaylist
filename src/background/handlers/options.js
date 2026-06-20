@@ -7,6 +7,7 @@ import {
   importRemoteSettingsSync,
   pushLocalDriveSyncNow,
   pushLocalSettingsSyncNow,
+  restoreDrivePlaylistBackup,
   SETTINGS_SYNC_MANIFEST_STORAGE_KEY,
 } from "../../store/index.js";
 import { parseVideoId } from "../../utils.js";
@@ -116,6 +117,21 @@ export const optionsHandlers = {
       playlistReason: drive?.reason || null,
       settingsPushed: Boolean(settings?.pushed),
       settingsReason: settings?.reason || null,
+    };
+  },
+
+  async "sync:restoreCloudVersion"(message = {}) {
+    const offset =
+      typeof message.offset === "number" && Number.isFinite(message.offset)
+        ? Math.max(1, Math.trunc(message.offset))
+        : 1;
+    const drive = await restoreDrivePlaylistBackup({ offset });
+    return {
+      ok: true,
+      restored: Boolean(drive?.restored),
+      reason: drive?.reason || null,
+      backupOffset: drive?.backupOffset || offset,
+      playlistBackupCount: drive?.playlistBackupCount || 0,
     };
   },
 };

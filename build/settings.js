@@ -249,6 +249,9 @@ function normalizeSyncTimestamp(value) {
   return Number.isFinite(ts) && ts > 0 ? Math.trunc(ts) : 0;
 }
 
+// src/store/state/syncImportDecision.js
+var STARTUP_PENDING_GRACE_MS = 2 * 60 * 1e3;
+
 // src/store/state/storage.js
 var stateWriteQueue = Promise.resolve();
 

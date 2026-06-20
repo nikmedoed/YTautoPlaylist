@@ -54,6 +54,7 @@ const popupSyncState = document.getElementById("popupSyncState");
 const popupSyncMeta = document.getElementById("popupSyncMeta");
 const popupSyncPullBtn = document.getElementById("popupSyncPull");
 const popupSyncPushBtn = document.getElementById("popupSyncPush");
+const popupSyncRestoreBtn = document.getElementById("popupSyncRestore");
 
 const fallbackThumbnail = chrome.runtime.getURL("icon/icon.png");
 const DEFAULT_LIST_ID = "default";
@@ -176,6 +177,7 @@ const popupSyncController = createPopupSyncController({
   metaEl: popupSyncMeta,
   pullBtn: popupSyncPullBtn,
   pushBtn: popupSyncPushBtn,
+  restoreBtn: popupSyncRestoreBtn,
   sendMessage,
   setStatus,
   refreshState,

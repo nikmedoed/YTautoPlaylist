@@ -14,6 +14,7 @@ import { createManagerMoveActions } from "./modules/manager/moveActions.js";
 import { getManagerElements } from "./modules/manager/elements.js";
 import { createCollectionController } from "./modules/collection/index.js";
 import { createCollectionAvailabilityController } from "./modules/collection/availability.js";
+import { createPopupSyncController } from "./modules/sync/index.js";
 import { sendMessage as sendRuntimeMessage } from "./lib/runtimeMessages.js";
 import { setButtonLoading } from "./modules/manager/runtime.js";
 import {
@@ -161,6 +162,17 @@ managerStateController = createManagerStateController({
     listId: requestedListId,
     listName: requestedListName,
   },
+});
+
+const managerSyncController = createPopupSyncController({
+  stateEl: elements.managerSyncState,
+  metaEl: elements.managerSyncMeta,
+  pullBtn: elements.managerSyncPull,
+  pushBtn: elements.managerSyncPush,
+  restoreBtn: elements.managerSyncRestore,
+  sendMessage,
+  setStatus,
+  refreshState: () => managerStateController.loadState(),
 });
 
 const collectionController = createCollectionController({
@@ -334,6 +346,7 @@ chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "playlist:stateUpdated") {
     if (message.state && Array.isArray(message.state.lists)) {
       managerStateController.handleStateUpdated(message.state);
+      managerSyncController.scheduleRefresh();
     }
     return;
   }
@@ -348,3 +361,4 @@ managerStateController.loadState().catch((err) => {
   console.error("Failed to load lists state", err);
   setStatus("Не удалось загрузить списки", "error", 4000);
 });
+managerSyncController.refresh();
