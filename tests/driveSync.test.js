@@ -1,8 +1,11 @@
 // Drive sync tests. Covers appData payload backup rotation and rollback.
 import assert from 'assert';
 import {
+  addVideos,
+  buildSyncSnapshot,
   DRIVE_SYNC_LOCAL_META_STORAGE_KEY,
   getState,
+  importDriveSync,
   pushLocalDriveSyncNow,
   replaceState,
   restoreDrivePlaylistBackup,
@@ -85,6 +88,9 @@ function installDriveFetchMock() {
     get payload() {
       return payload;
     },
+    setPayload(nextPayload) {
+      payload = nextPayload;
+    },
     restore: () => {
       globalThis.fetch = originalFetch;
     },
@@ -165,3 +171,71 @@ function installDriveFetchMock() {
   }
 }
 
+{
+  const chromeMock = installChromeStorageMock();
+  const driveMock = installDriveFetchMock();
+  try {
+    await replaceState({
+      lists: {
+        default: {
+          id: 'default',
+          name: 'Основной',
+          freeze: false,
+          queue: [{ id: 'sharedBase1', addedAt: 1 }],
+          currentIndex: 0,
+          revision: 1,
+        },
+      },
+      listOrder: ['default'],
+    });
+    assert.strictEqual((await pushLocalDriveSyncNow({ interactive: false })).pushed, true);
+
+    await addVideos([{ id: 'localOnly1', addedAt: 2 }], 'default');
+
+    const remoteSnapshot = buildSyncSnapshot(
+      {
+        lists: {
+          default: {
+            id: 'default',
+            name: 'Основной',
+            freeze: false,
+            queue: [
+              { id: 'sharedBase1', addedAt: 1 },
+              { id: 'remoteOnly1', addedAt: 3 },
+            ],
+            currentIndex: 0,
+            revision: 2,
+          },
+        },
+        listOrder: ['default'],
+      },
+      {
+        deviceId: 'other-device',
+        updatedAt: Date.now() + 1000,
+      }
+    );
+    driveMock.setPayload({
+      version: 1,
+      updatedAt: remoteSnapshot.manifest.updatedAt,
+      deviceId: 'other-device',
+      playlist: {
+        manifest: remoteSnapshot.manifest,
+        state: remoteSnapshot.state,
+      },
+      playlistBackups: [],
+    });
+
+    const imported = await importDriveSync({ interactive: false });
+    const state = await getState();
+    assert.strictEqual(imported.playlistImported, true);
+    assert.deepStrictEqual(
+      state.lists.default.queue.map((entry) => entry.id),
+      ['sharedBase1', 'remoteOnly1', 'localOnly1']
+    );
+
+    console.log('Drive pull merges newer remote changes when local pending exists');
+  } finally {
+    driveMock.restore();
+    chromeMock.restore();
+  }
+}

@@ -15,6 +15,7 @@ import {
   flushPendingAccountSync,
   refreshRemoteAccountSync,
 } from "../accountSync.js";
+import { notifyState } from "../channel.js";
 
 export const optionsHandlers = {
   async "options:openQuickFilter"(message) {
@@ -59,7 +60,10 @@ export const optionsHandlers = {
 
   async "sync:getStatus"(message = {}) {
     if (message.refreshRemote) {
-      await refreshRemoteAccountSync({ force: true });
+      const refreshed = await refreshRemoteAccountSync({ force: true });
+      if (refreshed?.playlistImported) {
+        await notifyState();
+      }
       await flushPendingAccountSync();
     }
     const [playlist, settings, drive] = await Promise.all([

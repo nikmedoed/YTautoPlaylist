@@ -13,9 +13,10 @@ import {
 } from "../../store/index.js";
 import { parsePlaylistId, parseVideoId } from "../../utils.js";
 import {
-  flushPendingAccountSync,
+  requestAccountSyncFlush,
   refreshRemoteAccountSync,
 } from "../accountSync.js";
+import { notifyState } from "../channel.js";
 import { fetchPlaylistVideoIds } from "../collector.js";
 import {
   addEntries,
@@ -29,10 +30,19 @@ import {
 // every key is a message type sent by popup or content scripts.
 export const queueHandlers = {
   async "playlist:getState"(message, sender) {
-    await refreshRemoteAccountSync({
-      force: !sender?.tab || Boolean(message?.refreshRemote),
-    });
-    await flushPendingAccountSync();
+    if (message?.refreshRemote) {
+      refreshRemoteAccountSync({ force: true })
+        .then((result) => {
+          if (result?.playlistImported) {
+            return notifyState();
+          }
+          return null;
+        })
+        .catch((err) => {
+          console.warn("Background remote refresh failed", err);
+        });
+    }
+    requestAccountSyncFlush();
     return getPresentationState();
   },
 

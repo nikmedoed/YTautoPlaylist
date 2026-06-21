@@ -304,7 +304,7 @@ function renderState(state) {
 async function refreshState() {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const state = await sendMessage("playlist:getState", { refreshRemote: true });
+      const state = await sendMessage("playlist:getState");
       renderState(state || {});
       return;
     } catch (err) {

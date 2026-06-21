@@ -1301,7 +1301,7 @@ function resolvePlaylistImportDecision({
   const freshPendingOnStaleBase = Boolean(
     status.pending && pendingSince && now - pendingSince < STARTUP_PENDING_GRACE_MS && remoteUpdatedAt > syncedUpdatedAt
   );
-  const shouldMerge = mergePending && status.pending && !freshPendingOnStaleBase && localHasUserData && remoteChanged;
+  const shouldMerge = mergePending && status.pending && localHasUserData && remoteChanged;
   const remoteIsNewerBaseline = !status.pending && remoteUpdatedAt > localUpdatedAt || freshPendingOnStaleBase;
   return {
     shouldImport: force || !localHasUserData || shouldMerge || remoteIsNewerBaseline,
@@ -1806,13 +1806,20 @@ async function pushLocalDriveSyncNow({ interactive = true } = {}) {
     return { pushed: false, reason: err.message };
   }
 }
-async function importDriveSync({ force = false, interactive = true } = {}) {
+async function importDriveSync({
+  force = false,
+  interactive = true,
+  mergePending = !force
+} = {}) {
   const meta = await readLocalMeta();
   const deviceId = await ensureDeviceId(meta);
   try {
     const { file, payload } = await readDrivePayload({ interactive });
     if (!payload) return { imported: false, reason: "no-drive-remote" };
-    const playlist = payload.playlist ? await importPlaylistSyncSnapshot(payload.playlist, { force }) : { imported: false };
+    const playlist = payload.playlist ? await importPlaylistSyncSnapshot(payload.playlist, {
+      force,
+      mergePending
+    }) : { imported: false };
     await writeLocalMeta({
       ...meta,
       deviceId,
@@ -3390,6 +3397,11 @@ async function flushPendingAccountSync(options = {}) {
     flushPromise = null;
   }
 }
+function requestAccountSyncFlush(options = {}) {
+  flushPendingAccountSync(options).catch((err) => {
+    console.error("Account sync flush failed", err);
+  });
+}
 async function refreshRemoteAccountSync(options = {}) {
   const force = Boolean(options.force);
   const now = Date.now();
@@ -4731,10 +4743,12 @@ async function applyMutation(mutator, options = {}) {
     await dispatchNotifications();
   }
   if (ensureDefault) {
-    await ensureDefaultQueueFilled();
+    ensureDefaultQueueFilled().catch((err) => {
+      console.error("Auto collection after mutation failed", err);
+    });
   }
   if (sync === "immediate") {
-    await flushPendingAccountSync({ forcePlaylist: true });
+    requestAccountSyncFlush({ forcePlaylist: true });
   }
   return result;
 }
@@ -5157,7 +5171,10 @@ var optionsHandlers = {
   },
   async "sync:getStatus"(message = {}) {
     if (message.refreshRemote) {
-      await refreshRemoteAccountSync({ force: true });
+      const refreshed = await refreshRemoteAccountSync({ force: true });
+      if (refreshed?.playlistImported) {
+        await notifyState();
+      }
       await flushPendingAccountSync();
     }
     const [playlist, settings, drive] = await Promise.all([
@@ -5465,7 +5482,7 @@ async function advanceToNext(options = {}) {
   await dispatchNotifications();
   const afterPresentation = await getPresentationState();
   if (!afterPresentation.currentVideoId || afterPresentation.currentVideoId === targetId) {
-    await flushPendingAccountSync({ forcePlaylist: true });
+    requestAccountSyncFlush({ forcePlaylist: true });
     return { handled: false, state: afterPresentation };
   }
   ensureDefaultQueueFilled().catch((err) => {
@@ -5475,7 +5492,7 @@ async function advanceToNext(options = {}) {
     tabId: options.tabId || before.currentTabId,
     ensureCurrent: false
   });
-  await flushPendingAccountSync({ forcePlaylist: true });
+  requestAccountSyncFlush({ forcePlaylist: true });
   const finalPresentation = await getPresentationState();
   return { handled: true, state: finalPresentation };
 }
@@ -5495,7 +5512,7 @@ async function playFromHistory(options = {}) {
   }
   await notifyState();
   await dispatchNotifications();
-  await flushPendingAccountSync({ forcePlaylist: true });
+  requestAccountSyncFlush({ forcePlaylist: true });
   const presentation = await getPresentationState();
   if (!presentation.currentVideoId) {
     return { handled: false, state: presentation };
@@ -5535,8 +5552,10 @@ async function postponeCurrent(options = {}) {
   await postponeVideo(targetId, { listId: workingState.currentListId });
   await notifyState();
   await dispatchNotifications();
-  await ensureDefaultQueueFilled();
-  await flushPendingAccountSync({ forcePlaylist: true });
+  ensureDefaultQueueFilled().catch((err) => {
+    console.error("Auto collection after postponing failed", err);
+  });
+  requestAccountSyncFlush({ forcePlaylist: true });
   const afterPresentation = await getPresentationState();
   const nextId = afterPresentation.currentVideoId;
   if (!nextId || nextId === previousCurrentId) {
@@ -5808,10 +5827,17 @@ var playbackHandlers = {
 // src/background/handlers/queue.js
 var queueHandlers = {
   async "playlist:getState"(message, sender) {
-    await refreshRemoteAccountSync({
-      force: !sender?.tab || Boolean(message?.refreshRemote)
-    });
-    await flushPendingAccountSync();
+    if (message?.refreshRemote) {
+      refreshRemoteAccountSync({ force: true }).then((result) => {
+        if (result?.playlistImported) {
+          return notifyState();
+        }
+        return null;
+      }).catch((err) => {
+        console.warn("Background remote refresh failed", err);
+      });
+    }
+    requestAccountSyncFlush();
     return getPresentationState();
   },
   async "playlist:setCurrentList"(message) {

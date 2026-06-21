@@ -10,7 +10,7 @@ import {
 } from "../store/index.js";
 import { parseVideoId } from "../utils.js";
 import { formatStorageTimestamp } from "../time.js";
-import { flushPendingAccountSync } from "./accountSync.js";
+import { requestAccountSyncFlush } from "./accountSync.js";
 import { notifyState } from "./channel.js";
 import { dispatchNotifications, ensureDefaultQueueFilled } from "./collectionSync.js";
 import { fetchVideoEntries } from "./collector.js";
@@ -72,10 +72,12 @@ export async function applyMutation(mutator, options = {}) {
     await dispatchNotifications();
   }
   if (ensureDefault) {
-    await ensureDefaultQueueFilled();
+    ensureDefaultQueueFilled().catch((err) => {
+      console.error("Auto collection after mutation failed", err);
+    });
   }
   if (sync === "immediate") {
-    await flushPendingAccountSync({ forcePlaylist: true });
+    requestAccountSyncFlush({ forcePlaylist: true });
   }
   return result;
 }

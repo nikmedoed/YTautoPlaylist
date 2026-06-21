@@ -223,14 +223,21 @@ export async function pushLocalDriveSyncNow({ interactive = true } = {}) {
   }
 }
 
-export async function importDriveSync({ force = false, interactive = true } = {}) {
+export async function importDriveSync({
+  force = false,
+  interactive = true,
+  mergePending = !force,
+} = {}) {
   const meta = await readLocalMeta();
   const deviceId = await ensureDeviceId(meta);
   try {
     const { file, payload } = await readDrivePayload({ interactive });
     if (!payload) return { imported: false, reason: "no-drive-remote" };
     const playlist = payload.playlist
-      ? await importPlaylistSyncSnapshot(payload.playlist, { force })
+      ? await importPlaylistSyncSnapshot(payload.playlist, {
+          force,
+          mergePending,
+        })
       : { imported: false };
     await writeLocalMeta({
       ...meta,

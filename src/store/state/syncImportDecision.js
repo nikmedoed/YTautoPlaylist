@@ -27,7 +27,6 @@ export function resolvePlaylistImportDecision({
   const shouldMerge =
     mergePending &&
     status.pending &&
-    !freshPendingOnStaleBase &&
     localHasUserData &&
     remoteChanged;
   const remoteIsNewerBaseline =
@@ -39,4 +38,3 @@ export function resolvePlaylistImportDecision({
     shouldReplace: force || !localHasUserData || (!shouldMerge && remoteIsNewerBaseline),
   };
 }
-

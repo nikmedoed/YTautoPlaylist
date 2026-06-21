@@ -37,6 +37,12 @@ export async function flushPendingAccountSync(options = {}) {
   }
 }
 
+export function requestAccountSyncFlush(options = {}) {
+  flushPendingAccountSync(options).catch((err) => {
+    console.error("Account sync flush failed", err);
+  });
+}
+
 export async function refreshRemoteAccountSync(options = {}) {
   const force = Boolean(options.force);
   const now = Date.now();
