@@ -977,7 +977,9 @@ function createPlaylistCreationTracker({ setStatus: setStatus2 }) {
 
 // src/popup/modules/manager/detailActions.js
 function createManagerDetailActions({
+  applyRemoveLocally: applyRemoveLocally2,
   getAppState,
+  handleRemoveResult: handleRemoveResult2,
   loadState,
   openQuickFilter: openQuickFilter2,
   sendMessage: sendMessage3,
@@ -994,15 +996,28 @@ function createManagerDetailActions({
       case "quickFilter":
         openQuickFilter2(videoId);
         break;
-      case "remove":
-        await sendMessage3("playlist:remove", {
-          videoId,
-          listId,
-          videoIds: [videoId]
-        });
-        await loadState();
-        setStatus2("\u0412\u0438\u0434\u0435\u043E \u0443\u0434\u0430\u043B\u0435\u043D\u043E", "info");
+      case "remove": {
+        try {
+          const appliedOptimistically = typeof applyRemoveLocally2 === "function" ? applyRemoveLocally2([videoId], listId) : false;
+          const response = await sendMessage3("playlist:remove", {
+            videoId,
+            listId,
+            videoIds: [videoId]
+          });
+          if (typeof handleRemoveResult2 === "function") {
+            handleRemoveResult2(response, [videoId], listId);
+          } else if (!appliedOptimistically) {
+            await loadState();
+          }
+          setStatus2("\u0412\u0438\u0434\u0435\u043E \u0443\u0434\u0430\u043B\u0435\u043D\u043E", "info");
+        } catch (err) {
+          console.error("Failed to delete video", err);
+          setStatus2("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C", "error", 3500);
+          loadState().catch(() => {
+          });
+        }
         break;
+      }
       case "move":
         showMoveMenu2([videoId], listId, button);
         break;
@@ -1502,10 +1517,12 @@ function createManagerListActions({
 
 // src/popup/modules/manager/bulkActions.js
 function registerManagerBulkActions({
+  applyRemoveLocally: applyRemoveLocally2,
   buttons,
   clearSelection: clearSelection2,
   getSelectedListDetails,
   getWatchedVideoIds: getWatchedVideoIds2,
+  handleRemoveResult: handleRemoveResult2,
   loadState,
   selectionController: selectionController2,
   sendMessage: sendMessage3,
@@ -1517,11 +1534,17 @@ function registerManagerBulkActions({
   async function removeFromSelectedList(videoIds) {
     const selectedListDetails2 = getSelectedListDetails();
     if (!selectedListDetails2?.id || !videoIds.length) return false;
-    await sendMessage3("playlist:remove", {
-      listId: selectedListDetails2.id,
+    const listId = selectedListDetails2.id;
+    const appliedOptimistically = typeof applyRemoveLocally2 === "function" ? applyRemoveLocally2(videoIds, listId) : false;
+    const response = await sendMessage3("playlist:remove", {
+      listId,
       videoIds
     });
-    await loadState();
+    if (typeof handleRemoveResult2 === "function") {
+      handleRemoveResult2(response, videoIds, listId);
+    } else if (!appliedOptimistically) {
+      await loadState();
+    }
     return true;
   }
   if (removeWatchedBtn) {
@@ -1553,6 +1576,8 @@ function registerManagerBulkActions({
       } catch (err) {
         console.error("Failed to delete watched videos", err);
         setStatus2("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u043F\u0440\u043E\u0441\u043C\u043E\u0442\u0440\u0435\u043D\u043D\u044B\u0435", "error", 3500);
+        loadState().catch(() => {
+        });
         updateRemoveWatchedButton2();
       }
     });
@@ -1579,6 +1604,8 @@ function registerManagerBulkActions({
       } catch (err) {
         console.error("Failed to delete selected videos", err);
         setStatus2("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C", "error", 3500);
+        loadState().catch(() => {
+        });
       }
     });
   }
@@ -1599,6 +1626,8 @@ function registerManagerBulkActions({
       } catch (err) {
         console.error("Failed to clear list", err);
         setStatus2("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0447\u0438\u0441\u0442\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A", "error", 3500);
+        loadState().catch(() => {
+        });
         if (getSelectedListDetails()?.queue?.length) {
           clearListBtn.disabled = false;
         }
@@ -2233,6 +2262,32 @@ function createManagerStateController({
     await loadListDetails(getSelectedListId(), { syncCurrent: false });
     updateCollectionAvailability();
   }
+  function applySelectedListDetails(details) {
+    if (!details?.id) return;
+    const previousListId = getSelectedListDetails()?.id;
+    setSelectedListDetails(details);
+    if (previousListId !== details.id) selectionController2.clear();
+    renderDetailVideos(details);
+    highlightSelectedList2(details.id);
+    updateCollectionAvailability();
+    updateDetailActiveVideo();
+  }
+  function applyStateSnapshot(state, options = {}) {
+    if (!state || !Array.isArray(state.lists)) return false;
+    setAppState(state);
+    ensureSelectedList(state);
+    renderLists2();
+    populateImportTargets3();
+    if (options.details) {
+      applySelectedListDetails(options.details);
+    } else {
+      highlightSelectedList2(getSelectedListId());
+      updateDetailActiveVideo();
+      updateRemoveWatchedButton2();
+      updateCollectionAvailability();
+    }
+    return true;
+  }
   function renderDetailVideos(details) {
     moveMenu2.hide();
     dragController2.reset();
@@ -2337,6 +2392,8 @@ function createManagerStateController({
     }
   }
   return {
+    applySelectedListDetails,
+    applyStateSnapshot,
     ensureSelectedList,
     handleStateUpdated,
     loadListDetails,
@@ -4429,7 +4486,9 @@ var managerModalController = createManagerModalController({
   toggleImportTarget: toggleImportTarget2
 });
 var handleDetailAction = createManagerDetailActions({
+  applyRemoveLocally,
   getAppState: () => appState,
+  handleRemoveResult,
   loadState: () => managerStateController.loadState(),
   openQuickFilter,
   sendMessage: sendMessage2,
@@ -4558,6 +4617,61 @@ async function syncManagerCollectionState(state) {
 async function sendMessage2(type, payload = {}) {
   return sendMessage(type, payload, { label: "sendMessage failed" });
 }
+function buildDetailsAfterRemoval(videoIds, listId) {
+  if (!selectedListDetails?.id || selectedListDetails.id !== listId) {
+    return null;
+  }
+  const idSet = new Set((Array.isArray(videoIds) ? videoIds : [videoIds]).filter(Boolean));
+  if (!idSet.size) return null;
+  const queue = Array.isArray(selectedListDetails.queue) ? selectedListDetails.queue.filter((video) => !idSet.has(video?.id)) : [];
+  const removed = (selectedListDetails.queue?.length || 0) - queue.length;
+  if (removed <= 0) return null;
+  return {
+    ...selectedListDetails,
+    queue,
+    length: queue.length,
+    revision: (Number.isInteger(selectedListDetails.revision) ? selectedListDetails.revision : 0) + 1
+  };
+}
+function applyRemoveLocally(videoIds, listId) {
+  const details = buildDetailsAfterRemoval(videoIds, listId);
+  if (!details) return false;
+  const idSet = new Set((Array.isArray(videoIds) ? videoIds : [videoIds]).filter(Boolean));
+  const nextState = appState && Array.isArray(appState.lists) ? {
+    ...appState,
+    lists: appState.lists.map(
+      (list) => list.id === listId ? { ...list, length: details.length, revision: details.revision } : list
+    ),
+    currentVideoId: idSet.has(appState.currentVideoId) ? null : appState.currentVideoId,
+    currentQueue: appState.currentQueue?.id === listId ? {
+      ...appState.currentQueue,
+      queue: details.queue,
+      currentIndex: details.queue.length === 0 ? null : Math.min(
+        appState.currentQueue.currentIndex || 0,
+        details.queue.length - 1
+      )
+    } : appState.currentQueue
+  } : null;
+  if (nextState) {
+    managerStateController.applyStateSnapshot(nextState, { details });
+  } else {
+    managerStateController.applySelectedListDetails(details);
+  }
+  return true;
+}
+function handleRemoveResult(state, videoIds, listId) {
+  const details = buildDetailsAfterRemoval(videoIds, listId);
+  if (state && Array.isArray(state.lists)) {
+    managerStateController.applyStateSnapshot(state, { details });
+    return;
+  }
+  if (details) {
+    managerStateController.applySelectedListDetails(details);
+    return;
+  }
+  managerStateController.loadState().catch(() => {
+  });
+}
 async function reorderVideo({ videoId, targetIndex, listId }) {
   if (!videoId || typeof targetIndex !== "number") {
     return;
@@ -4591,8 +4705,10 @@ registerManagerBulkActions({
     removeWatchedBtn: elements.removeWatchedBtn
   },
   clearSelection,
+  applyRemoveLocally,
   getSelectedListDetails: () => selectedListDetails,
   getWatchedVideoIds: (details = selectedListDetails) => getWatchedVideoIds(details, appState?.videoProgress),
+  handleRemoveResult,
   loadState: managerStateController.loadState,
   selectionController,
   sendMessage: sendMessage2,

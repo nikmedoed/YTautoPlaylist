@@ -1,6 +1,8 @@
 // Manager detail-row actions. Handles row-level remove, postpone, play, move, and open-link commands.
 export function createManagerDetailActions({
+  applyRemoveLocally,
   getAppState,
+  handleRemoveResult,
   loadState,
   openQuickFilter,
   sendMessage,
@@ -17,15 +19,30 @@ export function createManagerDetailActions({
       case "quickFilter":
         openQuickFilter(videoId);
         break;
-      case "remove":
-        await sendMessage("playlist:remove", {
-          videoId,
-          listId,
-          videoIds: [videoId],
-        });
-        await loadState();
-        setStatus("Видео удалено", "info");
+      case "remove": {
+        try {
+          const appliedOptimistically =
+            typeof applyRemoveLocally === "function"
+              ? applyRemoveLocally([videoId], listId)
+              : false;
+          const response = await sendMessage("playlist:remove", {
+            videoId,
+            listId,
+            videoIds: [videoId],
+          });
+          if (typeof handleRemoveResult === "function") {
+            handleRemoveResult(response, [videoId], listId);
+          } else if (!appliedOptimistically) {
+            await loadState();
+          }
+          setStatus("Видео удалено", "info");
+        } catch (err) {
+          console.error("Failed to delete video", err);
+          setStatus("Не удалось удалить", "error", 3500);
+          loadState().catch(() => {});
+        }
         break;
+      }
       case "move":
         showMoveMenu([videoId], listId, button);
         break;

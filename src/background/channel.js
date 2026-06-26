@@ -1,5 +1,5 @@
 // Broadcasts background state and collection progress to extension pages. Contains safe runtime send wrappers for popup/listeners that may not be open.
-import { getPresentationState } from "../store/index.js";
+import { buildPresentationState, getPresentationState } from "../store/index.js";
 import { MESSAGE_SOURCE } from "./constants.js";
 
 async function safeSendMessage(payload) {
@@ -16,8 +16,10 @@ async function safeSendMessage(payload) {
   }
 }
 
-export async function notifyState() {
-  const presentation = await getPresentationState();
+export async function notifyState(stateInput = null) {
+  const presentation = stateInput
+    ? buildPresentationState(stateInput)
+    : await getPresentationState();
   await safeSendMessage({
     source: MESSAGE_SOURCE,
     type: "playlist:stateUpdated",

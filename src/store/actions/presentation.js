@@ -1,12 +1,12 @@
 // Presentation-state builder for UI consumers. Converts raw store state into popup/content friendly list and queue details.
-import { getState, sanitizeVideoProgressMap } from "../state/index.js";
+import { getState, sanitizeState, sanitizeVideoProgressMap } from "../state/index.js";
 import {
   AUTO_COLLECT_COOLDOWN_MS,
   ensureAutoCollectMeta,
 } from "./core.js";
 
-export async function getPresentationState() {
-  const state = await getState();
+export function buildPresentationState(stateInput) {
+  const state = sanitizeState(stateInput);
   const autoMeta = ensureAutoCollectMeta(state);
   const listsMeta = state.listOrder
     .map((id) => state.lists[id])
@@ -45,4 +45,8 @@ export async function getPresentationState() {
       cooldownMs: AUTO_COLLECT_COOLDOWN_MS,
     },
   };
+}
+
+export async function getPresentationState() {
+  return buildPresentationState(await getState());
 }

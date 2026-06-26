@@ -120,7 +120,9 @@ const managerModalController = createManagerModalController({
 });
 
 const handleDetailAction = createManagerDetailActions({
+  applyRemoveLocally,
   getAppState: () => appState,
+  handleRemoveResult,
   loadState: () => managerStateController.loadState(),
   openQuickFilter,
   sendMessage,
@@ -261,6 +263,77 @@ async function sendMessage(type, payload = {}) {
   return sendRuntimeMessage(type, payload, { label: "sendMessage failed" });
 }
 
+function buildDetailsAfterRemoval(videoIds, listId) {
+  if (!selectedListDetails?.id || selectedListDetails.id !== listId) {
+    return null;
+  }
+  const idSet = new Set((Array.isArray(videoIds) ? videoIds : [videoIds]).filter(Boolean));
+  if (!idSet.size) return null;
+  const queue = Array.isArray(selectedListDetails.queue)
+    ? selectedListDetails.queue.filter((video) => !idSet.has(video?.id))
+    : [];
+  const removed = (selectedListDetails.queue?.length || 0) - queue.length;
+  if (removed <= 0) return null;
+  return {
+    ...selectedListDetails,
+    queue,
+    length: queue.length,
+    revision: (Number.isInteger(selectedListDetails.revision)
+      ? selectedListDetails.revision
+      : 0) + 1,
+  };
+}
+
+function applyRemoveLocally(videoIds, listId) {
+  const details = buildDetailsAfterRemoval(videoIds, listId);
+  if (!details) return false;
+  const idSet = new Set((Array.isArray(videoIds) ? videoIds : [videoIds]).filter(Boolean));
+  const nextState = appState && Array.isArray(appState.lists)
+    ? {
+        ...appState,
+        lists: appState.lists.map((list) =>
+          list.id === listId
+            ? { ...list, length: details.length, revision: details.revision }
+            : list
+        ),
+        currentVideoId: idSet.has(appState.currentVideoId) ? null : appState.currentVideoId,
+        currentQueue:
+          appState.currentQueue?.id === listId
+            ? {
+                ...appState.currentQueue,
+                queue: details.queue,
+                currentIndex:
+                  details.queue.length === 0
+                    ? null
+                    : Math.min(
+                        appState.currentQueue.currentIndex || 0,
+                        details.queue.length - 1
+                      ),
+              }
+            : appState.currentQueue,
+      }
+    : null;
+  if (nextState) {
+    managerStateController.applyStateSnapshot(nextState, { details });
+  } else {
+    managerStateController.applySelectedListDetails(details);
+  }
+  return true;
+}
+
+function handleRemoveResult(state, videoIds, listId) {
+  const details = buildDetailsAfterRemoval(videoIds, listId);
+  if (state && Array.isArray(state.lists)) {
+    managerStateController.applyStateSnapshot(state, { details });
+    return;
+  }
+  if (details) {
+    managerStateController.applySelectedListDetails(details);
+    return;
+  }
+  managerStateController.loadState().catch(() => {});
+}
+
 async function reorderVideo({ videoId, targetIndex, listId }) {
   if (!videoId || typeof targetIndex !== "number") {
     return;
@@ -296,9 +369,11 @@ registerManagerBulkActions({
     removeWatchedBtn: elements.removeWatchedBtn,
   },
   clearSelection,
+  applyRemoveLocally,
   getSelectedListDetails: () => selectedListDetails,
   getWatchedVideoIds: (details = selectedListDetails) =>
     getWatchedVideoIdsFromDetails(details, appState?.videoProgress),
+  handleRemoveResult,
   loadState: managerStateController.loadState,
   selectionController,
   sendMessage,

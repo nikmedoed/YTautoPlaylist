@@ -3333,8 +3333,8 @@ async function recordVideoProgress(videoId, percent, options = {}) {
 }
 
 // src/store/actions/presentation.js
-async function getPresentationState() {
-  const state = await getState();
+function buildPresentationState(stateInput) {
+  const state = sanitizeState(stateInput);
   const autoMeta = ensureAutoCollectMeta(state);
   const listsMeta = state.listOrder.map((id) => state.lists[id]).filter(Boolean).map((list) => ({
     id: list.id,
@@ -3368,6 +3368,9 @@ async function getPresentationState() {
       cooldownMs: AUTO_COLLECT_COOLDOWN_MS
     }
   };
+}
+async function getPresentationState() {
+  return buildPresentationState(await getState());
 }
 
 // src/background/accountSync.js
@@ -3969,8 +3972,8 @@ async function safeSendMessage(payload) {
     }
   }
 }
-async function notifyState() {
-  const presentation = await getPresentationState();
+async function notifyState(stateInput = null) {
+  const presentation = stateInput ? buildPresentationState(stateInput) : await getPresentationState();
   await safeSendMessage({
     source: MESSAGE_SOURCE,
     type: "playlist:stateUpdated",
@@ -4728,6 +4731,16 @@ function countAddedEntriesInQueue(nextState, listId, beforeState) {
   const list = nextState?.lists?.[listId];
   return (list?.queue || []).filter((entry) => !previousIds.has(entry.id)).length;
 }
+function notifyMutationState(state) {
+  notifyState(state).catch((err) => {
+    console.error("State notification failed", err);
+  });
+}
+function dispatchMutationNotifications() {
+  dispatchNotifications().catch((err) => {
+    console.error("Notification dispatch failed", err);
+  });
+}
 async function applyMutation(mutator, options = {}) {
   const {
     notify = true,
@@ -4737,10 +4750,11 @@ async function applyMutation(mutator, options = {}) {
   } = options;
   const result = await mutator();
   if (notify) {
-    await notifyState();
+    notifyMutationState(result);
   }
-  if (dispatch) {
-    await dispatchNotifications();
+  const hasPendingNotifications = Array.isArray(result?.pendingNotifications) && result.pendingNotifications.length > 0;
+  if (dispatch && hasPendingNotifications) {
+    dispatchMutationNotifications();
   }
   if (ensureDefault) {
     ensureDefaultQueueFilled().catch((err) => {
@@ -4753,8 +4767,8 @@ async function applyMutation(mutator, options = {}) {
   return result;
 }
 async function mutateAndPresent(mutator, options = {}) {
-  await applyMutation(mutator, options);
-  return getPresentationState();
+  const state = await applyMutation(mutator, options);
+  return buildPresentationState(state);
 }
 async function addEntries(entries, listId = null, options = {}) {
   if (!Array.isArray(entries) || !entries.length) {

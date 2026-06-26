@@ -3,6 +3,7 @@ import {
   addVideos,
   clearCurrentTab,
   DEFAULT_LIST_ID,
+  buildPresentationState,
   getPresentationState,
   getState,
   moveVideosToList,
@@ -57,6 +58,18 @@ function countAddedEntriesInQueue(nextState, listId, beforeState) {
     .length;
 }
 
+function notifyMutationState(state) {
+  notifyState(state).catch((err) => {
+    console.error("State notification failed", err);
+  });
+}
+
+function dispatchMutationNotifications() {
+  dispatchNotifications().catch((err) => {
+    console.error("Notification dispatch failed", err);
+  });
+}
+
 export async function applyMutation(mutator, options = {}) {
   const {
     notify = true,
@@ -66,10 +79,12 @@ export async function applyMutation(mutator, options = {}) {
   } = options;
   const result = await mutator();
   if (notify) {
-    await notifyState();
+    notifyMutationState(result);
   }
-  if (dispatch) {
-    await dispatchNotifications();
+  const hasPendingNotifications =
+    Array.isArray(result?.pendingNotifications) && result.pendingNotifications.length > 0;
+  if (dispatch && hasPendingNotifications) {
+    dispatchMutationNotifications();
   }
   if (ensureDefault) {
     ensureDefaultQueueFilled().catch((err) => {
@@ -83,8 +98,8 @@ export async function applyMutation(mutator, options = {}) {
 }
 
 export async function mutateAndPresent(mutator, options = {}) {
-  await applyMutation(mutator, options);
-  return getPresentationState();
+  const state = await applyMutation(mutator, options);
+  return buildPresentationState(state);
 }
 
 // Adds arbitrary queue entries, then returns the popup/content presentation
