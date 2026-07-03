@@ -250,6 +250,7 @@ console.log('getNewVideos falls back to search');
 }
 
 await import('./storeActions.test.js');
+await import('./channelCache.test.js');
 await import('./autoCollect.test.js');
 await import('./syncState.test.js');
 await import('./driveSync.test.js');

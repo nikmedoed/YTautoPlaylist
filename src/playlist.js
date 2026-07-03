@@ -1,5 +1,8 @@
 // Collects recent uploads from subscribed channels, de-dupes by video id, then applies filters before returning entries in chronological order.
-import { getChannelMap } from "./youtube-api/channels.js";
+import {
+  getActiveSubscriptionChannelIds,
+  getChannelMap,
+} from "./youtube-api/channels.js";
 import { getNewVideos } from "./youtube-api/videos.js";
 import { filterVideos } from "./filter.js";
 
@@ -15,7 +18,9 @@ export async function collectVideos(
         ? Array.from(options.excludeIds).filter(Boolean)
         : []
   );
-  const channels = await getChannelMap();
+  const channels = await getChannelMap([], {
+    refreshSubscriptionsInBackground: true,
+  });
   const sources = Object.entries(channels)
     .map(([channelId, info]) => ({
       channelId,
@@ -80,6 +85,28 @@ export async function collectVideos(
   let videos = Array.from(videoMap.values());
   console.log("Fetched", videos.length, "videos");
   progress({ phase: "aggregate", videoCount: videos.length });
+  const activeChannelIds = await getActiveSubscriptionChannelIds({
+    waitForRefresh: true,
+  });
+  if (activeChannelIds) {
+    const beforeSubscriptionCheck = videos.length;
+    videos = videos.filter(
+      (video) => video?.channelId && activeChannelIds.has(video.channelId)
+    );
+    const skippedUnsubscribed = beforeSubscriptionCheck - videos.length;
+    if (skippedUnsubscribed) {
+      console.log(
+        "Skipped",
+        skippedUnsubscribed,
+        "videos from unsubscribed channels"
+      );
+    }
+    progress({
+      phase: "subscriptionsRechecked",
+      videoCount: videos.length,
+      skippedUnsubscribed,
+    });
+  }
   progress({ phase: "filtering", videoCount: videos.length });
   videos = await filterVideos(videos, progress);
   progress({ phase: "filtered", videoCount: videos.length });

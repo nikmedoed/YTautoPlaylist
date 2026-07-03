@@ -42,7 +42,13 @@ export function createCardButtonOwnership({
 
   function findCardOwnedButtons(card) {
     if (!(card instanceof HTMLElement)) return [];
-    return Array.from(card.querySelectorAll(`.${ADD_BUTTON_CLASS}`)).filter(
+    const buttons = Array.from(card.querySelectorAll(`.${ADD_BUTTON_CLASS}`));
+    const overlay = overlays.findDirectOverlay(card);
+    const overlayButton = overlays.findDirectOverlayButton(overlay);
+    if (overlayButton instanceof HTMLButtonElement) {
+      buttons.push(overlayButton);
+    }
+    return Array.from(new Set(buttons)).filter(
       (button) => getButtonOwnerCard(button) === card
     );
   }

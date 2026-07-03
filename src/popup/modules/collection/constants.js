@@ -15,6 +15,7 @@ const PHASE_TO_STAGE = {
   playlistFetch: "playlists",
   playlistFetched: "playlists",
   aggregate: "playlists",
+  subscriptionsRechecked: "videos",
   filtering: "videos",
   filterProgress: "videos",
   filterStats: "videos",

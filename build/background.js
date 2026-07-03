@@ -3991,7 +3991,29 @@ function sendCollectionProgress(event) {
 }
 
 // src/youtube-api/channels.js
+var CHANNEL_CACHE_KEY = "channelCache";
+var SUBSCRIPTION_CACHE_KEY = "channelSubscriptionCache";
 var channelCache;
+var subscriptionSnapshot;
+var subscriptionRefreshPromise;
+function chromeGet(keys) {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(keys, (data) => resolve(data || {}));
+  });
+}
+function chromeSet(payload) {
+  return new Promise((resolve) => chrome.storage.local.set(payload, resolve));
+}
+function toSubscriptionSnapshot(subs) {
+  const channels = {};
+  for (const { id, title } of subs) {
+    if (id) channels[id] = { title: title || "" };
+  }
+  return { updatedAt: Date.now(), channels };
+}
+function getExtraIds(extraIds) {
+  return Array.isArray(extraIds) ? extraIds.filter((id) => typeof id === "string" && id) : [];
+}
 async function getSubscriptionsId(pageToken) {
   const data = await callApi("subscriptions", {
     part: "snippet,contentDetails",
@@ -4010,6 +4032,48 @@ async function getSubscriptionsId(pageToken) {
   }
   return subs;
 }
+async function loadSubscriptionSnapshot() {
+  if (subscriptionSnapshot) return subscriptionSnapshot;
+  const data = await chromeGet([SUBSCRIPTION_CACHE_KEY]);
+  subscriptionSnapshot = data[SUBSCRIPTION_CACHE_KEY] || {
+    updatedAt: 0,
+    channels: {}
+  };
+  return subscriptionSnapshot;
+}
+function refreshSubscriptionSnapshot() {
+  if (!subscriptionRefreshPromise) {
+    subscriptionRefreshPromise = getSubscriptionsId().then(toSubscriptionSnapshot).then(async (snapshot) => {
+      subscriptionSnapshot = snapshot;
+      await chromeSet({ [SUBSCRIPTION_CACHE_KEY]: snapshot });
+      return snapshot;
+    }).finally(() => {
+      subscriptionRefreshPromise = null;
+    });
+  }
+  return subscriptionRefreshPromise;
+}
+async function getSubscriptionSnapshot({ refresh = false } = {}) {
+  const snapshot = await loadSubscriptionSnapshot();
+  if (!snapshot.updatedAt) {
+    return refreshSubscriptionSnapshot();
+  }
+  if (refresh) {
+    refreshSubscriptionSnapshot().catch((err) => {
+      console.warn("Failed to refresh subscription cache", err);
+    });
+  }
+  return snapshot;
+}
+async function getActiveSubscriptionChannelIds({ waitForRefresh = false } = {}) {
+  if (waitForRefresh && subscriptionRefreshPromise) {
+    await subscriptionRefreshPromise.catch((err) => {
+      console.warn("Failed to wait for subscription refresh", err);
+    });
+  }
+  const snapshot = await loadSubscriptionSnapshot();
+  return snapshot.updatedAt ? new Set(Object.keys(snapshot.channels || {})) : null;
+}
 async function getChannelInfos(ids) {
   if (!ids || ids.length === 0) return [];
   const data = await callApi("channels", {
@@ -4024,37 +4088,38 @@ async function getChannelInfos(ids) {
     uploads: el.contentDetails.relatedPlaylists.uploads
   }));
 }
-async function getChannelMap(extraIds = []) {
+async function getChannelMap(extraIds = [], options = {}) {
   if (!channelCache) {
-    const data = await new Promise(
-      (r) => chrome.storage.local.get(["channelCache"], r)
-    );
-    channelCache = data.channelCache || {};
+    const data = await chromeGet([CHANNEL_CACHE_KEY]);
+    channelCache = data[CHANNEL_CACHE_KEY] || {};
   }
-  const cache = channelCache;
-  const subs = await getSubscriptionsId();
-  const missing = [];
-  for (const { id, title } of subs) {
-    if (!cache[id]) cache[id] = {};
-    cache[id].title = title;
-    if (!cache[id].uploads) missing.push(id);
-  }
-  extraIds.forEach((id) => {
-    if (!cache[id] || !cache[id].uploads) missing.push(id);
+  const snapshot = await getSubscriptionSnapshot({
+    refresh: options?.refreshSubscriptionsInBackground === true
   });
-  let ids = missing.slice();
-  while (ids.length) {
-    const chunk = ids.splice(0, 50);
-    const infos = await getChannelInfos(chunk);
+  const ids = /* @__PURE__ */ new Set([
+    ...Object.keys(snapshot.channels || {}),
+    ...getExtraIds(extraIds)
+  ]);
+  const missing = [];
+  for (const id of ids) {
+    channelCache[id] = channelCache[id] || {};
+    channelCache[id].title = snapshot.channels?.[id]?.title || channelCache[id].title || "";
+    if (!channelCache[id].uploads) missing.push(id);
+  }
+  for (let i = 0; i < missing.length; i += 50) {
+    const infos = await getChannelInfos(missing.slice(i, i + 50));
     for (const info of infos) {
-      cache[info.id] = cache[info.id] || {};
-      cache[info.id].title = cache[info.id].title || info.title;
-      cache[info.id].uploads = info.uploads;
+      channelCache[info.id] = {
+        ...channelCache[info.id] || {},
+        title: channelCache[info.id]?.title || info.title,
+        uploads: info.uploads
+      };
     }
   }
-  channelCache = cache;
-  chrome.storage.local.set({ channelCache: cache });
-  return cache;
+  await chromeSet({ [CHANNEL_CACHE_KEY]: channelCache });
+  return Object.fromEntries(
+    Array.from(ids).filter((id) => channelCache[id]).map((id) => [id, channelCache[id]])
+  );
 }
 
 // src/filterStorage.js
@@ -4094,8 +4159,8 @@ function parseStoredFilters2(raw) {
     return cloneDefaultFilters2();
   }
 }
-var chromeGet = (keys) => new Promise((resolve) => chrome.storage.local.get(keys, (data) => resolve(data || {})));
-var chromeSet = (payload) => new Promise((resolve) => chrome.storage.local.set(payload, resolve));
+var chromeGet2 = (keys) => new Promise((resolve) => chrome.storage.local.get(keys, (data) => resolve(data || {})));
+var chromeSet2 = (payload) => new Promise((resolve) => chrome.storage.local.set(payload, resolve));
 if (hasChromeStorage3 && chrome.storage?.onChanged) {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
@@ -4115,14 +4180,14 @@ async function getFilters() {
     filtersCache = cloneDefaultFilters2();
     return filtersCache;
   }
-  const data = await chromeGet([STORAGE_KEYS.filters, STORAGE_KEYS.autoCollect]);
+  const data = await chromeGet2([STORAGE_KEYS.filters, STORAGE_KEYS.autoCollect]);
   filtersCache = parseStoredFilters2(data?.[STORAGE_KEYS.filters]);
   const resolved = await resolveRemoteSettingsSyncFilters(filtersCache);
   if (resolved.imported) {
     filtersCache = resolved.filters;
   }
   if (!data?.[STORAGE_KEYS.filters]) {
-    await chromeSet({ [STORAGE_KEYS.filters]: JSON.stringify(filtersCache) });
+    await chromeSet2({ [STORAGE_KEYS.filters]: JSON.stringify(filtersCache) });
   }
   updateAutoCollectLastRun(data?.[STORAGE_KEYS.autoCollect]);
   return filtersCache;
@@ -4417,7 +4482,9 @@ async function collectVideos(startDate = new Date(Date.now() - 6048e5), progress
   const excludeIds = new Set(
     Array.isArray(options?.excludeIds) ? options.excludeIds.filter(Boolean) : options?.excludeIds instanceof Set ? Array.from(options.excludeIds).filter(Boolean) : []
   );
-  const channels = await getChannelMap();
+  const channels = await getChannelMap([], {
+    refreshSubscriptionsInBackground: true
+  });
   const sources = Object.entries(channels).map(([channelId, info]) => ({
     channelId,
     channelTitle: info?.title || "",
@@ -4479,6 +4546,28 @@ async function collectVideos(startDate = new Date(Date.now() - 6048e5), progress
   let videos = Array.from(videoMap.values());
   console.log("Fetched", videos.length, "videos");
   progress({ phase: "aggregate", videoCount: videos.length });
+  const activeChannelIds = await getActiveSubscriptionChannelIds({
+    waitForRefresh: true
+  });
+  if (activeChannelIds) {
+    const beforeSubscriptionCheck = videos.length;
+    videos = videos.filter(
+      (video) => video?.channelId && activeChannelIds.has(video.channelId)
+    );
+    const skippedUnsubscribed = beforeSubscriptionCheck - videos.length;
+    if (skippedUnsubscribed) {
+      console.log(
+        "Skipped",
+        skippedUnsubscribed,
+        "videos from unsubscribed channels"
+      );
+    }
+    progress({
+      phase: "subscriptionsRechecked",
+      videoCount: videos.length,
+      skippedUnsubscribed
+    });
+  }
   progress({ phase: "filtering", videoCount: videos.length });
   videos = await filterVideos(videos, progress);
   progress({ phase: "filtered", videoCount: videos.length });

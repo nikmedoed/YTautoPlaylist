@@ -1684,6 +1684,7 @@ var PHASE_TO_STAGE = {
   playlistFetch: "playlists",
   playlistFetched: "playlists",
   aggregate: "playlists",
+  subscriptionsRechecked: "videos",
   filtering: "videos",
   filterProgress: "videos",
   filterStats: "videos",
@@ -2113,6 +2114,10 @@ function formatStageLog(event = {}, summary) {
     }
     case "aggregate":
       return `\u0421\u043E\u0431\u0440\u0430\u043D\u043E ${event.videoCount || 0} \u0443\u043D\u0438\u043A\u0430\u043B\u044C\u043D\u044B\u0445 \u0432\u0438\u0434\u0435\u043E`;
+    case "subscriptionsRechecked":
+      return event.skippedUnsubscribed ? `\u041F\u043E\u0441\u043B\u0435 \u0441\u0432\u0435\u0440\u043A\u0438 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A \u043E\u0442\u0431\u0440\u043E\u0448\u0435\u043D\u043E ${formatCount(
+        event.skippedUnsubscribed
+      )} \u0432\u0438\u0434\u0435\u043E` : "\u041F\u043E\u0434\u043F\u0438\u0441\u043A\u0438 \u0441\u0432\u0435\u0440\u0435\u043D\u044B";
     case "filtering":
       return `\u0424\u0438\u043B\u044C\u0442\u0440\u0430\u0446\u0438\u044F (${formatCount(event.videoCount || 0)})`;
     case "filterProgress":
@@ -2168,6 +2173,16 @@ function getStatusInfo(event = {}, summary) {
     case "aggregate":
       return {
         text: `\u041D\u0430\u0439\u0434\u0435\u043D\u043E ${event.videoCount || 0} \u0432\u0438\u0434\u0435\u043E`,
+        kind: "info",
+        timeout: 0
+      };
+    case "subscriptionsRechecked":
+      return event.skippedUnsubscribed ? {
+        text: `\u041E\u0442\u0431\u0440\u043E\u0448\u0435\u043D\u043E \u0441 \u043E\u0442\u043F\u0438\u0441\u0430\u043D\u043D\u044B\u0445 \u043A\u0430\u043D\u0430\u043B\u043E\u0432: ${event.skippedUnsubscribed}`,
+        kind: "info",
+        timeout: 0
+      } : {
+        text: "\u041F\u043E\u0434\u043F\u0438\u0441\u043A\u0438 \u0441\u0432\u0435\u0440\u0435\u043D\u044B",
         kind: "info",
         timeout: 0
       };
