@@ -17,10 +17,7 @@ import { createCollectionAvailabilityController } from "./modules/collection/ava
 import { createPopupSyncController } from "./modules/sync/index.js";
 import { sendMessage as sendRuntimeMessage } from "./lib/runtimeMessages.js";
 import { setButtonLoading } from "./modules/manager/runtime.js";
-import {
-  getWatchedVideoIds as getWatchedVideoIdsFromDetails,
-  updateRemoveWatchedButton as updateRemoveWatchedButtonState,
-} from "./modules/manager/detailHelpers.js";
+import { getWatchedVideoIds as getWatchedVideoIdsFromDetails, updateRemoveWatchedButton as updateRemoveWatchedButtonState } from "./modules/manager/detailHelpers.js";
 import {
   highlightSelectedList,
   populateImportTargets as renderImportTargets,
@@ -89,28 +86,7 @@ const { moveMenu, showMoveMenu } = createManagerMoveActions({
 
 const managerModalController = createManagerModalController({
   defaultListId: DEFAULT_LIST_ID,
-  elements: {
-    modalBackdrop: elements.modalBackdrop,
-    createModal: elements.createModal,
-    importModal: elements.importModal,
-    editModal: elements.editModal,
-    addLinksModal: elements.addLinksModal,
-    openCreateModalBtn: elements.openCreateModalBtn,
-    openImportModalBtn: elements.openImportModalBtn,
-    openAddLinksModalBtn: elements.openAddLinksModalBtn,
-    createForm: elements.createForm,
-    createName: elements.createName,
-    createFreeze: elements.createFreeze,
-    importForm: elements.importForm,
-    importFile: elements.importFile,
-    importModeSelect: elements.importModeSelect,
-    importTargetSelect: elements.importTargetSelect,
-    editForm: elements.editForm,
-    editName: elements.editName,
-    editFreeze: elements.editFreeze,
-    addLinksForm: elements.addLinksForm,
-    addLinksTextarea: elements.addLinksTextarea,
-  },
+  elements,
   getAppState: () => appState,
   getSelectedListDetails: () => selectedListDetails,
   loadState: () => managerStateController.loadState(),
@@ -132,13 +108,7 @@ const handleDetailAction = createManagerDetailActions({
 
 managerStateController = createManagerStateController({
   dragController,
-  elements: {
-    clearListBtn: elements.clearListBtn,
-    detailEmpty: elements.detailEmpty,
-    detailList: elements.detailList,
-    openAddLinksModalBtn: elements.openAddLinksModalBtn,
-    removeWatchedBtn: elements.removeWatchedBtn,
-  },
+  elements,
   fallbackThumbnail,
   getAppState: () => appState,
   getSelectedListDetails: () => selectedListDetails,
@@ -362,12 +332,7 @@ function clearSelection() {
 }
 
 registerManagerBulkActions({
-  buttons: {
-    bulkDeleteBtn: elements.bulkDeleteBtn,
-    bulkMoveBtn: elements.bulkMoveBtn,
-    clearListBtn: elements.clearListBtn,
-    removeWatchedBtn: elements.removeWatchedBtn,
-  },
+  buttons: elements,
   clearSelection,
   applyRemoveLocally,
   getSelectedListDetails: () => selectedListDetails,
@@ -391,13 +356,7 @@ registerManagerEvents({
   controllers: {
     drag: dragController,
   },
-  elements: {
-    clearSelectionBtn: elements.clearSelectionBtn,
-    detailList: elements.detailList,
-    listsBody: elements.listsBody,
-    managerCollectBtn: elements.managerCollectBtn,
-    selectAllBtn: elements.selectAllBtn,
-  },
+  elements,
   handlers: {
     clearSelection,
     handleDetailAction,

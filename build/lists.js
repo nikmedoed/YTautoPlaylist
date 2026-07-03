@@ -1111,6 +1111,61 @@ function formatAddResultMessage({
   };
 }
 
+// src/popup/modules/manager/ytdlpCommand.js
+var YOUTUBE_WATCH_URL = "https://www.youtube.com/watch?v=";
+var FORMAT_OPTIONS = {
+  best: [],
+  mp4: ["-f", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b"],
+  "mp4-720": [
+    "-f",
+    "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/b[height<=720]"
+  ],
+  mp3: ["-f", "bestaudio/best", "-x", "--audio-format", "mp3"],
+  m4a: ["-f", "bestaudio[ext=m4a]/bestaudio/best", "-x", "--audio-format", "m4a"]
+};
+function quotePowerShell(value) {
+  return `"${String(value).replace(/`/g, "``").replace(/"/g, '`"')}"`;
+}
+function normalizePath(value) {
+  return String(value || "").trim();
+}
+function buildVideoUrls(queue) {
+  if (!Array.isArray(queue)) return [];
+  const seen = /* @__PURE__ */ new Set();
+  const urls = [];
+  for (const video of queue) {
+    const id = String(video?.id || "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    urls.push(`${YOUTUBE_WATCH_URL}${encodeURIComponent(id)}`);
+  }
+  return urls;
+}
+function buildYtdlpCommand(queue, options = {}) {
+  const urls = buildVideoUrls(queue);
+  if (!urls.length) return "";
+  const args = ["--batch-file", "-"];
+  args.push(...FORMAT_OPTIONS[options.format] || FORMAT_OPTIONS.best);
+  if (options.quiet !== false) args.push("--quiet", "--no-warnings");
+  if (options.ignoreErrors !== false) args.push("--ignore-errors");
+  if (options.continueDownloads !== false) args.push("--continue");
+  if (options.noOverwrites) args.push("--no-overwrites");
+  if (options.windowsFilenames !== false) args.push("--windows-filenames");
+  if (options.embedMetadata) args.push("--embed-metadata");
+  if (options.embedThumbnail) args.push("--embed-thumbnail");
+  if (options.downloadArchive) args.push("--download-archive", "downloaded.txt");
+  if (options.cookiesFromBrowser) args.push("--cookies-from-browser", options.cookiesFromBrowser);
+  const outputDir = normalizePath(options.outputDir) || ".";
+  const outputTemplate = "%(title).200B [%(id)s].%(ext)s";
+  args.push("-P", outputDir, "-o", outputTemplate);
+  const quotedArgs = args.map(quotePowerShell).join(" ");
+  const quotedUrls = urls.map((url) => `  ${quotePowerShell(url)}`).join(",\n");
+  return `$urls = @(
+${quotedUrls}
+)
+$urls | yt-dlp ${quotedArgs}`;
+}
+
 // src/popup/modules/manager/modalController.js
 function createManagerModalController({
   defaultListId,
@@ -1128,9 +1183,11 @@ function createManagerModalController({
     importModal,
     editModal,
     addLinksModal,
+    ytdlpModal,
     openCreateModalBtn,
     openImportModalBtn,
     openAddLinksModalBtn,
+    openYtdlpModalBtn,
     createForm,
     createName,
     createFreeze,
@@ -1142,10 +1199,22 @@ function createManagerModalController({
     editName,
     editFreeze,
     addLinksForm,
-    addLinksTextarea
+    addLinksTextarea,
+    ytdlpForm,
+    ytdlpFormat,
+    ytdlpOutputDir,
+    ytdlpArchive,
+    ytdlpNoOverwrites,
+    ytdlpMetadata,
+    ytdlpThumbnail,
+    ytdlpCookies,
+    ytdlpCommand,
+    ytdlpSummary,
+    copyYtdlpCommand
   } = elements2;
-  const modals = [createModal, importModal, editModal, addLinksModal];
+  const modals = [createModal, importModal, editModal, addLinksModal, ytdlpModal];
   let editingListId = null;
+  let ytdlpListDetails = null;
   function openModal(modal) {
     if (!modal) return;
     modalBackdrop.hidden = false;
@@ -1159,6 +1228,9 @@ function createManagerModalController({
   function closeModal(modal) {
     if (!modal) return;
     modal.hidden = true;
+    if (modal === ytdlpModal) {
+      ytdlpListDetails = null;
+    }
     if (modals.every((item) => item?.hidden)) {
       modalBackdrop.hidden = true;
       document.body.dataset.modalOpen = "";
@@ -1172,6 +1244,7 @@ function createManagerModalController({
     });
     modalBackdrop.hidden = true;
     document.body.dataset.modalOpen = "";
+    ytdlpListDetails = null;
   }
   function openEditModal(listId) {
     const lists = Array.isArray(getAppState()?.lists) ? getAppState().lists : [];
@@ -1222,6 +1295,17 @@ function createManagerModalController({
       resetAddLinksModal();
       openModal(addLinksModal);
     });
+    openYtdlpModalBtn?.addEventListener("click", () => {
+      const selectedListDetails2 = getSelectedListDetails();
+      const videoCount = buildVideoUrls(selectedListDetails2?.queue).length;
+      if (!selectedListDetails2?.id || !videoCount) {
+        setStatus2("\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u043E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \u043D\u0435\u043F\u0443\u0441\u0442\u043E\u0439 \u0441\u043F\u0438\u0441\u043E\u043A", "info", 2500);
+        return;
+      }
+      ytdlpListDetails = selectedListDetails2;
+      updateYtdlpCommand();
+      openModal(ytdlpModal);
+    });
   }
   function registerForms() {
     createForm.addEventListener("submit", handleCreateSubmit);
@@ -1229,6 +1313,10 @@ function createManagerModalController({
     importForm.addEventListener("submit", handleImportSubmit);
     editForm.addEventListener("submit", handleEditSubmit);
     addLinksForm?.addEventListener("submit", handleAddLinksSubmit);
+    ytdlpForm?.addEventListener("input", updateYtdlpCommand);
+    ytdlpForm?.addEventListener("change", updateYtdlpCommand);
+    ytdlpForm?.addEventListener("submit", (event) => event.preventDefault());
+    copyYtdlpCommand?.addEventListener("click", copyYtdlpCommandText);
   }
   function resetCreateModal() {
     createForm.reset();
@@ -1243,6 +1331,63 @@ function createManagerModalController({
     addLinksForm?.reset();
     if (addLinksTextarea) {
       addLinksTextarea.value = "";
+    }
+  }
+  async function openYtdlpModalForList(listId) {
+    if (!listId) return;
+    try {
+      const details = await sendMessage3("playlist:getList", { listId });
+      const videoCount = buildVideoUrls(details?.queue).length;
+      if (!details?.id || !videoCount) {
+        setStatus2("\u0412 \u044D\u0442\u043E\u043C \u0441\u043F\u0438\u0441\u043A\u0435 \u043D\u0435\u0442 \u0432\u0438\u0434\u0435\u043E \u0434\u043B\u044F \u043A\u043E\u043C\u0430\u043D\u0434\u044B", "info", 2500);
+        return;
+      }
+      ytdlpListDetails = details;
+      updateYtdlpCommand();
+      openModal(ytdlpModal);
+    } catch (err) {
+      console.error("Failed to load list for yt-dlp command", err);
+      setStatus2("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043A\u0440\u044B\u0442\u044C \u043A\u043E\u043D\u0441\u0442\u0440\u0443\u043A\u0442\u043E\u0440 yt-dlp", "error", 3500);
+    }
+  }
+  function getYtdlpOptions() {
+    return {
+      format: ytdlpFormat?.value || "best",
+      outputDir: ytdlpOutputDir?.value || "",
+      downloadArchive: Boolean(ytdlpArchive?.checked),
+      noOverwrites: Boolean(ytdlpNoOverwrites?.checked),
+      embedMetadata: Boolean(ytdlpMetadata?.checked),
+      embedThumbnail: Boolean(ytdlpThumbnail?.checked),
+      cookiesFromBrowser: ytdlpCookies?.checked ? "chrome" : ""
+    };
+  }
+  function updateYtdlpCommand() {
+    const listDetails = ytdlpListDetails || getSelectedListDetails();
+    const queue = Array.isArray(listDetails?.queue) ? listDetails.queue : [];
+    const urls = buildVideoUrls(queue);
+    const command = buildYtdlpCommand(queue, getYtdlpOptions());
+    if (ytdlpCommand) {
+      ytdlpCommand.value = command;
+    }
+    if (ytdlpSummary) {
+      const title = listDetails?.name || "\u0442\u0435\u043A\u0443\u0449\u0438\u0439 \u0441\u043F\u0438\u0441\u043E\u043A";
+      ytdlpSummary.textContent = urls.length ? `${urls.length} \u0432\u0438\u0434\u0435\u043E \u0438\u0437 \u0441\u043F\u0438\u0441\u043A\u0430 \xAB${title}\xBB. \u0420\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0435 \u043D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u0441\u043A\u0430\u0447\u0438\u0432\u0430\u0435\u0442.` : "\u0412 \u0442\u0435\u043A\u0443\u0449\u0435\u043C \u0441\u043F\u0438\u0441\u043A\u0435 \u043D\u0435\u0442 \u0432\u0438\u0434\u0435\u043E \u0434\u043B\u044F \u043A\u043E\u043C\u0430\u043D\u0434\u044B.";
+    }
+    if (copyYtdlpCommand) {
+      copyYtdlpCommand.disabled = !command;
+    }
+  }
+  async function copyYtdlpCommandText() {
+    const command = ytdlpCommand?.value || "";
+    if (!command) return;
+    try {
+      await navigator.clipboard.writeText(command);
+      setStatus2("\u041A\u043E\u043C\u0430\u043D\u0434\u0430 \u0441\u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u043D\u0430", "success", 2200);
+    } catch (err) {
+      console.warn("Clipboard write failed", err);
+      ytdlpCommand?.focus();
+      ytdlpCommand?.select();
+      setStatus2("\u041A\u043E\u043C\u0430\u043D\u0434\u0443 \u043C\u043E\u0436\u043D\u043E \u0441\u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0438\u0437 \u043F\u043E\u043B\u044F", "info", 3e3);
     }
   }
   async function handleCreateSubmit(event) {
@@ -1367,6 +1512,7 @@ function createManagerModalController({
     closeModal,
     openEditModal,
     openModal,
+    openYtdlpModalForList,
     register
   };
 }
@@ -1424,6 +1570,9 @@ function createManagerListActions({
         break;
       case "export":
         await exportList(listId);
+        break;
+      case "ytdlp":
+        await managerModalController2.openYtdlpModalForList(listId);
         break;
       case "createYoutubePlaylist":
         await createYouTubePlaylistForList(listId, button);
@@ -2200,6 +2349,7 @@ function createManagerStateController({
     detailEmpty,
     detailList,
     openAddLinksModalBtn,
+    openYtdlpModalBtn,
     removeWatchedBtn
   } = elements2;
   let requestedListApplied = false;
@@ -2295,6 +2445,7 @@ function createManagerStateController({
     const hasList = Boolean(details?.id);
     if (openAddLinksModalBtn) openAddLinksModalBtn.disabled = !hasList;
     const videos = Array.isArray(details?.queue) ? details.queue : [];
+    if (openYtdlpModalBtn) openYtdlpModalBtn.disabled = videos.length === 0;
     selectionController2.setVideos(videos);
     if (clearListBtn) clearListBtn.disabled = videos.length === 0;
     updateRemoveWatchedButton2();
@@ -2349,6 +2500,7 @@ function createManagerStateController({
       if (clearListBtn) clearListBtn.disabled = true;
       updateRemoveWatchedButton2();
       if (openAddLinksModalBtn) openAddLinksModalBtn.disabled = true;
+      if (openYtdlpModalBtn) openYtdlpModalBtn.disabled = true;
       updateCollectionAvailability();
       updateDetailActiveVideo();
       return;
@@ -2743,11 +2895,13 @@ var MANAGER_ELEMENT_IDS = [
   "openCreateModal",
   "openImportModal",
   "openAddLinksModal",
+  "openYtdlpModal",
   "modalBackdrop",
   "createModal",
   "importModal",
   "editModal",
   "addLinksModal",
+  "ytdlpModal",
   "createForm",
   "createName",
   "createFreeze",
@@ -2760,13 +2914,25 @@ var MANAGER_ELEMENT_IDS = [
   "editName",
   "editFreeze",
   "addLinksForm",
-  "addLinksTextarea"
+  "addLinksTextarea",
+  "ytdlpForm",
+  "ytdlpFormat",
+  "ytdlpOutputDir",
+  "ytdlpArchive",
+  "ytdlpNoOverwrites",
+  "ytdlpMetadata",
+  "ytdlpThumbnail",
+  "ytdlpCookies",
+  "ytdlpCommand",
+  "ytdlpSummary",
+  "copyYtdlpCommand"
 ];
 var ELEMENT_ALIASES = {
   managerCollectSubscriptions: "managerCollectBtn",
   openAddLinksModal: "openAddLinksModalBtn",
   openCreateModal: "openCreateModalBtn",
   openImportModal: "openImportModalBtn",
+  openYtdlpModal: "openYtdlpModalBtn",
   status: "statusBox"
 };
 function getManagerElements(documentRef = document) {
@@ -4343,6 +4509,12 @@ function createListCard({
   item.appendChild(main);
   const actions = document.createElement("div");
   actions.className = "list-card-actions";
+  actions.appendChild(
+    makeActionButton("yt-dlp", "ytdlp", list.id, {
+      className: "secondary",
+      disabled: (list.length ?? 0) === 0
+    })
+  );
   if (!isDefaultList) {
     actions.appendChild(makeActionButton("\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C", "edit", list.id));
   }
@@ -4471,28 +4643,7 @@ var { moveMenu, showMoveMenu } = createManagerMoveActions({
 });
 var managerModalController = createManagerModalController({
   defaultListId: DEFAULT_LIST_ID,
-  elements: {
-    modalBackdrop: elements.modalBackdrop,
-    createModal: elements.createModal,
-    importModal: elements.importModal,
-    editModal: elements.editModal,
-    addLinksModal: elements.addLinksModal,
-    openCreateModalBtn: elements.openCreateModalBtn,
-    openImportModalBtn: elements.openImportModalBtn,
-    openAddLinksModalBtn: elements.openAddLinksModalBtn,
-    createForm: elements.createForm,
-    createName: elements.createName,
-    createFreeze: elements.createFreeze,
-    importForm: elements.importForm,
-    importFile: elements.importFile,
-    importModeSelect: elements.importModeSelect,
-    importTargetSelect: elements.importTargetSelect,
-    editForm: elements.editForm,
-    editName: elements.editName,
-    editFreeze: elements.editFreeze,
-    addLinksForm: elements.addLinksForm,
-    addLinksTextarea: elements.addLinksTextarea
-  },
+  elements,
   getAppState: () => appState,
   getSelectedListDetails: () => selectedListDetails,
   loadState: () => managerStateController.loadState(),
@@ -4512,13 +4663,7 @@ var handleDetailAction = createManagerDetailActions({
 });
 managerStateController = createManagerStateController({
   dragController,
-  elements: {
-    clearListBtn: elements.clearListBtn,
-    detailEmpty: elements.detailEmpty,
-    detailList: elements.detailList,
-    openAddLinksModalBtn: elements.openAddLinksModalBtn,
-    removeWatchedBtn: elements.removeWatchedBtn
-  },
+  elements,
   fallbackThumbnail,
   getAppState: () => appState,
   getSelectedListDetails: () => selectedListDetails,
@@ -4713,12 +4858,7 @@ function clearSelection() {
   selectionController.clear();
 }
 registerManagerBulkActions({
-  buttons: {
-    bulkDeleteBtn: elements.bulkDeleteBtn,
-    bulkMoveBtn: elements.bulkMoveBtn,
-    clearListBtn: elements.clearListBtn,
-    removeWatchedBtn: elements.removeWatchedBtn
-  },
+  buttons: elements,
   clearSelection,
   applyRemoveLocally,
   getSelectedListDetails: () => selectedListDetails,
@@ -4739,13 +4879,7 @@ registerManagerEvents({
   controllers: {
     drag: dragController
   },
-  elements: {
-    clearSelectionBtn: elements.clearSelectionBtn,
-    detailList: elements.detailList,
-    listsBody: elements.listsBody,
-    managerCollectBtn: elements.managerCollectBtn,
-    selectAllBtn: elements.selectAllBtn
-  },
+  elements,
   handlers: {
     clearSelection,
     handleDetailAction,

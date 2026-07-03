@@ -29,11 +29,13 @@ const MANAGER_ELEMENT_IDS = [
   "openCreateModal",
   "openImportModal",
   "openAddLinksModal",
+  "openYtdlpModal",
   "modalBackdrop",
   "createModal",
   "importModal",
   "editModal",
   "addLinksModal",
+  "ytdlpModal",
   "createForm",
   "createName",
   "createFreeze",
@@ -47,6 +49,17 @@ const MANAGER_ELEMENT_IDS = [
   "editFreeze",
   "addLinksForm",
   "addLinksTextarea",
+  "ytdlpForm",
+  "ytdlpFormat",
+  "ytdlpOutputDir",
+  "ytdlpArchive",
+  "ytdlpNoOverwrites",
+  "ytdlpMetadata",
+  "ytdlpThumbnail",
+  "ytdlpCookies",
+  "ytdlpCommand",
+  "ytdlpSummary",
+  "copyYtdlpCommand",
 ];
 
 const ELEMENT_ALIASES = {
@@ -54,6 +67,7 @@ const ELEMENT_ALIASES = {
   openAddLinksModal: "openAddLinksModalBtn",
   openCreateModal: "openCreateModalBtn",
   openImportModal: "openImportModalBtn",
+  openYtdlpModal: "openYtdlpModalBtn",
   status: "statusBox",
 };
 

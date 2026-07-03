@@ -34,6 +34,7 @@ export function createManagerStateController({
     detailEmpty,
     detailList,
     openAddLinksModalBtn,
+    openYtdlpModalBtn,
     removeWatchedBtn,
   } = elements;
   let requestedListApplied = false;
@@ -147,6 +148,7 @@ export function createManagerStateController({
     const hasList = Boolean(details?.id);
     if (openAddLinksModalBtn) openAddLinksModalBtn.disabled = !hasList;
     const videos = Array.isArray(details?.queue) ? details.queue : [];
+    if (openYtdlpModalBtn) openYtdlpModalBtn.disabled = videos.length === 0;
     selectionController.setVideos(videos);
     if (clearListBtn) clearListBtn.disabled = videos.length === 0;
     updateRemoveWatchedButton();
@@ -205,6 +207,7 @@ export function createManagerStateController({
       if (clearListBtn) clearListBtn.disabled = true;
       updateRemoveWatchedButton();
       if (openAddLinksModalBtn) openAddLinksModalBtn.disabled = true;
+      if (openYtdlpModalBtn) openYtdlpModalBtn.disabled = true;
       updateCollectionAvailability();
       updateDetailActiveVideo();
       return;

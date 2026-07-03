@@ -4,6 +4,7 @@ import {
   normalizeAddResponse,
 } from "../../../addResultMessages.js";
 import { extractVideoIdsFromText, setButtonLoading } from "./runtime.js";
+import { buildYtdlpCommand, buildVideoUrls } from "./ytdlpCommand.js";
 
 // Wires every manager modal and keeps submit handling next to the fields it reads.
 export function createManagerModalController({
@@ -22,9 +23,11 @@ export function createManagerModalController({
     importModal,
     editModal,
     addLinksModal,
+    ytdlpModal,
     openCreateModalBtn,
     openImportModalBtn,
     openAddLinksModalBtn,
+    openYtdlpModalBtn,
     createForm,
     createName,
     createFreeze,
@@ -37,10 +40,22 @@ export function createManagerModalController({
     editFreeze,
     addLinksForm,
     addLinksTextarea,
+    ytdlpForm,
+    ytdlpFormat,
+    ytdlpOutputDir,
+    ytdlpArchive,
+    ytdlpNoOverwrites,
+    ytdlpMetadata,
+    ytdlpThumbnail,
+    ytdlpCookies,
+    ytdlpCommand,
+    ytdlpSummary,
+    copyYtdlpCommand,
   } = elements;
 
-  const modals = [createModal, importModal, editModal, addLinksModal];
+  const modals = [createModal, importModal, editModal, addLinksModal, ytdlpModal];
   let editingListId = null;
+  let ytdlpListDetails = null;
 
   function openModal(modal) {
     if (!modal) return;
@@ -56,6 +71,9 @@ export function createManagerModalController({
   function closeModal(modal) {
     if (!modal) return;
     modal.hidden = true;
+    if (modal === ytdlpModal) {
+      ytdlpListDetails = null;
+    }
     if (modals.every((item) => item?.hidden)) {
       modalBackdrop.hidden = true;
       document.body.dataset.modalOpen = "";
@@ -70,6 +88,7 @@ export function createManagerModalController({
     });
     modalBackdrop.hidden = true;
     document.body.dataset.modalOpen = "";
+    ytdlpListDetails = null;
   }
 
   function openEditModal(listId) {
@@ -126,6 +145,18 @@ export function createManagerModalController({
       resetAddLinksModal();
       openModal(addLinksModal);
     });
+
+    openYtdlpModalBtn?.addEventListener("click", () => {
+      const selectedListDetails = getSelectedListDetails();
+      const videoCount = buildVideoUrls(selectedListDetails?.queue).length;
+      if (!selectedListDetails?.id || !videoCount) {
+        setStatus("Сначала откройте непустой список", "info", 2500);
+        return;
+      }
+      ytdlpListDetails = selectedListDetails;
+      updateYtdlpCommand();
+      openModal(ytdlpModal);
+    });
   }
 
   function registerForms() {
@@ -134,6 +165,10 @@ export function createManagerModalController({
     importForm.addEventListener("submit", handleImportSubmit);
     editForm.addEventListener("submit", handleEditSubmit);
     addLinksForm?.addEventListener("submit", handleAddLinksSubmit);
+    ytdlpForm?.addEventListener("input", updateYtdlpCommand);
+    ytdlpForm?.addEventListener("change", updateYtdlpCommand);
+    ytdlpForm?.addEventListener("submit", (event) => event.preventDefault());
+    copyYtdlpCommand?.addEventListener("click", copyYtdlpCommandText);
   }
 
   function resetCreateModal() {
@@ -151,6 +186,71 @@ export function createManagerModalController({
     addLinksForm?.reset();
     if (addLinksTextarea) {
       addLinksTextarea.value = "";
+    }
+  }
+
+  async function openYtdlpModalForList(listId) {
+    if (!listId) return;
+    try {
+      const details = await sendMessage("playlist:getList", { listId });
+      const videoCount = buildVideoUrls(details?.queue).length;
+      if (!details?.id || !videoCount) {
+        setStatus("В этом списке нет видео для команды", "info", 2500);
+        return;
+      }
+      ytdlpListDetails = details;
+      updateYtdlpCommand();
+      openModal(ytdlpModal);
+    } catch (err) {
+      console.error("Failed to load list for yt-dlp command", err);
+      setStatus("Не удалось открыть конструктор yt-dlp", "error", 3500);
+    }
+  }
+
+  function getYtdlpOptions() {
+    return {
+      format: ytdlpFormat?.value || "best",
+      outputDir: ytdlpOutputDir?.value || "",
+      downloadArchive: Boolean(ytdlpArchive?.checked),
+      noOverwrites: Boolean(ytdlpNoOverwrites?.checked),
+      embedMetadata: Boolean(ytdlpMetadata?.checked),
+      embedThumbnail: Boolean(ytdlpThumbnail?.checked),
+      cookiesFromBrowser: ytdlpCookies?.checked ? "chrome" : "",
+    };
+  }
+
+  function updateYtdlpCommand() {
+    const listDetails = ytdlpListDetails || getSelectedListDetails();
+    const queue = Array.isArray(listDetails?.queue)
+      ? listDetails.queue
+      : [];
+    const urls = buildVideoUrls(queue);
+    const command = buildYtdlpCommand(queue, getYtdlpOptions());
+    if (ytdlpCommand) {
+      ytdlpCommand.value = command;
+    }
+    if (ytdlpSummary) {
+      const title = listDetails?.name || "текущий список";
+      ytdlpSummary.textContent = urls.length
+        ? `${urls.length} видео из списка «${title}». Расширение ничего не скачивает.`
+        : "В текущем списке нет видео для команды.";
+    }
+    if (copyYtdlpCommand) {
+      copyYtdlpCommand.disabled = !command;
+    }
+  }
+
+  async function copyYtdlpCommandText() {
+    const command = ytdlpCommand?.value || "";
+    if (!command) return;
+    try {
+      await navigator.clipboard.writeText(command);
+      setStatus("Команда скопирована", "success", 2200);
+    } catch (err) {
+      console.warn("Clipboard write failed", err);
+      ytdlpCommand?.focus();
+      ytdlpCommand?.select();
+      setStatus("Команду можно скопировать из поля", "info", 3000);
     }
   }
 
@@ -281,6 +381,7 @@ export function createManagerModalController({
     closeModal,
     openEditModal,
     openModal,
+    openYtdlpModalForList,
     register,
   };
 }
