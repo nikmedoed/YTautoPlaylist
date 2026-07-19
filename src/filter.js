@@ -33,6 +33,7 @@ async function fetchInfo(list) {
       response.forEach((video) => infoMap.set(video.id, video));
     } catch (err) {
       console.error("Failed to fetch video info chunk", chunk, err);
+      throw err;
     }
   }
   return list.map((video) => {

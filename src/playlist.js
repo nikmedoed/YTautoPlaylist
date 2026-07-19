@@ -78,7 +78,11 @@ export async function collectVideos(
   for (const r of results) {
     for (const v of r.videos) {
       if (!excludeIds.has(v.id) && !videoMap.has(v.id)) {
-        videoMap.set(v.id, v);
+        videoMap.set(v.id, {
+          ...v,
+          channelId: v.channelId || r.channelId,
+          channelTitle: v.channelTitle || r.channelTitle,
+        });
       }
     }
   }

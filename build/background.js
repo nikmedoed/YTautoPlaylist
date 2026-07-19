@@ -4213,6 +4213,7 @@ async function fetchInfo(list) {
       response.forEach((video) => infoMap.set(video.id, video));
     } catch (err) {
       console.error("Failed to fetch video info chunk", chunk, err);
+      throw err;
     }
   }
   return list.map((video) => {
@@ -4539,7 +4540,11 @@ async function collectVideos(startDate = new Date(Date.now() - 6048e5), progress
   for (const r of results) {
     for (const v of r.videos) {
       if (!excludeIds.has(v.id) && !videoMap.has(v.id)) {
-        videoMap.set(v.id, v);
+        videoMap.set(v.id, {
+          ...v,
+          channelId: v.channelId || r.channelId,
+          channelTitle: v.channelTitle || r.channelTitle
+        });
       }
     }
   }
