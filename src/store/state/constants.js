@@ -23,6 +23,7 @@ export const DEFAULT_LIST_NAME = "Основной";
 export const VIDEO_PROGRESS_LIMIT = 500;
 export const AUTO_COLLECT_SEEN_IDS_LIMIT = 2000;
 export const QUEUE_REMOVAL_LOG_LIMIT = 2000;
+export const DELETED_LISTS_LIMIT = 500;
 export const WATCHED_PROGRESS_THRESHOLD = 95;
 export const SYNC_DEBOUNCE_MS = 15 * 1000;
 export const SYNC_RETRY_MS = 60 * 1000;
@@ -47,6 +48,7 @@ export const defaultState = {
   currentVideoId: null,
   history: [],
   deletedHistory: [],
+  deletedLists: {},
   queueRemovals: [],
   currentTabId: null,
   autoCollect: {

@@ -108,12 +108,15 @@ import { __setCallApi } from '../src/youtube-api/transport.js';
     { tab: { id: 77 } }
   );
   const stored = await getState();
-  assert.deepStrictEqual(stored.lists.default.queue.map((entry) => entry.id), []);
   assert.deepStrictEqual(
-    stored.lists.target.queue.map((entry) => entry.id),
+    stored.lists.default.queue.map((entry) => entry.id),
     ['videoAdd001']
   );
-  console.log('content add requests use the current active list from background state');
+  assert.deepStrictEqual(
+    stored.lists.target.queue.map((entry) => entry.id),
+    []
+  );
+  console.log('add requests honor an explicit target list even when sender has a tab');
 }
 
 {

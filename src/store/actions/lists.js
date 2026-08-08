@@ -86,6 +86,10 @@ export async function removeList(
   return withState((state) => {
     ensureListExists(state, listId);
     const list = detachList(state, listId);
+    state.deletedLists = {
+      ...(state.deletedLists || {}),
+      [listId]: Date.now(),
+    };
     if (mode === "delete") {
       if (list.queue.length) {
         ensureNotificationQueue(state);

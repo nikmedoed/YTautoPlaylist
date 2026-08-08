@@ -56,6 +56,7 @@ export function buildSyncState(stateInput) {
     currentTabId: null,
     history: deepClone(state.history),
     deletedHistory: deepClone(state.deletedHistory),
+    deletedLists: deepClone(state.deletedLists),
     queueRemovals: deepClone(state.queueRemovals),
     autoCollect: deepClone(state.autoCollect),
     videoProgress: deepClone(state.videoProgress),
@@ -151,6 +152,21 @@ function mergeLists(primaryLists, secondaryLists) {
     merged[id] = mergeList(primaryLists?.[id], secondaryLists?.[id], id);
   });
   return merged;
+}
+
+function mergeDeletedLists(primary = {}, secondary = {}) {
+  const merged = { ...secondary };
+  Object.entries(primary || {}).forEach(([id, deletedAt]) => {
+    merged[id] = Math.max(Number(merged[id]) || 0, Number(deletedAt) || 0);
+  });
+  return merged;
+}
+
+function applyDeletedLists(lists, deletedLists) {
+  Object.keys(deletedLists || {}).forEach((id) => {
+    if (id !== DEFAULT_LIST_ID) delete lists[id];
+  });
+  return lists;
 }
 
 function rememberTimestamp(map, id, timestamp) {
@@ -363,9 +379,14 @@ export function mergeSyncStatesConservatively(localInput, remoteInput) {
     remote.videoProgress,
     local.videoProgress
   );
-  const lists = applyRemovalMarkersToLists(mergeLists(remote.lists, local.lists), {
+  const deletedLists = mergeDeletedLists(remote.deletedLists, local.deletedLists);
+  const lists = applyRemovalMarkersToLists(applyDeletedLists(
+    mergeLists(remote.lists, local.lists),
+    deletedLists
+  ), {
     queueRemovals,
     deletedHistory,
+    deletedLists,
     history,
     videoProgress,
   });
@@ -376,6 +397,7 @@ export function mergeSyncStatesConservatively(localInput, remoteInput) {
     currentVideoId: local.currentVideoId,
     history,
     deletedHistory,
+    deletedLists,
     queueRemovals,
     autoCollect: mergeAutoCollect(remote.autoCollect, local.autoCollect),
     videoProgress,
@@ -385,8 +407,12 @@ export function mergeSyncStatesConservatively(localInput, remoteInput) {
 export function mergeRemoteSyncState(localInput, remoteInput) {
   const local = sanitizeState(localInput);
   const remote = sanitizeState(remoteInput);
+  const deletedLists = mergeDeletedLists(remote.deletedLists, local.deletedLists);
   const merged = sanitizeState({
     ...remote,
+    lists: applyDeletedLists(deepClone(remote.lists), deletedLists),
+    listOrder: remote.listOrder.filter((id) => !deletedLists[id]),
+    deletedLists,
     currentTabId: local.currentTabId,
   });
 

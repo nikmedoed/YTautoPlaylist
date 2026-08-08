@@ -118,7 +118,7 @@ export async function addEntries(entries, listId = null, options = {}) {
 
 // Fetches YouTube metadata, writes the entries, and returns UI state plus
 // counters for popup/content status messages.
-export async function handleAddByIds(message, sender = null) {
+export async function handleAddByIds(message) {
   const uniqueIds = normalizeVideoIdList(message?.videoIds);
   if (!uniqueIds.length) {
     const state = await getPresentationState();
@@ -131,7 +131,7 @@ export async function handleAddByIds(message, sender = null) {
     };
   }
   const beforeState = await getState();
-  const requestedListId = sender?.tab ? null : message?.listId || null;
+  const requestedListId = message?.listId || null;
   const targetListId = resolveAddTargetListId(beforeState, requestedListId);
 
   const entries = await fetchVideoEntries(uniqueIds);

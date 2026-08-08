@@ -29,6 +29,7 @@ var DEFAULT_LIST_NAME = "\u041E\u0441\u043D\u043E\u0432\u043D\u043E\u0439";
 var VIDEO_PROGRESS_LIMIT = 500;
 var AUTO_COLLECT_SEEN_IDS_LIMIT = 2e3;
 var QUEUE_REMOVAL_LOG_LIMIT = 2e3;
+var DELETED_LISTS_LIMIT = 500;
 var WATCHED_PROGRESS_THRESHOLD = 95;
 var SYNC_DEBOUNCE_MS = 15 * 1e3;
 var SYNC_RETRY_MS = 60 * 1e3;
@@ -51,6 +52,7 @@ var defaultState = {
   currentVideoId: null,
   history: [],
   deletedHistory: [],
+  deletedLists: {},
   queueRemovals: [],
   currentTabId: null,
   autoCollect: {
@@ -468,6 +470,7 @@ function splitStateForStorage(state) {
     currentVideoId: state.currentVideoId,
     history: state.history,
     queueRemovals: state.queueRemovals,
+    deletedLists: state.deletedLists,
     currentTabId: state.currentTabId
   });
   const autoCollect = deepClone(state.autoCollect);
@@ -597,6 +600,14 @@ function sanitizeQueueRemovalEntry(entry) {
     removedAt: Math.trunc(removedAt)
   };
 }
+function sanitizeDeletedLists(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return Object.fromEntries(
+    Object.entries(raw).filter(
+      ([id, deletedAt]) => id && id !== DEFAULT_LIST_ID && Number.isFinite(Number(deletedAt)) && Number(deletedAt) > 0
+    ).sort((a, b) => Number(b[1]) - Number(a[1])).slice(0, DELETED_LISTS_LIMIT).map(([id, deletedAt]) => [id, Math.trunc(Number(deletedAt))])
+  );
+}
 function ensureDefaultList(state) {
   if (!state.lists[DEFAULT_LIST_ID]) {
     state.lists[DEFAULT_LIST_ID] = {
@@ -677,6 +688,7 @@ function sanitizeState(raw) {
         return null;
       }
     }).filter(Boolean).slice(0, HISTORY_LIMIT) : [],
+    deletedLists: sanitizeDeletedLists(raw.deletedLists),
     queueRemovals: Array.isArray(raw.queueRemovals) ? raw.queueRemovals.map((item) => {
       try {
         return sanitizeQueueRemovalEntry(item);
@@ -771,6 +783,7 @@ function buildSyncState(stateInput) {
     currentTabId: null,
     history: deepClone(state.history),
     deletedHistory: deepClone(state.deletedHistory),
+    deletedLists: deepClone(state.deletedLists),
     queueRemovals: deepClone(state.queueRemovals),
     autoCollect: deepClone(state.autoCollect),
     videoProgress: deepClone(state.videoProgress)
@@ -852,6 +865,19 @@ function mergeLists(primaryLists, secondaryLists) {
     merged[id] = mergeList(primaryLists?.[id], secondaryLists?.[id], id);
   });
   return merged;
+}
+function mergeDeletedLists(primary = {}, secondary = {}) {
+  const merged = { ...secondary };
+  Object.entries(primary || {}).forEach(([id, deletedAt]) => {
+    merged[id] = Math.max(Number(merged[id]) || 0, Number(deletedAt) || 0);
+  });
+  return merged;
+}
+function applyDeletedLists(lists, deletedLists) {
+  Object.keys(deletedLists || {}).forEach((id) => {
+    if (id !== DEFAULT_LIST_ID) delete lists[id];
+  });
+  return lists;
 }
 function rememberTimestamp(map, id, timestamp) {
   map.set(id, Math.max(Number(map.get(id)) || 0, timestamp));
@@ -1032,9 +1058,14 @@ function mergeSyncStatesConservatively(localInput, remoteInput) {
     remote.videoProgress,
     local.videoProgress
   );
-  const lists = applyRemovalMarkersToLists(mergeLists(remote.lists, local.lists), {
+  const deletedLists = mergeDeletedLists(remote.deletedLists, local.deletedLists);
+  const lists = applyRemovalMarkersToLists(applyDeletedLists(
+    mergeLists(remote.lists, local.lists),
+    deletedLists
+  ), {
     queueRemovals,
     deletedHistory,
+    deletedLists,
     history,
     videoProgress
   });
@@ -1045,6 +1076,7 @@ function mergeSyncStatesConservatively(localInput, remoteInput) {
     currentVideoId: local.currentVideoId,
     history,
     deletedHistory,
+    deletedLists,
     queueRemovals,
     autoCollect: mergeAutoCollect(remote.autoCollect, local.autoCollect),
     videoProgress
@@ -1053,8 +1085,12 @@ function mergeSyncStatesConservatively(localInput, remoteInput) {
 function mergeRemoteSyncState(localInput, remoteInput) {
   const local = sanitizeState(localInput);
   const remote = sanitizeState(remoteInput);
+  const deletedLists = mergeDeletedLists(remote.deletedLists, local.deletedLists);
   const merged = sanitizeState({
     ...remote,
+    lists: applyDeletedLists(deepClone(remote.lists), deletedLists),
+    listOrder: remote.listOrder.filter((id) => !deletedLists[id]),
+    deletedLists,
     currentTabId: local.currentTabId
   });
   if (local.currentListId && merged.lists[local.currentListId]) {
@@ -3096,6 +3132,10 @@ async function removeList(listId, { mode = "move", targetListId = DEFAULT_LIST_I
   return withState((state) => {
     ensureListExists(state, listId);
     const list = detachList(state, listId);
+    state.deletedLists = {
+      ...state.deletedLists || {},
+      [listId]: Date.now()
+    };
     if (mode === "delete") {
       if (list.queue.length) {
         ensureNotificationQueue(state);
@@ -4875,7 +4915,7 @@ async function addEntries(entries, listId = null, options = {}) {
     sync: "immediate"
   });
 }
-async function handleAddByIds(message, sender = null) {
+async function handleAddByIds(message) {
   const uniqueIds = normalizeVideoIdList(message?.videoIds);
   if (!uniqueIds.length) {
     const state2 = await getPresentationState();
@@ -4888,7 +4928,7 @@ async function handleAddByIds(message, sender = null) {
     };
   }
   const beforeState = await getState();
-  const requestedListId = sender?.tab ? null : message?.listId || null;
+  const requestedListId = message?.listId || null;
   const targetListId = resolveAddTargetListId(beforeState, requestedListId);
   const entries = await fetchVideoEntries(uniqueIds);
   const fetchedIds = new Set(entries.map((entry) => entry?.id).filter(Boolean));

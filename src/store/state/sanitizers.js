@@ -3,6 +3,7 @@ import {
   AUTO_COLLECT_SEEN_IDS_LIMIT,
   DEFAULT_LIST_ID,
   DEFAULT_LIST_NAME,
+  DELETED_LISTS_LIMIT,
   HISTORY_LIMIT,
   QUEUE_REMOVAL_LOG_LIMIT,
   VIDEO_ID_PATTERN,
@@ -135,6 +136,23 @@ export function sanitizeQueueRemovalEntry(entry) {
   };
 }
 
+export function sanitizeDeletedLists(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return Object.fromEntries(
+    Object.entries(raw)
+      .filter(
+        ([id, deletedAt]) =>
+          id &&
+          id !== DEFAULT_LIST_ID &&
+          Number.isFinite(Number(deletedAt)) &&
+          Number(deletedAt) > 0
+      )
+      .sort((a, b) => Number(b[1]) - Number(a[1]))
+      .slice(0, DELETED_LISTS_LIMIT)
+      .map(([id, deletedAt]) => [id, Math.trunc(Number(deletedAt))])
+  );
+}
+
 export function ensureDefaultList(state) {
   if (!state.lists[DEFAULT_LIST_ID]) {
     state.lists[DEFAULT_LIST_ID] = {
@@ -249,6 +267,7 @@ export function sanitizeState(raw) {
           .filter(Boolean)
           .slice(0, HISTORY_LIMIT)
       : [],
+    deletedLists: sanitizeDeletedLists(raw.deletedLists),
     queueRemovals: Array.isArray(raw.queueRemovals)
       ? raw.queueRemovals
           .map((item) => {

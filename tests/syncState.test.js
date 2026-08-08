@@ -375,6 +375,29 @@ import {
 }
 
 {
+  const merged = mergeSyncStatesConservatively(
+    {
+      lists: {
+        default: { id: 'default', queue: [], revision: 0 },
+      },
+      listOrder: ['default'],
+      deletedLists: { obsolete: 5000 },
+    },
+    {
+      lists: {
+        default: { id: 'default', queue: [], revision: 0 },
+        obsolete: { id: 'obsolete', name: 'Old list', queue: [], revision: 2 },
+      },
+      listOrder: ['default', 'obsolete'],
+    }
+  );
+  assert.strictEqual(merged.lists.obsolete, undefined);
+  assert.strictEqual(merged.deletedLists.obsolete, 5000);
+  assert.deepStrictEqual(merged.listOrder, ['default']);
+  console.log('playlist sync tombstones prevent deleted lists from returning');
+}
+
+{
   const queueRemovals = Array.from({ length: 20 }, (_, index) => ({
     id: `delVid${String(index).padStart(5, '0')}`,
     listId: 'default',

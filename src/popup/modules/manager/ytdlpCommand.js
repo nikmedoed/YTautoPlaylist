@@ -41,7 +41,7 @@ export function buildYtdlpCommand(queue, options = {}) {
   const args = ["--batch-file", "-"];
   args.push(...(FORMAT_OPTIONS[options.format] || FORMAT_OPTIONS.best));
 
-  if (options.quiet !== false) args.push("--quiet", "--no-warnings");
+  if (options.quiet === true) args.push("--quiet", "--no-warnings");
   if (options.ignoreErrors !== false) args.push("--ignore-errors");
   if (options.continueDownloads !== false) args.push("--continue");
   if (options.noOverwrites) args.push("--no-overwrites");

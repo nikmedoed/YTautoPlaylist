@@ -224,6 +224,7 @@ var defaultState = {
   currentVideoId: null,
   history: [],
   deletedHistory: [],
+  deletedLists: {},
   queueRemovals: [],
   currentTabId: null,
   autoCollect: {
