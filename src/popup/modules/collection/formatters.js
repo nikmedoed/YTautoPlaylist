@@ -186,6 +186,12 @@ export function formatStageLog(event = {}, summary) {
     }
     case "aggregate":
       return `Собрано ${event.videoCount || 0} уникальных видео`;
+    case "subscriptionsRechecked":
+      return event.skippedUnsubscribed
+        ? `После сверки подписок отброшено ${formatCount(
+            event.skippedUnsubscribed
+          )} видео`
+        : "Подписки сверены";
     case "filtering":
       return `Фильтрация (${formatCount(event.videoCount || 0)})`;
     case "filterProgress":
@@ -252,6 +258,18 @@ export function getStatusInfo(event = {}, summary) {
         kind: "info",
         timeout: 0,
       };
+    case "subscriptionsRechecked":
+      return event.skippedUnsubscribed
+        ? {
+            text: `Отброшено с отписанных каналов: ${event.skippedUnsubscribed}`,
+            kind: "info",
+            timeout: 0,
+          }
+        : {
+            text: "Подписки сверены",
+            kind: "info",
+            timeout: 0,
+          };
     case "filtering":
       return {
         text: `Фильтрация ${event.videoCount || 0} видео`,

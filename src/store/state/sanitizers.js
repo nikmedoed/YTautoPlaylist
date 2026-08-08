@@ -3,7 +3,9 @@ import {
   AUTO_COLLECT_SEEN_IDS_LIMIT,
   DEFAULT_LIST_ID,
   DEFAULT_LIST_NAME,
+  DELETED_LISTS_LIMIT,
   HISTORY_LIMIT,
+  QUEUE_REMOVAL_LOG_LIMIT,
   VIDEO_ID_PATTERN,
   defaultState,
 } from "./constants.js";
@@ -55,11 +57,17 @@ export function sanitizeEntry(entry) {
     publishedAt = null,
     duration = null,
     addedAt = Date.now(),
+    description = "",
+    tags = [],
+    liveStreamingDetails = null,
+    liveBroadcastContent = null,
+    ...extraFields
   } = entry;
   if (!id) {
     throw new TypeError("Playlist entry must include id");
   }
-  return {
+  const sanitized = {
+    ...extraFields,
     id,
     title,
     channelId,
@@ -74,6 +82,23 @@ export function sanitizeEntry(entry) {
     duration,
     addedAt,
   };
+  if (typeof description === "string" && description) {
+    sanitized.description = description;
+  }
+  if (Array.isArray(tags) && tags.length) {
+    sanitized.tags = tags.filter((tag) => typeof tag === "string");
+  }
+  if (liveStreamingDetails && typeof liveStreamingDetails === "object") {
+    sanitized.liveStreamingDetails = {
+      actualStartTime: liveStreamingDetails.actualStartTime || null,
+      scheduledStartTime: liveStreamingDetails.scheduledStartTime || null,
+      actualEndTime: liveStreamingDetails.actualEndTime || null,
+    };
+  }
+  if (typeof liveBroadcastContent === "string" && liveBroadcastContent) {
+    sanitized.liveBroadcastContent = liveBroadcastContent;
+  }
+  return sanitized;
 }
 
 export function sanitizeHistoryEntry(entry) {
@@ -92,6 +117,40 @@ export function sanitizeDeletedHistoryEntry(entry) {
     deletedAt: entry?.deletedAt || Date.now(),
     listId: entry?.listId || null,
   };
+}
+
+export function sanitizeQueueRemovalEntry(entry) {
+  const id = typeof entry?.id === "string" ? entry.id.trim() : "";
+  if (!id) {
+    throw new TypeError("Queue removal entry must include id");
+  }
+  const listId = typeof entry?.listId === "string" ? entry.listId.trim() : "";
+  const removedAt = Number(entry?.removedAt);
+  if (!Number.isFinite(removedAt) || removedAt <= 0) {
+    throw new TypeError("Queue removal entry must include removedAt");
+  }
+  return {
+    id,
+    listId: listId || null,
+    removedAt: Math.trunc(removedAt),
+  };
+}
+
+export function sanitizeDeletedLists(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return Object.fromEntries(
+    Object.entries(raw)
+      .filter(
+        ([id, deletedAt]) =>
+          id &&
+          id !== DEFAULT_LIST_ID &&
+          Number.isFinite(Number(deletedAt)) &&
+          Number(deletedAt) > 0
+      )
+      .sort((a, b) => Number(b[1]) - Number(a[1]))
+      .slice(0, DELETED_LISTS_LIMIT)
+      .map(([id, deletedAt]) => [id, Math.trunc(Number(deletedAt))])
+  );
 }
 
 export function ensureDefaultList(state) {
@@ -207,6 +266,19 @@ export function sanitizeState(raw) {
           })
           .filter(Boolean)
           .slice(0, HISTORY_LIMIT)
+      : [],
+    deletedLists: sanitizeDeletedLists(raw.deletedLists),
+    queueRemovals: Array.isArray(raw.queueRemovals)
+      ? raw.queueRemovals
+          .map((item) => {
+            try {
+              return sanitizeQueueRemovalEntry(item);
+            } catch {
+              return null;
+            }
+          })
+          .filter(Boolean)
+          .slice(0, QUEUE_REMOVAL_LOG_LIMIT)
       : [],
     currentTabId:
       typeof raw.currentTabId === "number" &&

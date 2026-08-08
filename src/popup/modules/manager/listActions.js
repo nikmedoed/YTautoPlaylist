@@ -35,6 +35,9 @@ export function createManagerListActions({
       case "export":
         await exportList(listId);
         break;
+      case "ytdlp":
+        await managerModalController.openYtdlpModalForList(listId);
+        break;
       case "createYoutubePlaylist":
         await createYouTubePlaylistForList(listId, button);
         break;

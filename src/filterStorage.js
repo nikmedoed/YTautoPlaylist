@@ -1,7 +1,15 @@
 // Filter persistence helper. Reads and writes saved filter settings through Chrome storage.
+import {
+  AUTO_COLLECT_STORAGE_KEY,
+  FILTERS_STORAGE_KEY,
+  normalizeSettingsFilters,
+  resolveRemoteSettingsSyncFilters,
+  scheduleSettingsSync,
+} from "./store/state/index.js";
+
 const STORAGE_KEYS = {
-  filters: "filters",
-  autoCollect: "subscriptionsCollect",
+  filters: FILTERS_STORAGE_KEY,
+  autoCollect: AUTO_COLLECT_STORAGE_KEY,
 };
 
 const DEFAULT_FILTERS = Object.freeze({
@@ -38,17 +46,7 @@ function cloneDefaultFilters() {
 }
 
 export function normalizeFilters(raw) {
-  if (!raw || typeof raw !== "object") {
-    return cloneDefaultFilters();
-  }
-  const normalized = cloneDefaultFilters();
-  if (raw.global && typeof raw.global === "object") {
-    normalized.global = { ...normalized.global, ...raw.global };
-  }
-  if (raw.channels && typeof raw.channels === "object") {
-    normalized.channels = { ...raw.channels };
-  }
-  return normalized;
+  return normalizeSettingsFilters(raw);
 }
 
 function parseStoredFilters(raw) {
@@ -92,6 +90,10 @@ export async function getFilters() {
   }
   const data = await chromeGet([STORAGE_KEYS.filters, STORAGE_KEYS.autoCollect]);
   filtersCache = parseStoredFilters(data?.[STORAGE_KEYS.filters]);
+  const resolved = await resolveRemoteSettingsSyncFilters(filtersCache);
+  if (resolved.imported) {
+    filtersCache = resolved.filters;
+  }
   if (!data?.[STORAGE_KEYS.filters]) {
     await chromeSet({ [STORAGE_KEYS.filters]: JSON.stringify(filtersCache) });
   }
@@ -105,4 +107,5 @@ export async function saveFilters(filters) {
     return;
   }
   await chromeSet({ [STORAGE_KEYS.filters]: JSON.stringify(filtersCache) });
+  await scheduleSettingsSync(filtersCache);
 }

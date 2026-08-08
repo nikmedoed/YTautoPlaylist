@@ -10,18 +10,25 @@ import {
 // Returns the card overlay CSS injected by the content script.
 export function getVideoCardStyles() {
   return `
+  #yta-card-overlay-root {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 2147483647;
+  }
   .${THUMB_HOST_CLASS} {
     position: relative !important;
   }
   .${CARD_OVERLAY_HOST_CLASS} {
     position: relative !important;
-    z-index: auto;
+    z-index: 0;
   }
   .${INLINE_BUTTON_OVERLAY_CLASS} {
-    position: absolute;
-    inset: 0;
+    position: fixed;
+    top: 0;
+    left: 0;
     pointer-events: none;
-    z-index: 2147483000;
+    z-index: 2147483647 !important;
   }
   .${INLINE_BUTTON_OVERLAY_CLASS} .${ADD_BUTTON_CLASS} {
     pointer-events: auto;
@@ -69,7 +76,7 @@ export function getVideoCardStyles() {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    z-index: 5;
+    z-index: 2147483647 !important;
     transition: transform 0.15s ease, background 0.2s ease, opacity 0.2s ease;
   }
   .${ADD_BUTTON_CLASS}:hover {

@@ -3,6 +3,7 @@ import {
   addVideos,
   clearCurrentTab,
   DEFAULT_LIST_ID,
+  buildPresentationState,
   getPresentationState,
   getState,
   moveVideosToList,
@@ -10,6 +11,7 @@ import {
 } from "../store/index.js";
 import { parseVideoId } from "../utils.js";
 import { formatStorageTimestamp } from "../time.js";
+import { requestAccountSyncFlush } from "./accountSync.js";
 import { notifyState } from "./channel.js";
 import { dispatchNotifications, ensureDefaultQueueFilled } from "./collectionSync.js";
 import { fetchVideoEntries } from "./collector.js";
@@ -56,28 +58,48 @@ function countAddedEntriesInQueue(nextState, listId, beforeState) {
     .length;
 }
 
+function notifyMutationState(state) {
+  notifyState(state).catch((err) => {
+    console.error("State notification failed", err);
+  });
+}
+
+function dispatchMutationNotifications() {
+  dispatchNotifications().catch((err) => {
+    console.error("Notification dispatch failed", err);
+  });
+}
+
 export async function applyMutation(mutator, options = {}) {
   const {
     notify = true,
     dispatch = false,
     ensureDefault = false,
+    sync = null,
   } = options;
   const result = await mutator();
   if (notify) {
-    await notifyState();
+    notifyMutationState(result);
   }
-  if (dispatch) {
-    await dispatchNotifications();
+  const hasPendingNotifications =
+    Array.isArray(result?.pendingNotifications) && result.pendingNotifications.length > 0;
+  if (dispatch && hasPendingNotifications) {
+    dispatchMutationNotifications();
   }
   if (ensureDefault) {
-    await ensureDefaultQueueFilled();
+    ensureDefaultQueueFilled().catch((err) => {
+      console.error("Auto collection after mutation failed", err);
+    });
+  }
+  if (sync === "immediate") {
+    requestAccountSyncFlush({ forcePlaylist: true });
   }
   return result;
 }
 
 export async function mutateAndPresent(mutator, options = {}) {
-  await applyMutation(mutator, options);
-  return getPresentationState();
+  const state = await applyMutation(mutator, options);
+  return buildPresentationState(state);
 }
 
 // Adds arbitrary queue entries, then returns the popup/content presentation
@@ -90,12 +112,13 @@ export async function addEntries(entries, listId = null, options = {}) {
   return mutateAndPresent(() => addVideos(entries, listId), {
     dispatch: true,
     ensureDefault,
+    sync: "immediate",
   });
 }
 
 // Fetches YouTube metadata, writes the entries, and returns UI state plus
 // counters for popup/content status messages.
-export async function handleAddByIds(message, sender = null) {
+export async function handleAddByIds(message) {
   const uniqueIds = normalizeVideoIdList(message?.videoIds);
   if (!uniqueIds.length) {
     const state = await getPresentationState();
@@ -108,7 +131,7 @@ export async function handleAddByIds(message, sender = null) {
     };
   }
   const beforeState = await getState();
-  const requestedListId = sender?.tab ? null : message?.listId || null;
+  const requestedListId = message?.listId || null;
   const targetListId = resolveAddTargetListId(beforeState, requestedListId);
 
   const entries = await fetchVideoEntries(uniqueIds);
@@ -117,6 +140,7 @@ export async function handleAddByIds(message, sender = null) {
   const afterState = await applyMutation(() => addVideos(entries, targetListId), {
     dispatch: true,
     ensureDefault: Boolean(message?.ensureDefault),
+    sync: "immediate",
   });
   const state = await getPresentationState();
   const added = countAddedEntriesInQueue(afterState, targetListId, beforeState);
@@ -136,7 +160,7 @@ export async function handleRemoveVideos(videoIds, listId = null) {
   }
   return mutateAndPresent(
     () => removeVideos(filtered, { listId }),
-    { dispatch: true, ensureDefault: true }
+    { dispatch: true, ensureDefault: true, sync: "immediate" }
   );
 }
 
@@ -150,7 +174,7 @@ export async function handleMoveVideos(videoIds, targetListId) {
   }
   return mutateAndPresent(
     () => moveVideosToList(ids, targetListId),
-    { dispatch: true, ensureDefault: true }
+    { dispatch: true, ensureDefault: true, sync: "immediate" }
   );
 }
 

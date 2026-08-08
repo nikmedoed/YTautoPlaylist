@@ -11,6 +11,7 @@ import {
   adjustIndexAfterRemoval,
   appendDeletedHistory,
   appendHistory,
+  appendQueueRemoval,
   bumpListRevision,
   ensureDefaultRefreshFlag,
   findVideo,
@@ -141,14 +142,16 @@ export async function markVideoWatched(videoId, { listId = null } = {}) {
       return state;
     }
     const entry = list.queue[index];
+    const watchedAt = Date.now();
     if (list.id === DEFAULT_LIST_ID && entry?.id) {
       rememberAutoCollectSeenIds(state, [entry.id]);
     }
-    appendHistory(state, entry, list.id);
-    applyVideoProgress(state, videoId, 100, { timestamp: Date.now() });
+    appendHistory(state, entry, list.id, { watchedAt });
+    applyVideoProgress(state, videoId, 100, { timestamp: watchedAt });
     const shouldRemove = list.id === DEFAULT_LIST_ID || !list.freeze;
     let listChanged = false;
     if (shouldRemove) {
+      appendQueueRemoval(state, entry, list.id, { removedAt: watchedAt });
       list.queue.splice(index, 1);
       adjustIndexAfterRemoval(list, index);
       listChanged = true;
@@ -251,7 +254,9 @@ function moveVideoInState(state, videoId, targetListId) {
   if (!located) return false;
   const { list, index } = located;
   if (list.id === targetListId) return false;
+  const movedAt = Date.now();
   const [entry] = list.queue.splice(index, 1);
+  appendQueueRemoval(state, entry, list.id, { removedAt: movedAt });
   adjustIndexAfterRemoval(list, index);
   bumpListRevision(list);
   if (list.id === DEFAULT_LIST_ID) {
@@ -269,7 +274,7 @@ function moveVideoInState(state, videoId, targetListId) {
   if (list.id === DEFAULT_LIST_ID || target.id === DEFAULT_LIST_ID) {
     rememberAutoCollectSeenIds(state, [entry.id]);
   }
-  target.queue.push(entry);
+  target.queue.push({ ...entry, addedAt: movedAt });
   bumpListRevision(target);
   if (target.currentIndex === null) {
     target.currentIndex = 0;

@@ -13,12 +13,28 @@ var VIDEO_PROGRESS_STORAGE_KEY = "runtimePlaylistProgress";
 var DELETED_HISTORY_STORAGE_KEY = "runtimePlaylistDeletedHistory";
 var AUTO_COLLECT_STORAGE_KEY = "subscriptionsCollect";
 var LEGACY_AUTO_COLLECT_STORAGE_KEY = "runtimePlaylistAutoCollect";
+var FILTERS_STORAGE_KEY = "filters";
+var SYNC_LOCAL_META_STORAGE_KEY = "runtimePlaylistSyncLocal";
+var SETTINGS_SYNC_LOCAL_META_STORAGE_KEY = "runtimeSettingsSyncLocal";
+var SETTINGS_SYNC_MANIFEST_STORAGE_KEY = "runtimeSettingsSyncManifest";
+var SETTINGS_SYNC_CHUNK_STORAGE_PREFIX = "runtimeSettingsSyncChunk:";
+var DRIVE_SYNC_LOCAL_META_STORAGE_KEY = "runtimeDriveSyncLocal";
+var DRIVE_SYNC_FILE_NAME = "ytautoplaylist-sync.json";
+var DRIVE_PLAYLIST_BACKUP_LIMIT = 3;
+var SYNC_ALARM_NAME = "runtimePlaylistSyncFlush";
 var LIST_CONTENT_PREFIX = "runtimePlaylistList:";
 var HISTORY_LIMIT = 10;
 var DEFAULT_LIST_ID = "default";
 var DEFAULT_LIST_NAME = "\u041E\u0441\u043D\u043E\u0432\u043D\u043E\u0439";
 var VIDEO_PROGRESS_LIMIT = 500;
 var AUTO_COLLECT_SEEN_IDS_LIMIT = 2e3;
+var QUEUE_REMOVAL_LOG_LIMIT = 2e3;
+var DELETED_LISTS_LIMIT = 500;
+var WATCHED_PROGRESS_THRESHOLD = 95;
+var SYNC_DEBOUNCE_MS = 15 * 1e3;
+var SYNC_RETRY_MS = 60 * 1e3;
+var SYNC_CHUNK_TARGET_BYTES = 7600;
+var SETTINGS_SYNC_TOTAL_TARGET_BYTES = 32 * 1024;
 var VIDEO_ID_PATTERN = /^[\w-]{11}$/;
 var defaultState = {
   lists: {
@@ -36,6 +52,8 @@ var defaultState = {
   currentVideoId: null,
   history: [],
   deletedHistory: [],
+  deletedLists: {},
+  queueRemovals: [],
   currentTabId: null,
   autoCollect: {
     lastRunAt: 0,
@@ -48,6 +66,170 @@ var defaultState = {
 };
 function getListStorageKey(id) {
   return `${LIST_CONTENT_PREFIX}${id}`;
+}
+
+// src/auth.js
+if (typeof chrome !== "undefined") {
+  chrome.storage.local.set({ authStatus: false });
+}
+var currentToken = null;
+function clearToken() {
+  if (typeof chrome !== "undefined" && currentToken) {
+    chrome.identity.removeCachedAuthToken({ token: currentToken }, () => {
+    });
+  }
+  currentToken = null;
+  if (typeof chrome !== "undefined") {
+    chrome.storage.local.set({ authStatus: false });
+  }
+}
+function signInUser() {
+  if (typeof chrome === "undefined") {
+    return Promise.reject(new Error("chrome API unavailable"));
+  }
+  if (currentToken) {
+    chrome.identity.removeCachedAuthToken({ token: currentToken }, () => {
+    });
+    currentToken = null;
+  }
+  return new Promise((resolve, reject) => {
+    chrome.identity.getAuthToken({ interactive: true }, (token) => {
+      if (chrome.runtime.lastError || !token) {
+        console.error("Failed to obtain token", chrome.runtime.lastError);
+        chrome.storage.local.set({ authStatus: false });
+        reject(chrome.runtime.lastError);
+      } else {
+        currentToken = token;
+        chrome.storage.local.set({ authStatus: true });
+        resolve(token);
+      }
+    });
+  });
+}
+function getToken({ interactive = true } = {}) {
+  if (typeof chrome === "undefined") {
+    return Promise.reject(new Error("chrome API unavailable"));
+  }
+  if (currentToken) return Promise.resolve(currentToken);
+  return new Promise((resolve, reject) => {
+    chrome.identity.getAuthToken({ interactive: false }, async (token) => {
+      if (chrome.runtime.lastError || !token) {
+        if (!interactive) {
+          reject(chrome.runtime.lastError || new Error("Auth token unavailable"));
+          return;
+        }
+        try {
+          const t = await signInUser();
+          resolve(t);
+        } catch (err) {
+          reject(err);
+        }
+      } else {
+        currentToken = token;
+        chrome.storage.local.set({ authStatus: true });
+        resolve(token);
+      }
+    });
+  });
+}
+
+// src/utils.js
+var YOUTUBE_ID_PATTERN = /[\w-]{11}/;
+var PLAYLIST_ID_PATTERN = /[\w-]{13,64}/;
+var THUMBNAIL_PRIORITY = ["maxres", "standard", "high", "medium", "default"];
+function logMessage(level, context, count, message) {
+  const text = `[${context}] item ${count}: ${message}`;
+  if (level === "warn") {
+    console.warn(text);
+  } else {
+    console.error(text);
+  }
+}
+function deepClone(value) {
+  if (value == null) {
+    return value;
+  }
+  return JSON.parse(JSON.stringify(value));
+}
+function parseVideoId(input) {
+  if (!input) return "";
+  const str = String(input).trim();
+  if (/^[\w-]{11}$/.test(str)) return str;
+  try {
+    const baseUrl = typeof globalThis?.location?.href === "string" ? globalThis.location.href : null;
+    const url = baseUrl ? new URL(str, baseUrl) : new URL(str);
+    if (url.hostname.includes("youtu.be")) {
+      const id = url.pathname.split("/").filter(Boolean)[0];
+      if (/^[\w-]{11}$/.test(id)) return id;
+    }
+    const candidate = url.searchParams.get("v");
+    if (candidate && /^[\w-]{11}$/.test(candidate)) return candidate;
+    const segments = url.pathname.split("/");
+    for (const segment of segments) {
+      if (/^[\w-]{11}$/.test(segment)) return segment;
+    }
+  } catch {
+  }
+  const match = str.match(YOUTUBE_ID_PATTERN);
+  return match ? match[0] : "";
+}
+function parsePlaylistId(input) {
+  if (!input) return "";
+  const str = String(input).trim();
+  if (str.length === 11) {
+    return "";
+  }
+  if (/^[\w-]{13,64}$/.test(str)) {
+    return str;
+  }
+  try {
+    const url = new URL(str, "https://www.youtube.com");
+    const listParam = url.searchParams.get("list");
+    if (listParam && listParam.length !== 11 && /^[\w-]{13,64}$/.test(listParam)) {
+      return listParam;
+    }
+    const segments = url.pathname.split("/");
+    for (const segment of segments) {
+      if (segment.length !== 11 && /^[\w-]{13,64}$/.test(segment)) {
+        return segment;
+      }
+    }
+  } catch {
+  }
+  const match = String(input).replace(/content-id-/gi, "").match(PLAYLIST_ID_PATTERN);
+  if (!match) {
+    return "";
+  }
+  const candidate = match[0];
+  return candidate.length === 11 ? "" : candidate;
+}
+function pickThumbnailValue(value) {
+  if (typeof value === "string" && value) {
+    return value;
+  }
+  if (!value || typeof value !== "object") {
+    return "";
+  }
+  return value.url || value.fallback || value.defaultSrc || "";
+}
+function pickThumbnailSet(thumbnails) {
+  if (!thumbnails || typeof thumbnails !== "object") {
+    return "";
+  }
+  for (const key of THUMBNAIL_PRIORITY) {
+    const url = pickThumbnailValue(thumbnails[key]);
+    if (url) {
+      return url;
+    }
+  }
+  return "";
+}
+function resolveThumbnailUrl(entry, fallback = "") {
+  if (!entry || typeof entry !== "object") {
+    return fallback || "";
+  }
+  const id = parseVideoId(entry.id);
+  return pickThumbnailValue(entry.thumbnail) || pickThumbnailSet(entry.thumbnails) || (id ? `https://i.ytimg.com/vi/${id}/mqdefault.jpg` : "") || fallback || "";
 }
 
 // src/progress.js
@@ -206,306 +388,6 @@ function applyVideoProgress(state, videoId, percent, options = {}) {
   return !existing || existing.percent !== clamped || timestamp !== existing.updatedAt;
 }
 
-// src/store/state/sanitizers.js
-var SECOND_TS_MIN = 1e9;
-var SECOND_TS_MAX = 1e10;
-function normalizeAutoCollectTimestamp(value) {
-  let ts = Number(value);
-  if (!Number.isFinite(ts) || ts <= 0) {
-    return 0;
-  }
-  ts = Math.trunc(ts);
-  if (ts >= SECOND_TS_MIN && ts < SECOND_TS_MAX) {
-    ts *= 1e3;
-  }
-  return ts;
-}
-function sanitizeAutoCollectSeenIds(raw) {
-  const source = Array.isArray(raw) ? raw : [];
-  const seen = /* @__PURE__ */ new Set();
-  const result = [];
-  for (let index = source.length - 1; index >= 0; index -= 1) {
-    const value = typeof source[index] === "string" ? source[index].trim() : "";
-    if (!VIDEO_ID_PATTERN.test(value) || seen.has(value)) {
-      continue;
-    }
-    seen.add(value);
-    result.push(value);
-    if (result.length >= AUTO_COLLECT_SEEN_IDS_LIMIT) {
-      break;
-    }
-  }
-  return result.reverse();
-}
-function sanitizeEntry(entry) {
-  if (!entry || typeof entry !== "object") {
-    throw new TypeError("Invalid playlist entry");
-  }
-  const {
-    id,
-    title = "",
-    channelId = "",
-    channelTitle = "",
-    thumbnail = "",
-    publishedAt = null,
-    duration = null,
-    addedAt = Date.now()
-  } = entry;
-  if (!id) {
-    throw new TypeError("Playlist entry must include id");
-  }
-  return {
-    id,
-    title,
-    channelId,
-    channelTitle,
-    thumbnail,
-    publishedAt: publishedAt instanceof Date ? publishedAt.toISOString() : typeof publishedAt === "string" ? publishedAt : null,
-    duration,
-    addedAt
-  };
-}
-function sanitizeHistoryEntry(entry) {
-  const base = sanitizeEntry(entry);
-  return {
-    ...base,
-    watchedAt: entry?.watchedAt || Date.now(),
-    listId: entry?.listId || null
-  };
-}
-function sanitizeDeletedHistoryEntry(entry) {
-  const base = sanitizeEntry(entry);
-  return {
-    ...base,
-    deletedAt: entry?.deletedAt || Date.now(),
-    listId: entry?.listId || null
-  };
-}
-function ensureDefaultList(state) {
-  if (!state.lists[DEFAULT_LIST_ID]) {
-    state.lists[DEFAULT_LIST_ID] = {
-      id: DEFAULT_LIST_ID,
-      name: DEFAULT_LIST_NAME,
-      freeze: false,
-      queue: [],
-      currentIndex: null,
-      revision: 0
-    };
-  } else {
-    state.lists[DEFAULT_LIST_ID].name = DEFAULT_LIST_NAME;
-    state.lists[DEFAULT_LIST_ID].freeze = false;
-    if (!Number.isInteger(state.lists[DEFAULT_LIST_ID].revision)) {
-      state.lists[DEFAULT_LIST_ID].revision = 0;
-    }
-  }
-  if (!Array.isArray(state.listOrder) || !state.listOrder.length) {
-    state.listOrder = [DEFAULT_LIST_ID];
-  } else if (!state.listOrder.includes(DEFAULT_LIST_ID)) {
-    state.listOrder.unshift(DEFAULT_LIST_ID);
-  }
-  if (!state.currentListId || !state.lists[state.currentListId]) {
-    state.currentListId = DEFAULT_LIST_ID;
-  }
-  return state;
-}
-function sanitizeList(rawList, id) {
-  if (!rawList || typeof rawList !== "object") {
-    return {
-      id,
-      name: id === DEFAULT_LIST_ID ? DEFAULT_LIST_NAME : "\u0421\u043F\u0438\u0441\u043E\u043A",
-      freeze: false,
-      queue: [],
-      currentIndex: null,
-      revision: 0
-    };
-  }
-  const list = {
-    id: rawList.id || id,
-    name: rawList.name || (id === DEFAULT_LIST_ID ? DEFAULT_LIST_NAME : "\u0421\u043F\u0438\u0441\u043E\u043A"),
-    freeze: id === DEFAULT_LIST_ID ? false : Boolean(rawList.freeze),
-    queue: Array.isArray(rawList.queue) ? rawList.queue.map((item) => {
-      try {
-        return sanitizeEntry(item);
-      } catch {
-        return null;
-      }
-    }).filter(Boolean) : [],
-    currentIndex: Number.isInteger(rawList.currentIndex) ? rawList.currentIndex : null,
-    revision: Number.isInteger(rawList.revision) ? rawList.revision : 0
-  };
-  if (list.currentIndex === null || list.currentIndex < 0 || list.currentIndex >= list.queue.length) {
-    list.currentIndex = list.queue.length ? 0 : null;
-  }
-  return list;
-}
-function sanitizeState(raw) {
-  if (!raw || typeof raw !== "object") {
-    return JSON.parse(JSON.stringify(defaultState));
-  }
-  const state = {
-    lists: {},
-    listOrder: Array.isArray(raw.listOrder) ? raw.listOrder.filter((id) => typeof id === "string" && id) : [],
-    currentListId: typeof raw.currentListId === "string" && raw.currentListId ? raw.currentListId : DEFAULT_LIST_ID,
-    currentVideoId: typeof raw.currentVideoId === "string" ? raw.currentVideoId : null,
-    history: Array.isArray(raw.history) ? raw.history.map((item) => {
-      try {
-        return sanitizeHistoryEntry(item);
-      } catch {
-        return null;
-      }
-    }).filter(Boolean).slice(0, HISTORY_LIMIT) : [],
-    deletedHistory: Array.isArray(raw.deletedHistory) ? raw.deletedHistory.map((item) => {
-      try {
-        return sanitizeDeletedHistoryEntry(item);
-      } catch {
-        return null;
-      }
-    }).filter(Boolean).slice(0, HISTORY_LIMIT) : [],
-    currentTabId: typeof raw.currentTabId === "number" && Number.isInteger(raw.currentTabId) ? raw.currentTabId : null,
-    autoCollect: raw.autoCollect && typeof raw.autoCollect === "object" ? {
-      lastRunAt: normalizeAutoCollectTimestamp(raw.autoCollect.lastRunAt),
-      lastAdded: Math.max(0, Number(raw.autoCollect.lastAdded) || 0),
-      lastFetched: Math.max(0, Number(raw.autoCollect.lastFetched) || 0),
-      nextAutoCollectAt: normalizeAutoCollectTimestamp(
-        raw.autoCollect.nextAutoCollectAt
-      ),
-      seenIds: sanitizeAutoCollectSeenIds(raw.autoCollect.seenIds)
-    } : {
-      lastRunAt: 0,
-      lastAdded: 0,
-      lastFetched: 0,
-      nextAutoCollectAt: 0,
-      seenIds: []
-    },
-    videoProgress: sanitizeVideoProgressMap(
-      raw && typeof raw === "object" && raw.videoProgress || (raw?.runtime && typeof raw.runtime === "object" ? raw.runtime.videoProgress : null)
-    )
-  };
-  const rawLists = raw.lists && typeof raw.lists === "object" ? raw.lists : {};
-  const listIds = new Set(state.listOrder);
-  Object.keys(rawLists).forEach((id) => {
-    const sanitized = sanitizeList(rawLists[id], id);
-    state.lists[id] = sanitized;
-    listIds.add(id);
-  });
-  if (!state.lists[DEFAULT_LIST_ID]) {
-    state.lists[DEFAULT_LIST_ID] = sanitizeList(
-      rawLists[DEFAULT_LIST_ID],
-      DEFAULT_LIST_ID
-    );
-    listIds.add(DEFAULT_LIST_ID);
-  }
-  state.listOrder = Array.from(listIds);
-  ensureDefaultList(state);
-  if (!state.lists[state.currentListId]) {
-    state.currentListId = DEFAULT_LIST_ID;
-  }
-  return state;
-}
-function ensureListExists(state, listId) {
-  if (!listId || !state.lists[listId]) {
-    throw new Error(`List ${listId} not found`);
-  }
-}
-
-// src/utils.js
-var YOUTUBE_ID_PATTERN = /[\w-]{11}/;
-var PLAYLIST_ID_PATTERN = /[\w-]{13,64}/;
-var THUMBNAIL_PRIORITY = ["maxres", "standard", "high", "medium", "default"];
-function logMessage(level, context, count, message) {
-  const text = `[${context}] item ${count}: ${message}`;
-  if (level === "warn") {
-    console.warn(text);
-  } else {
-    console.error(text);
-  }
-}
-function deepClone(value) {
-  if (value == null) {
-    return value;
-  }
-  return JSON.parse(JSON.stringify(value));
-}
-function parseVideoId(input) {
-  if (!input) return "";
-  const str = String(input).trim();
-  if (/^[\w-]{11}$/.test(str)) return str;
-  try {
-    const baseUrl = typeof globalThis?.location?.href === "string" ? globalThis.location.href : null;
-    const url = baseUrl ? new URL(str, baseUrl) : new URL(str);
-    if (url.hostname.includes("youtu.be")) {
-      const id = url.pathname.split("/").filter(Boolean)[0];
-      if (/^[\w-]{11}$/.test(id)) return id;
-    }
-    const candidate = url.searchParams.get("v");
-    if (candidate && /^[\w-]{11}$/.test(candidate)) return candidate;
-    const segments = url.pathname.split("/");
-    for (const segment of segments) {
-      if (/^[\w-]{11}$/.test(segment)) return segment;
-    }
-  } catch {
-  }
-  const match = str.match(YOUTUBE_ID_PATTERN);
-  return match ? match[0] : "";
-}
-function parsePlaylistId(input) {
-  if (!input) return "";
-  const str = String(input).trim();
-  if (str.length === 11) {
-    return "";
-  }
-  if (/^[\w-]{13,64}$/.test(str)) {
-    return str;
-  }
-  try {
-    const url = new URL(str, "https://www.youtube.com");
-    const listParam = url.searchParams.get("list");
-    if (listParam && listParam.length !== 11 && /^[\w-]{13,64}$/.test(listParam)) {
-      return listParam;
-    }
-    const segments = url.pathname.split("/");
-    for (const segment of segments) {
-      if (segment.length !== 11 && /^[\w-]{13,64}$/.test(segment)) {
-        return segment;
-      }
-    }
-  } catch {
-  }
-  const match = String(input).replace(/content-id-/gi, "").match(PLAYLIST_ID_PATTERN);
-  if (!match) {
-    return "";
-  }
-  const candidate = match[0];
-  return candidate.length === 11 ? "" : candidate;
-}
-function pickThumbnailValue(value) {
-  if (typeof value === "string" && value) {
-    return value;
-  }
-  if (!value || typeof value !== "object") {
-    return "";
-  }
-  return value.url || value.fallback || value.defaultSrc || "";
-}
-function pickThumbnailSet(thumbnails) {
-  if (!thumbnails || typeof thumbnails !== "object") {
-    return "";
-  }
-  for (const key of THUMBNAIL_PRIORITY) {
-    const url = pickThumbnailValue(thumbnails[key]);
-    if (url) {
-      return url;
-    }
-  }
-  return "";
-}
-function resolveThumbnailUrl(entry, fallback = "") {
-  if (!entry || typeof entry !== "object") {
-    return fallback || "";
-  }
-  return pickThumbnailValue(entry.thumbnail) || pickThumbnailSet(entry.thumbnails) || fallback || "";
-}
-
 // src/store/state/serialization.js
 function composeRawState(rawMeta, rawRuntime, rawLists, rawAutoCollect, rawDeletedHistory, rawVideoProgress) {
   const meta = rawMeta && typeof rawMeta === "object" ? rawMeta : {};
@@ -587,6 +469,8 @@ function splitStateForStorage(state) {
     currentListId: state.currentListId,
     currentVideoId: state.currentVideoId,
     history: state.history,
+    queueRemovals: state.queueRemovals,
+    deletedLists: state.deletedLists,
     currentTabId: state.currentTabId
   });
   const autoCollect = deepClone(state.autoCollect);
@@ -602,18 +486,881 @@ function splitStateForStorage(state) {
   };
 }
 
+// src/store/state/sanitizers.js
+var SECOND_TS_MIN = 1e9;
+var SECOND_TS_MAX = 1e10;
+function normalizeAutoCollectTimestamp(value) {
+  let ts = Number(value);
+  if (!Number.isFinite(ts) || ts <= 0) {
+    return 0;
+  }
+  ts = Math.trunc(ts);
+  if (ts >= SECOND_TS_MIN && ts < SECOND_TS_MAX) {
+    ts *= 1e3;
+  }
+  return ts;
+}
+function sanitizeAutoCollectSeenIds(raw) {
+  const source = Array.isArray(raw) ? raw : [];
+  const seen = /* @__PURE__ */ new Set();
+  const result = [];
+  for (let index = source.length - 1; index >= 0; index -= 1) {
+    const value = typeof source[index] === "string" ? source[index].trim() : "";
+    if (!VIDEO_ID_PATTERN.test(value) || seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    result.push(value);
+    if (result.length >= AUTO_COLLECT_SEEN_IDS_LIMIT) {
+      break;
+    }
+  }
+  return result.reverse();
+}
+function sanitizeEntry(entry) {
+  if (!entry || typeof entry !== "object") {
+    throw new TypeError("Invalid playlist entry");
+  }
+  const {
+    id,
+    title = "",
+    channelId = "",
+    channelTitle = "",
+    thumbnail = "",
+    publishedAt = null,
+    duration = null,
+    addedAt = Date.now(),
+    description = "",
+    tags = [],
+    liveStreamingDetails = null,
+    liveBroadcastContent = null,
+    ...extraFields
+  } = entry;
+  if (!id) {
+    throw new TypeError("Playlist entry must include id");
+  }
+  const sanitized = {
+    ...extraFields,
+    id,
+    title,
+    channelId,
+    channelTitle,
+    thumbnail,
+    publishedAt: publishedAt instanceof Date ? publishedAt.toISOString() : typeof publishedAt === "string" ? publishedAt : null,
+    duration,
+    addedAt
+  };
+  if (typeof description === "string" && description) {
+    sanitized.description = description;
+  }
+  if (Array.isArray(tags) && tags.length) {
+    sanitized.tags = tags.filter((tag) => typeof tag === "string");
+  }
+  if (liveStreamingDetails && typeof liveStreamingDetails === "object") {
+    sanitized.liveStreamingDetails = {
+      actualStartTime: liveStreamingDetails.actualStartTime || null,
+      scheduledStartTime: liveStreamingDetails.scheduledStartTime || null,
+      actualEndTime: liveStreamingDetails.actualEndTime || null
+    };
+  }
+  if (typeof liveBroadcastContent === "string" && liveBroadcastContent) {
+    sanitized.liveBroadcastContent = liveBroadcastContent;
+  }
+  return sanitized;
+}
+function sanitizeHistoryEntry(entry) {
+  const base = sanitizeEntry(entry);
+  return {
+    ...base,
+    watchedAt: entry?.watchedAt || Date.now(),
+    listId: entry?.listId || null
+  };
+}
+function sanitizeDeletedHistoryEntry(entry) {
+  const base = sanitizeEntry(entry);
+  return {
+    ...base,
+    deletedAt: entry?.deletedAt || Date.now(),
+    listId: entry?.listId || null
+  };
+}
+function sanitizeQueueRemovalEntry(entry) {
+  const id = typeof entry?.id === "string" ? entry.id.trim() : "";
+  if (!id) {
+    throw new TypeError("Queue removal entry must include id");
+  }
+  const listId = typeof entry?.listId === "string" ? entry.listId.trim() : "";
+  const removedAt = Number(entry?.removedAt);
+  if (!Number.isFinite(removedAt) || removedAt <= 0) {
+    throw new TypeError("Queue removal entry must include removedAt");
+  }
+  return {
+    id,
+    listId: listId || null,
+    removedAt: Math.trunc(removedAt)
+  };
+}
+function sanitizeDeletedLists(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return Object.fromEntries(
+    Object.entries(raw).filter(
+      ([id, deletedAt]) => id && id !== DEFAULT_LIST_ID && Number.isFinite(Number(deletedAt)) && Number(deletedAt) > 0
+    ).sort((a, b) => Number(b[1]) - Number(a[1])).slice(0, DELETED_LISTS_LIMIT).map(([id, deletedAt]) => [id, Math.trunc(Number(deletedAt))])
+  );
+}
+function ensureDefaultList(state) {
+  if (!state.lists[DEFAULT_LIST_ID]) {
+    state.lists[DEFAULT_LIST_ID] = {
+      id: DEFAULT_LIST_ID,
+      name: DEFAULT_LIST_NAME,
+      freeze: false,
+      queue: [],
+      currentIndex: null,
+      revision: 0
+    };
+  } else {
+    state.lists[DEFAULT_LIST_ID].name = DEFAULT_LIST_NAME;
+    state.lists[DEFAULT_LIST_ID].freeze = false;
+    if (!Number.isInteger(state.lists[DEFAULT_LIST_ID].revision)) {
+      state.lists[DEFAULT_LIST_ID].revision = 0;
+    }
+  }
+  if (!Array.isArray(state.listOrder) || !state.listOrder.length) {
+    state.listOrder = [DEFAULT_LIST_ID];
+  } else if (!state.listOrder.includes(DEFAULT_LIST_ID)) {
+    state.listOrder.unshift(DEFAULT_LIST_ID);
+  }
+  if (!state.currentListId || !state.lists[state.currentListId]) {
+    state.currentListId = DEFAULT_LIST_ID;
+  }
+  return state;
+}
+function sanitizeList(rawList, id) {
+  if (!rawList || typeof rawList !== "object") {
+    return {
+      id,
+      name: id === DEFAULT_LIST_ID ? DEFAULT_LIST_NAME : "\u0421\u043F\u0438\u0441\u043E\u043A",
+      freeze: false,
+      queue: [],
+      currentIndex: null,
+      revision: 0
+    };
+  }
+  const list = {
+    id: rawList.id || id,
+    name: rawList.name || (id === DEFAULT_LIST_ID ? DEFAULT_LIST_NAME : "\u0421\u043F\u0438\u0441\u043E\u043A"),
+    freeze: id === DEFAULT_LIST_ID ? false : Boolean(rawList.freeze),
+    queue: Array.isArray(rawList.queue) ? rawList.queue.map((item) => {
+      try {
+        return sanitizeEntry(item);
+      } catch {
+        return null;
+      }
+    }).filter(Boolean) : [],
+    currentIndex: Number.isInteger(rawList.currentIndex) ? rawList.currentIndex : null,
+    revision: Number.isInteger(rawList.revision) ? rawList.revision : 0
+  };
+  if (list.currentIndex === null || list.currentIndex < 0 || list.currentIndex >= list.queue.length) {
+    list.currentIndex = list.queue.length ? 0 : null;
+  }
+  return list;
+}
+function sanitizeState(raw) {
+  if (!raw || typeof raw !== "object") {
+    return JSON.parse(JSON.stringify(defaultState));
+  }
+  const state = {
+    lists: {},
+    listOrder: Array.isArray(raw.listOrder) ? raw.listOrder.filter((id) => typeof id === "string" && id) : [],
+    currentListId: typeof raw.currentListId === "string" && raw.currentListId ? raw.currentListId : DEFAULT_LIST_ID,
+    currentVideoId: typeof raw.currentVideoId === "string" ? raw.currentVideoId : null,
+    history: Array.isArray(raw.history) ? raw.history.map((item) => {
+      try {
+        return sanitizeHistoryEntry(item);
+      } catch {
+        return null;
+      }
+    }).filter(Boolean).slice(0, HISTORY_LIMIT) : [],
+    deletedHistory: Array.isArray(raw.deletedHistory) ? raw.deletedHistory.map((item) => {
+      try {
+        return sanitizeDeletedHistoryEntry(item);
+      } catch {
+        return null;
+      }
+    }).filter(Boolean).slice(0, HISTORY_LIMIT) : [],
+    deletedLists: sanitizeDeletedLists(raw.deletedLists),
+    queueRemovals: Array.isArray(raw.queueRemovals) ? raw.queueRemovals.map((item) => {
+      try {
+        return sanitizeQueueRemovalEntry(item);
+      } catch {
+        return null;
+      }
+    }).filter(Boolean).slice(0, QUEUE_REMOVAL_LOG_LIMIT) : [],
+    currentTabId: typeof raw.currentTabId === "number" && Number.isInteger(raw.currentTabId) ? raw.currentTabId : null,
+    autoCollect: raw.autoCollect && typeof raw.autoCollect === "object" ? {
+      lastRunAt: normalizeAutoCollectTimestamp(raw.autoCollect.lastRunAt),
+      lastAdded: Math.max(0, Number(raw.autoCollect.lastAdded) || 0),
+      lastFetched: Math.max(0, Number(raw.autoCollect.lastFetched) || 0),
+      nextAutoCollectAt: normalizeAutoCollectTimestamp(
+        raw.autoCollect.nextAutoCollectAt
+      ),
+      seenIds: sanitizeAutoCollectSeenIds(raw.autoCollect.seenIds)
+    } : {
+      lastRunAt: 0,
+      lastAdded: 0,
+      lastFetched: 0,
+      nextAutoCollectAt: 0,
+      seenIds: []
+    },
+    videoProgress: sanitizeVideoProgressMap(
+      raw && typeof raw === "object" && raw.videoProgress || (raw?.runtime && typeof raw.runtime === "object" ? raw.runtime.videoProgress : null)
+    )
+  };
+  const rawLists = raw.lists && typeof raw.lists === "object" ? raw.lists : {};
+  const listIds = new Set(state.listOrder);
+  Object.keys(rawLists).forEach((id) => {
+    const sanitized = sanitizeList(rawLists[id], id);
+    state.lists[id] = sanitized;
+    listIds.add(id);
+  });
+  if (!state.lists[DEFAULT_LIST_ID]) {
+    state.lists[DEFAULT_LIST_ID] = sanitizeList(
+      rawLists[DEFAULT_LIST_ID],
+      DEFAULT_LIST_ID
+    );
+    listIds.add(DEFAULT_LIST_ID);
+  }
+  state.listOrder = Array.from(listIds);
+  ensureDefaultList(state);
+  if (!state.lists[state.currentListId]) {
+    state.currentListId = DEFAULT_LIST_ID;
+  }
+  return state;
+}
+function ensureListExists(state, listId) {
+  if (!listId || !state.lists[listId]) {
+    throw new Error(`List ${listId} not found`);
+  }
+}
+
+// src/store/state/syncSnapshot.js
+var SYNC_FORMAT_VERSION = 1;
+function byteLength(value) {
+  return new TextEncoder().encode(String(value)).length;
+}
+function storageItemBytes(key, value) {
+  return byteLength(key) + byteLength(JSON.stringify(value));
+}
+function hashString(value) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+function normalizeSyncTimestamp(value) {
+  const ts = Number(value);
+  return Number.isFinite(ts) && ts > 0 ? Math.trunc(ts) : 0;
+}
+function normalizeListForSync(list) {
+  return deepClone(list);
+}
+function normalizeListsForSync(lists) {
+  const normalized = {};
+  Object.entries(lists || {}).forEach(([id, list]) => {
+    normalized[id] = normalizeListForSync(list);
+  });
+  return normalized;
+}
+function buildSyncState(stateInput) {
+  const state = sanitizeState(stateInput);
+  return sanitizeState({
+    lists: normalizeListsForSync(state.lists),
+    listOrder: deepClone(state.listOrder),
+    currentListId: state.currentListId,
+    currentVideoId: state.currentVideoId,
+    currentTabId: null,
+    history: deepClone(state.history),
+    deletedHistory: deepClone(state.deletedHistory),
+    deletedLists: deepClone(state.deletedLists),
+    queueRemovals: deepClone(state.queueRemovals),
+    autoCollect: deepClone(state.autoCollect),
+    videoProgress: deepClone(state.videoProgress)
+  });
+}
+function getSyncStateFingerprint2(stateInput) {
+  return hashString(JSON.stringify(buildSyncState(stateInput)));
+}
+function hasSyncableUserData(stateInput) {
+  const state = sanitizeState(stateInput);
+  const listIds = Object.keys(state.lists || {});
+  if (listIds.some((id) => id !== DEFAULT_LIST_ID)) {
+    return true;
+  }
+  const hasQueuedVideos = listIds.some((id) => {
+    const queue = state.lists[id]?.queue;
+    return Array.isArray(queue) && queue.length > 0;
+  });
+  return hasQueuedVideos || Boolean(state.history?.length) || Boolean(state.deletedHistory?.length) || Boolean(state.queueRemovals?.length) || Boolean(Object.keys(state.videoProgress || {}).length) || Boolean(state.autoCollect?.lastRunAt) || Boolean(state.autoCollect?.seenIds?.length);
+}
+function findVideoInLists(lists, videoId) {
+  if (!videoId || !lists || typeof lists !== "object") {
+    return null;
+  }
+  for (const [listId, list] of Object.entries(lists)) {
+    const queue = Array.isArray(list?.queue) ? list.queue : [];
+    const index = queue.findIndex((entry) => entry?.id === videoId);
+    if (index !== -1) {
+      return { listId, index };
+    }
+  }
+  return null;
+}
+function mergeUniqueQueue(primaryQueue = [], secondaryQueue = []) {
+  const indexById = /* @__PURE__ */ new Map();
+  const merged = [];
+  [...primaryQueue, ...secondaryQueue].forEach((entry) => {
+    const id = typeof entry?.id === "string" ? entry.id : "";
+    if (!id) {
+      return;
+    }
+    const existingIndex = indexById.get(id);
+    if (existingIndex === void 0) {
+      indexById.set(id, merged.length);
+      merged.push(deepClone(entry));
+      return;
+    }
+    const existing = merged[existingIndex];
+    const existingAddedAt = Number(existing?.addedAt) || 0;
+    const nextAddedAt = Number(entry?.addedAt) || 0;
+    if (nextAddedAt > existingAddedAt) {
+      merged[existingIndex] = deepClone(entry);
+    }
+  });
+  return merged;
+}
+function mergeList(primaryList, secondaryList, id) {
+  const primary = primaryList || {};
+  const secondary = secondaryList || {};
+  const queue = mergeUniqueQueue(primary.queue, secondary.queue);
+  return normalizeListForSync({
+    ...secondary,
+    ...primary,
+    id,
+    queue,
+    revision: Math.max(
+      Number.isInteger(primary.revision) ? primary.revision : 0,
+      Number.isInteger(secondary.revision) ? secondary.revision : 0
+    )
+  });
+}
+function mergeLists(primaryLists, secondaryLists) {
+  const ids = /* @__PURE__ */ new Set([
+    ...Object.keys(primaryLists || {}),
+    ...Object.keys(secondaryLists || {})
+  ]);
+  const merged = {};
+  ids.forEach((id) => {
+    merged[id] = mergeList(primaryLists?.[id], secondaryLists?.[id], id);
+  });
+  return merged;
+}
+function mergeDeletedLists(primary = {}, secondary = {}) {
+  const merged = { ...secondary };
+  Object.entries(primary || {}).forEach(([id, deletedAt]) => {
+    merged[id] = Math.max(Number(merged[id]) || 0, Number(deletedAt) || 0);
+  });
+  return merged;
+}
+function applyDeletedLists(lists, deletedLists) {
+  Object.keys(deletedLists || {}).forEach((id) => {
+    if (id !== DEFAULT_LIST_ID) delete lists[id];
+  });
+  return lists;
+}
+function rememberTimestamp(map, id, timestamp) {
+  map.set(id, Math.max(Number(map.get(id)) || 0, timestamp));
+}
+function ensureListTimestampMap(root, listId) {
+  if (!root.has(listId)) {
+    root.set(listId, /* @__PURE__ */ new Map());
+  }
+  return root.get(listId);
+}
+function applyRemovalMarkersToLists(lists, { queueRemovals = [], deletedHistory = [], history = [], videoProgress = {} } = {}) {
+  const globalDeletedAtById = /* @__PURE__ */ new Map();
+  const deletedAtByList = /* @__PURE__ */ new Map();
+  const watchedAtByList = /* @__PURE__ */ new Map();
+  queueRemovals.forEach((entry) => {
+    const id = typeof entry?.id === "string" ? entry.id : "";
+    const listId = typeof entry?.listId === "string" ? entry.listId : "";
+    const removedAt = Number(entry?.removedAt) || 0;
+    if (!id || !removedAt) return;
+    if (listId) {
+      rememberTimestamp(
+        ensureListTimestampMap(deletedAtByList, listId),
+        id,
+        removedAt
+      );
+    } else {
+      rememberTimestamp(globalDeletedAtById, id, removedAt);
+    }
+  });
+  deletedHistory.forEach((entry) => {
+    const id = typeof entry?.id === "string" ? entry.id : "";
+    const deletedAt = Number(entry?.deletedAt) || 0;
+    if (!id) return;
+    if (typeof entry?.listId === "string" && entry.listId) {
+      rememberTimestamp(
+        ensureListTimestampMap(deletedAtByList, entry.listId),
+        id,
+        deletedAt
+      );
+    } else {
+      rememberTimestamp(globalDeletedAtById, id, deletedAt);
+    }
+  });
+  history.forEach((entry) => {
+    const id = typeof entry?.id === "string" ? entry.id : "";
+    const listId = typeof entry?.listId === "string" ? entry.listId : "";
+    const watchedAt = Number(entry?.watchedAt) || 0;
+    if (!id || !listId || !watchedAt) return;
+    rememberTimestamp(
+      ensureListTimestampMap(watchedAtByList, listId),
+      id,
+      watchedAt
+    );
+  });
+  const watchedProgressById = /* @__PURE__ */ new Map();
+  Object.entries(videoProgress || {}).forEach(([id, progress]) => {
+    const percent = Number(progress?.percent) || 0;
+    const updatedAt = Number(progress?.updatedAt) || 0;
+    if (percent > WATCHED_PROGRESS_THRESHOLD && updatedAt > 0) {
+      rememberTimestamp(watchedProgressById, id, updatedAt);
+    }
+  });
+  Object.values(lists || {}).forEach((list) => {
+    if (!Array.isArray(list?.queue) || !list.queue.length) return;
+    list.queue = list.queue.filter((entry) => {
+      const listDeletedAt = Number(deletedAtByList.get(list.id)?.get(entry?.id)) || 0;
+      const globalDeletedAt = Number(globalDeletedAtById.get(entry?.id)) || 0;
+      const watchedAt = list.freeze ? 0 : Number(watchedAtByList.get(list.id)?.get(entry?.id)) || 0;
+      const progressWatchedAt = !list.freeze && list.id === DEFAULT_LIST_ID ? Number(watchedProgressById.get(entry?.id)) || 0 : 0;
+      const deletedAt = Math.max(
+        listDeletedAt,
+        globalDeletedAt,
+        watchedAt,
+        progressWatchedAt
+      );
+      const addedAt = Number(entry?.addedAt) || 0;
+      return !deletedAt || addedAt && addedAt > deletedAt;
+    });
+    if (!list.queue.length) {
+      list.currentIndex = null;
+    } else if (list.currentIndex === null || list.currentIndex < 0 || list.currentIndex >= list.queue.length) {
+      list.currentIndex = 0;
+    }
+  });
+  return lists;
+}
+function mergeListOrder(primaryOrder = [], secondaryOrder = [], lists = {}) {
+  const result = [];
+  [...primaryOrder, ...secondaryOrder, DEFAULT_LIST_ID].forEach((id) => {
+    if (typeof id === "string" && lists[id] && !result.includes(id)) {
+      result.push(id);
+    }
+  });
+  return result;
+}
+function datedEntryIdKey(entry) {
+  return typeof entry?.id === "string" ? entry.id : "";
+}
+function listScopedDatedEntryKey(entry) {
+  const id = datedEntryIdKey(entry);
+  const listId = typeof entry?.listId === "string" ? entry.listId : "";
+  return id ? `${listId}\0${id}` : "";
+}
+function mergeDatedEntries(primary = [], secondary = [], timestampField, { limit = HISTORY_LIMIT, keyFn = datedEntryIdKey } = {}) {
+  const byId = /* @__PURE__ */ new Map();
+  [...primary, ...secondary].forEach((entry) => {
+    const key = keyFn(entry);
+    if (!key) {
+      return;
+    }
+    const current = byId.get(key);
+    const currentTime = Number(current?.[timestampField]) || 0;
+    const nextTime = Number(entry?.[timestampField]) || 0;
+    if (!current || nextTime >= currentTime) {
+      byId.set(key, deepClone(entry));
+    }
+  });
+  return Array.from(byId.values()).sort((a, b) => (Number(b?.[timestampField]) || 0) - (Number(a?.[timestampField]) || 0)).slice(0, limit);
+}
+function mergeQueueRemovals(primary = [], secondary = []) {
+  return mergeDatedEntries(primary, secondary, "removedAt", {
+    limit: QUEUE_REMOVAL_LOG_LIMIT,
+    keyFn: listScopedDatedEntryKey
+  });
+}
+function mergeAutoCollect(primary = {}, secondary = {}) {
+  const primaryLastRunAt = normalizeSyncTimestamp(primary.lastRunAt);
+  const secondaryLastRunAt = normalizeSyncTimestamp(secondary.lastRunAt);
+  const preferPrimaryRun = primaryLastRunAt >= secondaryLastRunAt;
+  const seenIds = [
+    ...Array.isArray(secondary.seenIds) ? secondary.seenIds : [],
+    ...Array.isArray(primary.seenIds) ? primary.seenIds : []
+  ];
+  return {
+    lastRunAt: Math.max(primaryLastRunAt, secondaryLastRunAt),
+    lastAdded: Math.max(0, Number((preferPrimaryRun ? primary : secondary).lastAdded) || 0),
+    lastFetched: Math.max(0, Number((preferPrimaryRun ? primary : secondary).lastFetched) || 0),
+    nextAutoCollectAt: Math.max(
+      normalizeSyncTimestamp(primary.nextAutoCollectAt),
+      normalizeSyncTimestamp(secondary.nextAutoCollectAt)
+    ),
+    seenIds: Array.from(new Set(seenIds)).slice(-AUTO_COLLECT_SEEN_IDS_LIMIT)
+  };
+}
+function mergeVideoProgress(primary = {}, secondary = {}) {
+  const merged = {};
+  const ids = /* @__PURE__ */ new Set([
+    ...Object.keys(secondary || {}),
+    ...Object.keys(primary || {})
+  ]);
+  ids.forEach((id) => {
+    const a = primary?.[id] || null;
+    const b = secondary?.[id] || null;
+    if (!a && !b) {
+      return;
+    }
+    merged[id] = {
+      percent: Math.max(Number(a?.percent) || 0, Number(b?.percent) || 0),
+      updatedAt: Math.max(Number(a?.updatedAt) || 0, Number(b?.updatedAt) || 0)
+    };
+  });
+  return merged;
+}
+function mergeSyncStatesConservatively(localInput, remoteInput) {
+  const local = buildSyncState(localInput);
+  const remote = buildSyncState(remoteInput);
+  const history = mergeDatedEntries(remote.history, local.history, "watchedAt");
+  const deletedHistory = mergeDatedEntries(
+    remote.deletedHistory,
+    local.deletedHistory,
+    "deletedAt"
+  );
+  const queueRemovals = mergeQueueRemovals(
+    remote.queueRemovals,
+    local.queueRemovals
+  );
+  const videoProgress = mergeVideoProgress(
+    remote.videoProgress,
+    local.videoProgress
+  );
+  const deletedLists = mergeDeletedLists(remote.deletedLists, local.deletedLists);
+  const lists = applyRemovalMarkersToLists(applyDeletedLists(
+    mergeLists(remote.lists, local.lists),
+    deletedLists
+  ), {
+    queueRemovals,
+    deletedHistory,
+    deletedLists,
+    history,
+    videoProgress
+  });
+  return buildSyncState({
+    lists,
+    listOrder: mergeListOrder(remote.listOrder, local.listOrder, lists),
+    currentListId: local.currentListId,
+    currentVideoId: local.currentVideoId,
+    history,
+    deletedHistory,
+    deletedLists,
+    queueRemovals,
+    autoCollect: mergeAutoCollect(remote.autoCollect, local.autoCollect),
+    videoProgress
+  });
+}
+function mergeRemoteSyncState(localInput, remoteInput) {
+  const local = sanitizeState(localInput);
+  const remote = sanitizeState(remoteInput);
+  const deletedLists = mergeDeletedLists(remote.deletedLists, local.deletedLists);
+  const merged = sanitizeState({
+    ...remote,
+    lists: applyDeletedLists(deepClone(remote.lists), deletedLists),
+    listOrder: remote.listOrder.filter((id) => !deletedLists[id]),
+    deletedLists,
+    currentTabId: local.currentTabId
+  });
+  if (local.currentListId && merged.lists[local.currentListId]) {
+    merged.currentListId = local.currentListId;
+  }
+  const locatedCurrent = findVideoInLists(merged.lists, local.currentVideoId);
+  if (locatedCurrent) {
+    merged.currentListId = locatedCurrent.listId;
+    merged.currentVideoId = local.currentVideoId;
+    merged.lists[locatedCurrent.listId].currentIndex = locatedCurrent.index;
+  } else {
+    const locatedRemoteCurrent = findVideoInLists(
+      merged.lists,
+      remote.currentVideoId
+    );
+    if (locatedRemoteCurrent) {
+      merged.currentListId = locatedRemoteCurrent.listId;
+      merged.currentVideoId = remote.currentVideoId;
+      merged.lists[locatedRemoteCurrent.listId].currentIndex = locatedRemoteCurrent.index;
+    }
+  }
+  if (!merged.lists[merged.currentListId]) {
+    merged.currentListId = DEFAULT_LIST_ID;
+  }
+  return sanitizeState(merged);
+}
+function buildSyncSnapshot(stateInput, { updatedAt, deviceId, maxTotalBytes = Number.POSITIVE_INFINITY } = {}) {
+  const payload = buildSyncState(stateInput);
+  const json = JSON.stringify(payload);
+  const hash = hashString(json);
+  const manifest = {
+    version: SYNC_FORMAT_VERSION,
+    updatedAt: normalizeSyncTimestamp(updatedAt) || Date.now(),
+    deviceId: typeof deviceId === "string" && deviceId ? deviceId : null,
+    hash
+  };
+  const totalBytes = byteLength(JSON.stringify({ manifest, state: payload }));
+  if (Number.isFinite(maxTotalBytes) && totalBytes > maxTotalBytes) {
+    throw new Error(
+      `Playlist sync snapshot is too large (${totalBytes} bytes)`
+    );
+  }
+  return { manifest, state: payload, hash, totalBytes };
+}
+
+// src/store/state/sync.js
+function hasChromeStorageArea(area) {
+  return typeof chrome !== "undefined" && chrome?.storage?.[area];
+}
+function hasChromeLocalStorage() {
+  return hasChromeStorageArea("local");
+}
+async function storageGet(area, key) {
+  return hasChromeStorageArea(area) ? chrome.storage[area].get(key) : {};
+}
+async function storageSet(area, payload) {
+  if (hasChromeStorageArea(area)) await chrome.storage[area].set(payload);
+}
+function createDeviceId() {
+  const random = typeof crypto !== "undefined" && crypto?.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+  return `device_${Date.now().toString(36)}_${random}`;
+}
+async function readLocalSyncMeta() {
+  const stored = await storageGet("local", SYNC_LOCAL_META_STORAGE_KEY);
+  const meta = stored?.[SYNC_LOCAL_META_STORAGE_KEY];
+  return meta && typeof meta === "object" ? meta : {};
+}
+async function writeLocalSyncMeta(meta) {
+  await storageSet("local", {
+    [SYNC_LOCAL_META_STORAGE_KEY]: {
+      ...meta,
+      deviceId: typeof meta.deviceId === "string" && meta.deviceId ? meta.deviceId : createDeviceId()
+    }
+  });
+}
+async function scheduleSyncAlarm(dueAt) {
+  if (typeof chrome === "undefined") return;
+  if (chrome?.alarms?.create) {
+    chrome.alarms.create(SYNC_ALARM_NAME, { when: dueAt });
+  }
+}
+async function configurePlaylistSyncAccess() {
+  return void 0;
+}
+async function resolveRemotePlaylistSyncState(localStateInput) {
+  return { state: sanitizeState(localStateInput), imported: false };
+}
+async function recordImportedPlaylistSyncSnapshot(snapshot, stateInput, { force = false, pending = null } = {}) {
+  if (!snapshot?.state) return;
+  const now = Date.now();
+  const state = sanitizeState(stateInput);
+  const localHash = getSyncStateFingerprint2(state);
+  const remoteHash = typeof snapshot.hash === "string" ? snapshot.hash : "";
+  const localMeta = await readLocalSyncMeta();
+  const remoteUpdatedAt = normalizeSyncTimestamp(snapshot.updatedAt);
+  const mergedNeedsPush = !force && (typeof pending === "boolean" ? pending : localHash !== remoteHash);
+  const flushAfter = mergedNeedsPush ? now + SYNC_DEBOUNCE_MS : null;
+  const baselineUpdatedAt = force || !mergedNeedsPush ? remoteUpdatedAt || now : Math.max(
+    normalizeSyncTimestamp(localMeta.localUpdatedAt),
+    remoteUpdatedAt,
+    now
+  );
+  await writeLocalSyncMeta({
+    ...localMeta,
+    localUpdatedAt: baselineUpdatedAt,
+    localHash,
+    syncedUpdatedAt: baselineUpdatedAt,
+    syncedHash: localHash,
+    remoteUpdatedAt,
+    remoteHash,
+    remoteDeviceId: snapshot.manifest?.deviceId || localMeta.remoteDeviceId || null,
+    pending: mergedNeedsPush,
+    pendingSince: null,
+    flushAfter,
+    lastError: null
+  });
+  if (flushAfter) await scheduleSyncAlarm(flushAfter);
+}
+async function recordPushedPlaylistSyncSnapshot(snapshot) {
+  if (!snapshot?.state) return;
+  const now = Date.now();
+  const localHash = getSyncStateFingerprint2(snapshot.state);
+  const remoteHash = typeof snapshot.hash === "string" ? snapshot.hash : localHash;
+  const localMeta = await readLocalSyncMeta();
+  await writeLocalSyncMeta({
+    ...localMeta,
+    localUpdatedAt: normalizeSyncTimestamp(snapshot.manifest?.updatedAt) || now,
+    localHash,
+    syncedUpdatedAt: normalizeSyncTimestamp(snapshot.manifest?.updatedAt) || now,
+    syncedHash: remoteHash,
+    remoteUpdatedAt: normalizeSyncTimestamp(snapshot.manifest?.updatedAt) || now,
+    remoteHash,
+    remoteDeviceId: snapshot.manifest?.deviceId || localMeta.remoteDeviceId || null,
+    pending: false,
+    pendingSince: null,
+    flushAfter: null,
+    lastWriteAt: now,
+    lastError: null
+  });
+}
+async function recordPlaylistSyncError(error) {
+  const localMeta = await readLocalSyncMeta();
+  const now = Date.now();
+  const pending = Boolean(localMeta.pending);
+  const flushAfter = pending ? now + SYNC_RETRY_MS : null;
+  await writeLocalSyncMeta({
+    ...localMeta,
+    pending,
+    flushAfter,
+    lastError: error?.message || String(error),
+    lastErrorAt: now
+  });
+  if (flushAfter) await scheduleSyncAlarm(flushAfter);
+}
+async function getPlaylistSyncStatus() {
+  const meta = await readLocalSyncMeta();
+  return {
+    localDeviceId: meta.deviceId || null,
+    localUpdatedAt: normalizeSyncTimestamp(meta.localUpdatedAt),
+    localHash: meta.localHash || null,
+    syncedUpdatedAt: normalizeSyncTimestamp(meta.syncedUpdatedAt),
+    syncedHash: meta.syncedHash || null,
+    remoteUpdatedAt: normalizeSyncTimestamp(meta.remoteUpdatedAt),
+    remoteHash: meta.remoteHash || null,
+    remoteDeviceId: meta.remoteDeviceId || null,
+    remoteChunkCount: 0,
+    pending: Boolean(meta.pending),
+    pendingSince: normalizeSyncTimestamp(meta.pendingSince),
+    flushAfter: normalizeSyncTimestamp(meta.flushAfter),
+    lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
+    lastError: meta.lastError || null,
+    remoteAvailable: Boolean(meta.remoteUpdatedAt),
+    technicalOnly: false
+  };
+}
+async function schedulePlaylistSync(stateInput, { immediate = false } = {}) {
+  if (!hasChromeLocalStorage()) return;
+  const localMeta = await readLocalSyncMeta();
+  const localHash = getSyncStateFingerprint2(stateInput);
+  if (localHash === localMeta.localHash && !immediate) {
+    if (localMeta.pending) {
+      const flushAfter = normalizeSyncTimestamp(localMeta.flushAfter) || Date.now() + SYNC_DEBOUNCE_MS;
+      await scheduleSyncAlarm(flushAfter);
+    }
+    return;
+  }
+  const now = Date.now();
+  const dueAt = immediate ? now : now + SYNC_DEBOUNCE_MS;
+  await writeLocalSyncMeta({
+    ...localMeta,
+    localUpdatedAt: now,
+    localHash,
+    pending: true,
+    pendingSince: localMeta.pendingSince || now,
+    flushAfter: dueAt,
+    lastError: null
+  });
+  await scheduleSyncAlarm(dueAt);
+}
+async function writePendingPlaylistSync(stateInput = null, options = {}) {
+  if (!hasChromeLocalStorage()) {
+    return { wrote: false, reason: "storage-unavailable" };
+  }
+  const force = Boolean(options.force);
+  const localMeta = await readLocalSyncMeta();
+  if (!localMeta.pending) {
+    return { wrote: false, reason: "not-pending" };
+  }
+  const now = Date.now();
+  const flushAfter = normalizeSyncTimestamp(localMeta.flushAfter);
+  if (!force && flushAfter && flushAfter > now) {
+    await scheduleSyncAlarm(flushAfter);
+    return { wrote: false, reason: "debounced" };
+  }
+  await writeLocalSyncMeta({
+    ...localMeta,
+    pending: true,
+    pendingSince: localMeta.pendingSince || now,
+    flushAfter: null,
+    lastError: null
+  });
+  return {
+    wrote: false,
+    ready: true,
+    reason: "drive-pending"
+  };
+}
+
+// src/store/state/syncImportDecision.js
+var STARTUP_PENDING_GRACE_MS = 2 * 60 * 1e3;
+function resolvePlaylistImportDecision({
+  force = false,
+  localHasUserData = false,
+  mergePending = false,
+  remoteHash = "",
+  remoteUpdatedAt = 0,
+  status = {},
+  now = Date.now()
+} = {}) {
+  const localUpdatedAt = Number(status.localUpdatedAt) || 0;
+  const syncedUpdatedAt = Number(status.syncedUpdatedAt) || 0;
+  const pendingSince = Number(status.pendingSince) || 0;
+  const remoteChanged = remoteHash && remoteHash !== status.remoteHash && remoteHash !== status.localHash;
+  const freshPendingOnStaleBase = Boolean(
+    status.pending && pendingSince && now - pendingSince < STARTUP_PENDING_GRACE_MS && remoteUpdatedAt > syncedUpdatedAt
+  );
+  const shouldMerge = mergePending && status.pending && localHasUserData && remoteChanged;
+  const remoteIsNewerBaseline = !status.pending && remoteUpdatedAt > localUpdatedAt || freshPendingOnStaleBase;
+  return {
+    shouldImport: force || !localHasUserData || shouldMerge || remoteIsNewerBaseline,
+    shouldMerge,
+    shouldReplace: force || !localHasUserData || !shouldMerge && remoteIsNewerBaseline
+  };
+}
+
 // src/store/state/storage.js
-var hasChromeStorage = typeof chrome !== "undefined" && chrome?.storage?.local;
 var memoryState = null;
 var stateWriteQueue = Promise.resolve();
+var checkedRemotePlaylistSync = false;
+function hasChromeStorage() {
+  return typeof chrome !== "undefined" && chrome?.storage?.local;
+}
 function enqueueStateWrite(operation) {
   const result = stateWriteQueue.then(operation, operation);
   stateWriteQueue = result.catch(() => {
   });
   return result;
 }
-async function loadRawState() {
-  if (!hasChromeStorage) {
+async function loadLocalRawState() {
+  if (!hasChromeStorage()) {
     const source = memoryState ?? defaultState;
     return deepClone(source);
   }
@@ -735,8 +1482,20 @@ async function loadRawState() {
     videoProgressSource
   );
 }
-async function persistState(state) {
-  if (!hasChromeStorage) {
+async function loadRawState({ checkRemoteSync = true } = {}) {
+  const localRaw = await loadLocalRawState();
+  if (!hasChromeStorage() || !checkRemoteSync || checkedRemotePlaylistSync) {
+    return localRaw;
+  }
+  checkedRemotePlaylistSync = true;
+  const resolved = await resolveRemotePlaylistSyncState(localRaw);
+  if (resolved.imported) {
+    await persistState(resolved.state, { scheduleSync: false });
+  }
+  return resolved.state;
+}
+async function persistState(state, { scheduleSync = true } = {}) {
+  if (!hasChromeStorage()) {
     memoryState = deepClone(state);
     return state;
   }
@@ -769,6 +1528,9 @@ async function persistState(state) {
   if (LEGACY_AUTO_COLLECT_STORAGE_KEY !== AUTO_COLLECT_STORAGE_KEY) {
     await chrome.storage.local.remove(LEGACY_AUTO_COLLECT_STORAGE_KEY);
   }
+  if (scheduleSync) {
+    await schedulePlaylistSync(state);
+  }
   return state;
 }
 async function getState() {
@@ -793,6 +1555,874 @@ async function mutateState(mutator) {
     await persistState(sanitized);
     return sanitized;
   });
+}
+async function buildLocalPlaylistSyncSnapshot(deviceId, options = {}) {
+  return enqueueStateWrite(async () => {
+    const localRaw = await loadRawState({ checkRemoteSync: false });
+    const status = await getPlaylistSyncStatus();
+    const updatedAt = normalizeSyncTimestamp(options.updatedAt) || normalizeSyncTimestamp(status.localUpdatedAt) || Date.now();
+    return buildSyncSnapshot(localRaw, {
+      deviceId,
+      ...options,
+      updatedAt
+    });
+  });
+}
+async function importPlaylistSyncSnapshot(snapshot, { force = false, mergePending = false } = {}) {
+  return enqueueStateWrite(async () => {
+    if (!snapshot?.state) return { imported: false, reason: "invalid-snapshot" };
+    const localRaw = await loadLocalRawState();
+    const status = await getPlaylistSyncStatus();
+    const remoteUpdatedAt = Number(snapshot.updatedAt) || 0;
+    const remoteHash = typeof snapshot.hash === "string" && snapshot.hash ? snapshot.hash : getSyncStateFingerprint(snapshot.state);
+    const localHasUserData = hasSyncableUserData(localRaw);
+    const decision = resolvePlaylistImportDecision({
+      force,
+      localHasUserData,
+      mergePending,
+      remoteHash,
+      remoteUpdatedAt,
+      status
+    });
+    const shouldImport = decision.shouldImport;
+    if (!shouldImport) {
+      return {
+        imported: false,
+        reason: status.pending ? "local-pending" : "local-newer"
+      };
+    }
+    const nextState = decision.shouldReplace ? mergeRemoteSyncState(localRaw, snapshot.state) : mergeSyncStatesConservatively(localRaw, snapshot.state);
+    await persistState(nextState, { scheduleSync: false });
+    await recordImportedPlaylistSyncSnapshot(snapshot, nextState, {
+      force,
+      pending: decision.shouldMerge
+    });
+    return { imported: true, state: sanitizeState(nextState) };
+  });
+}
+async function getPlaylistSyncStorageStatus() {
+  return getPlaylistSyncStatus();
+}
+async function flushPendingPlaylistSync(options = {}) {
+  return enqueueStateWrite(async () => {
+    const localRaw = await loadRawState({ checkRemoteSync: false });
+    return writePendingPlaylistSync(localRaw, options);
+  });
+}
+
+// src/store/state/driveSyncPayload.js
+var DRIVE_SYNC_VERSION = 1;
+function encodePlaylistSnapshot(snapshot) {
+  if (!snapshot) return null;
+  return {
+    manifest: snapshot.manifest,
+    state: snapshot.state
+  };
+}
+function encodePlaylistSnapshots(snapshots = []) {
+  return snapshots.slice(0, DRIVE_PLAYLIST_BACKUP_LIMIT).map((snapshot) => encodePlaylistSnapshot(snapshot)).filter(Boolean);
+}
+function parseDrivePlaylistSnapshot(raw) {
+  if (!raw || typeof raw !== "object" || !raw.state) return null;
+  const state = buildSyncState(raw.state);
+  const hash = getSyncStateFingerprint2(state);
+  const manifest = raw.manifest && typeof raw.manifest === "object" ? raw.manifest : {};
+  if (typeof manifest.hash === "string" && manifest.hash && manifest.hash !== hash) {
+    return null;
+  }
+  return {
+    manifest: { ...manifest, hash },
+    state,
+    updatedAt: normalizeSyncTimestamp(manifest.updatedAt),
+    hash
+  };
+}
+function parseDrivePayload(raw) {
+  if (!raw || typeof raw !== "object" || raw.version !== DRIVE_SYNC_VERSION) {
+    return null;
+  }
+  const playlist = parseDrivePlaylistSnapshot(raw.playlist);
+  if (!playlist) return null;
+  const playlistBackups = Array.isArray(raw.playlistBackups) ? raw.playlistBackups.map((item) => parseDrivePlaylistSnapshot(item)).filter(Boolean).slice(0, DRIVE_PLAYLIST_BACKUP_LIMIT) : [];
+  const updatedAt = normalizeSyncTimestamp(raw.updatedAt) || normalizeSyncTimestamp(playlist.updatedAt);
+  return {
+    updatedAt,
+    deviceId: typeof raw.deviceId === "string" ? raw.deviceId : null,
+    playlist,
+    playlistBackups
+  };
+}
+function buildPlaylistBackups(remotePayload, nextPlaylistHash) {
+  const candidates = [
+    remotePayload?.playlist,
+    ...Array.isArray(remotePayload?.playlistBackups) ? remotePayload.playlistBackups : []
+  ].filter(Boolean);
+  const seenHashes = /* @__PURE__ */ new Set();
+  const backups = [];
+  candidates.forEach((snapshot) => {
+    const hash = typeof snapshot?.hash === "string" ? snapshot.hash : "";
+    if (!hash || hash === nextPlaylistHash || seenHashes.has(hash)) {
+      return;
+    }
+    seenHashes.add(hash);
+    backups.push(snapshot);
+  });
+  return backups.slice(0, DRIVE_PLAYLIST_BACKUP_LIMIT);
+}
+
+// src/store/state/driveSync.js
+var DRIVE_API = "https://www.googleapis.com/drive/v3";
+var DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3";
+function formatDriveError(status, text) {
+  try {
+    const parsed = JSON.parse(text);
+    const error = parsed?.error;
+    const reason = error?.errors?.[0]?.reason || error?.status || "";
+    const message = error?.message || text;
+    return [`Drive API failed: ${status}`, reason, message].filter(Boolean).join(" - ").slice(0, 500);
+  } catch {
+    return `Drive API failed: ${status}${text ? ` - ${text.slice(0, 300)}` : ""}`;
+  }
+}
+function hasChromeStorage2() {
+  return typeof chrome !== "undefined" && chrome?.storage?.local;
+}
+async function storageGet2(key) {
+  return hasChromeStorage2() ? chrome.storage.local.get(key) : {};
+}
+async function storageSet2(payload) {
+  if (hasChromeStorage2()) await chrome.storage.local.set(payload);
+}
+function createDeviceId2() {
+  const random = typeof crypto !== "undefined" && crypto?.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+  return `drive_${Date.now().toString(36)}_${random}`;
+}
+async function readLocalMeta() {
+  const stored = await storageGet2(DRIVE_SYNC_LOCAL_META_STORAGE_KEY);
+  const meta = stored?.[DRIVE_SYNC_LOCAL_META_STORAGE_KEY];
+  return meta && typeof meta === "object" ? meta : {};
+}
+async function writeLocalMeta(meta) {
+  await storageSet2({
+    [DRIVE_SYNC_LOCAL_META_STORAGE_KEY]: {
+      ...meta,
+      deviceId: meta.deviceId || createDeviceId2()
+    }
+  });
+}
+async function ensureDeviceId(meta = null) {
+  const current = meta || await readLocalMeta();
+  if (typeof current.deviceId === "string" && current.deviceId) {
+    return current.deviceId;
+  }
+  const deviceId = createDeviceId2();
+  await writeLocalMeta({ ...current, deviceId });
+  return deviceId;
+}
+async function driveFetch(url, init = {}, { interactive = false } = {}) {
+  const token = await getToken({ interactive });
+  const headers = {
+    ...init.headers || {},
+    Authorization: `Bearer ${token}`
+  };
+  let response = await fetch(url, { ...init, headers });
+  if ((response.status === 401 || response.status === 403) && interactive) {
+    clearToken();
+    const refreshed = await signInUser();
+    response = await fetch(url, {
+      ...init,
+      headers: { ...headers, Authorization: `Bearer ${refreshed}` }
+    });
+  }
+  if (!response.ok) {
+    const text = await response.text();
+    const err = new Error(formatDriveError(response.status, text));
+    err.status = response.status;
+    err.body = text;
+    throw err;
+  }
+  return response;
+}
+async function findDriveFile({ interactive = false } = {}) {
+  const params = new URLSearchParams({
+    spaces: "appDataFolder",
+    fields: "files(id,name,modifiedTime)",
+    q: `name='${DRIVE_SYNC_FILE_NAME}' and trashed=false`
+  });
+  const response = await driveFetch(`${DRIVE_API}/files?${params}`, {}, { interactive });
+  const data = await response.json();
+  return Array.isArray(data.files) && data.files.length ? data.files[0] : null;
+}
+async function readDrivePayload({ interactive = false } = {}) {
+  const file = await findDriveFile({ interactive });
+  if (!file?.id) return { file: null, payload: null };
+  const response = await driveFetch(
+    `${DRIVE_API}/files/${encodeURIComponent(file.id)}?alt=media`,
+    {},
+    { interactive }
+  );
+  return { file, payload: parseDrivePayload(await response.json()) };
+}
+function buildMultipartBody(metadata, payload) {
+  const boundary = `yta_drive_sync_${Date.now()}`;
+  const body = [
+    `--${boundary}`,
+    "Content-Type: application/json; charset=UTF-8",
+    "",
+    JSON.stringify(metadata),
+    `--${boundary}`,
+    "Content-Type: application/json; charset=UTF-8",
+    "",
+    JSON.stringify(payload),
+    `--${boundary}--`,
+    ""
+  ].join("\r\n");
+  return { boundary, body };
+}
+async function writeDrivePayload(payload, { interactive = true, existing = null } = {}) {
+  const existingFile = existing || await findDriveFile({ interactive });
+  const metadata = existingFile?.id ? { name: DRIVE_SYNC_FILE_NAME } : { name: DRIVE_SYNC_FILE_NAME, parents: ["appDataFolder"] };
+  const { boundary, body } = buildMultipartBody(metadata, payload);
+  const target = existingFile?.id ? `${DRIVE_UPLOAD_API}/files/${encodeURIComponent(existingFile.id)}` : `${DRIVE_UPLOAD_API}/files`;
+  const params = new URLSearchParams({
+    uploadType: "multipart",
+    fields: "id,modifiedTime"
+  });
+  const response = await driveFetch(`${target}?${params}`, {
+    method: existingFile?.id ? "PATCH" : "POST",
+    headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
+    body
+  }, { interactive });
+  return response.json();
+}
+async function pushLocalDriveSyncNow({ interactive = true } = {}) {
+  const meta = await readLocalMeta();
+  const deviceId = await ensureDeviceId(meta);
+  try {
+    const remote = await readDrivePayload({ interactive });
+    let playlist = await buildLocalPlaylistSyncSnapshot(deviceId);
+    const playlistStatus = await getPlaylistSyncStatus();
+    const remoteHash = remote.payload?.playlist?.hash || "";
+    const knownRemoteHash = typeof playlistStatus.remoteHash === "string" ? playlistStatus.remoteHash : "";
+    if (remoteHash && remoteHash !== knownRemoteHash && remoteHash !== playlist.hash) {
+      await importPlaylistSyncSnapshot(remote.payload.playlist, { mergePending: true });
+      playlist = await buildLocalPlaylistSyncSnapshot(deviceId);
+    }
+    const payload = {
+      version: DRIVE_SYNC_VERSION,
+      updatedAt: playlist.manifest.updatedAt,
+      deviceId,
+      playlist: encodePlaylistSnapshot(playlist),
+      playlistBackups: encodePlaylistSnapshots(
+        buildPlaylistBackups(remote.payload, playlist.hash)
+      )
+    };
+    const file = await writeDrivePayload(payload, {
+      interactive,
+      existing: remote.file
+    });
+    const now = Date.now();
+    await recordPushedPlaylistSyncSnapshot(playlist);
+    await writeLocalMeta({
+      ...meta,
+      deviceId,
+      fileId: file.id,
+      remoteUpdatedAt: payload.updatedAt,
+      remoteDeviceId: deviceId,
+      remoteAvailable: true,
+      playlistBackupCount: payload.playlistBackups.length,
+      lastWriteAt: now,
+      lastReadAt: now,
+      lastError: null
+    });
+    return { pushed: true, updatedAt: payload.updatedAt };
+  } catch (err) {
+    await recordPlaylistSyncError(err);
+    await writeLocalMeta({ ...meta, deviceId, lastError: err.message });
+    return { pushed: false, reason: err.message };
+  }
+}
+async function importDriveSync({
+  force = false,
+  interactive = true,
+  mergePending = !force
+} = {}) {
+  const meta = await readLocalMeta();
+  const deviceId = await ensureDeviceId(meta);
+  try {
+    const { file, payload } = await readDrivePayload({ interactive });
+    if (!payload) return { imported: false, reason: "no-drive-remote" };
+    const playlist = payload.playlist ? await importPlaylistSyncSnapshot(payload.playlist, {
+      force,
+      mergePending
+    }) : { imported: false };
+    await writeLocalMeta({
+      ...meta,
+      deviceId,
+      fileId: file?.id || meta.fileId || null,
+      remoteUpdatedAt: payload.updatedAt,
+      remoteDeviceId: payload.deviceId,
+      remoteAvailable: true,
+      playlistBackupCount: payload.playlistBackups?.length || 0,
+      lastReadAt: Date.now(),
+      lastError: null
+    });
+    return {
+      imported: Boolean(playlist.imported),
+      playlistImported: Boolean(playlist.imported),
+      settingsImported: false,
+      updatedAt: payload.updatedAt,
+      playlistBackupCount: payload.playlistBackups?.length || 0
+    };
+  } catch (err) {
+    await writeLocalMeta({ ...meta, deviceId, lastError: err.message });
+    return { imported: false, reason: err.message };
+  }
+}
+async function restoreDrivePlaylistBackup({
+  offset = 1,
+  interactive = true
+} = {}) {
+  const meta = await readLocalMeta();
+  const deviceId = await ensureDeviceId(meta);
+  try {
+    const remote = await readDrivePayload({ interactive });
+    const payload = remote.payload;
+    const backups = Array.isArray(payload?.playlistBackups) ? payload.playlistBackups : [];
+    const index = Math.max(0, Math.trunc(Number(offset) || 1) - 1);
+    const target = backups[index] || null;
+    if (!payload?.playlist || !target) {
+      return { restored: false, reason: "no-playlist-backup" };
+    }
+    const restored = buildSyncSnapshot(target.state, {
+      deviceId,
+      updatedAt: Date.now()
+    });
+    const remainingBackups = backups.filter((_, itemIndex) => itemIndex !== index);
+    const nextPayload = {
+      version: DRIVE_SYNC_VERSION,
+      updatedAt: restored.manifest.updatedAt,
+      deviceId,
+      playlist: encodePlaylistSnapshot(restored),
+      playlistBackups: encodePlaylistSnapshots(
+        buildPlaylistBackups(
+          {
+            playlist: payload.playlist,
+            playlistBackups: remainingBackups
+          },
+          restored.hash
+        )
+      )
+    };
+    const file = await writeDrivePayload(nextPayload, {
+      interactive,
+      existing: remote.file
+    });
+    await importPlaylistSyncSnapshot(
+      {
+        state: restored.state,
+        hash: restored.hash,
+        updatedAt: restored.manifest.updatedAt,
+        manifest: restored.manifest
+      },
+      { force: true }
+    );
+    const now = Date.now();
+    await writeLocalMeta({
+      ...meta,
+      deviceId,
+      fileId: file.id,
+      remoteUpdatedAt: nextPayload.updatedAt,
+      remoteDeviceId: deviceId,
+      remoteAvailable: true,
+      playlistBackupCount: nextPayload.playlistBackups.length,
+      lastWriteAt: now,
+      lastReadAt: now,
+      lastError: null
+    });
+    return {
+      restored: true,
+      updatedAt: nextPayload.updatedAt,
+      backupOffset: index + 1,
+      playlistBackupCount: nextPayload.playlistBackups.length
+    };
+  } catch (err) {
+    await recordPlaylistSyncError(err);
+    await writeLocalMeta({ ...meta, deviceId, lastError: err.message });
+    return { restored: false, reason: err.message };
+  }
+}
+async function getDriveSyncStatus({ refreshRemote = false } = {}) {
+  const meta = await readLocalMeta();
+  if (!refreshRemote) {
+    return {
+      remoteAvailable: Boolean(meta.remoteAvailable || meta.remoteUpdatedAt),
+      remoteUpdatedAt: normalizeSyncTimestamp(meta.remoteUpdatedAt),
+      remoteDeviceId: meta.remoteDeviceId || null,
+      playlistBackupCount: Number(meta.playlistBackupCount) || 0,
+      lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
+      lastReadAt: normalizeSyncTimestamp(meta.lastReadAt),
+      lastError: meta.lastError || null
+    };
+  }
+  try {
+    const { file, payload } = await readDrivePayload({ interactive: false });
+    const now = Date.now();
+    await writeLocalMeta({
+      ...meta,
+      fileId: file?.id || meta.fileId || null,
+      remoteAvailable: Boolean(payload),
+      remoteUpdatedAt: normalizeSyncTimestamp(payload?.updatedAt),
+      remoteDeviceId: payload?.deviceId || meta.remoteDeviceId || null,
+      playlistBackupCount: payload?.playlistBackups?.length || 0,
+      lastReadAt: now,
+      lastError: null
+    });
+    return {
+      remoteAvailable: Boolean(payload),
+      remoteUpdatedAt: normalizeSyncTimestamp(payload?.updatedAt),
+      playlistRemoteUpdatedAt: normalizeSyncTimestamp(payload?.playlist?.updatedAt),
+      settingsRemoteUpdatedAt: 0,
+      remoteDeviceId: payload?.deviceId || null,
+      playlistBackupCount: payload?.playlistBackups?.length || 0,
+      playlistBackups: (payload?.playlistBackups || []).map((snapshot) => ({
+        updatedAt: normalizeSyncTimestamp(snapshot?.updatedAt),
+        hash: snapshot?.hash || null,
+        deviceId: snapshot?.manifest?.deviceId || null
+      })),
+      fileModifiedTime: file?.modifiedTime || null,
+      lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
+      lastReadAt: now,
+      lastError: meta.lastError || null
+    };
+  } catch (err) {
+    return {
+      remoteAvailable: false,
+      remoteUpdatedAt: 0,
+      playlistRemoteUpdatedAt: 0,
+      settingsRemoteUpdatedAt: 0,
+      remoteDeviceId: null,
+      playlistBackupCount: Number(meta.playlistBackupCount) || 0,
+      playlistBackups: [],
+      fileModifiedTime: null,
+      lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
+      lastReadAt: normalizeSyncTimestamp(meta.lastReadAt),
+      lastError: err.message
+    };
+  }
+}
+
+// src/store/state/settingsSyncSnapshot.js
+var SETTINGS_SYNC_FORMAT_VERSION = 1;
+var DEFAULT_FILTERS = Object.freeze({
+  global: { noShorts: true },
+  channels: {}
+});
+function cloneDefaultFilters() {
+  return { global: { ...DEFAULT_FILTERS.global }, channels: {} };
+}
+function normalizeRuleSet(raw = {}) {
+  const result = {};
+  if (typeof raw.noShorts === "boolean") result.noShorts = raw.noShorts;
+  if (typeof raw.noBroadcasts === "boolean") {
+    result.noBroadcasts = raw.noBroadcasts;
+  }
+  ["title", "tags", "playlists"].forEach((key) => {
+    if (!Array.isArray(raw[key])) return;
+    const values = Array.from(
+      new Set(raw[key].map((value) => String(value).trim()).filter(Boolean))
+    );
+    if (values.length) result[key] = values;
+  });
+  if (Array.isArray(raw.duration)) {
+    const duration = raw.duration.map((entry) => ({
+      min: Math.max(0, Number(entry?.min) || 0),
+      max: entry?.max === Infinity ? Infinity : Math.max(0, Number(entry?.max) || 0)
+    })).filter((entry) => entry.max === Infinity || entry.max >= entry.min);
+    if (duration.length) result.duration = duration;
+  }
+  return result;
+}
+function normalizeSettingsFilters(raw) {
+  if (!raw || typeof raw !== "object") return cloneDefaultFilters();
+  const normalized = cloneDefaultFilters();
+  normalized.global = {
+    ...normalized.global,
+    ...normalizeRuleSet(raw.global || {})
+  };
+  if (raw.channels && typeof raw.channels === "object") {
+    Object.entries(raw.channels).forEach(([channelId, rules]) => {
+      const id = typeof channelId === "string" ? channelId.trim() : "";
+      if (id) normalized.channels[id] = normalizeRuleSet(rules);
+    });
+  }
+  return normalized;
+}
+function settingsFingerprint(filters) {
+  return hashString(JSON.stringify(normalizeSettingsFilters(filters)));
+}
+function getSettingsChunkKey(index) {
+  return `${SETTINGS_SYNC_CHUNK_STORAGE_PREFIX}${index}`;
+}
+function splitStringByStorageBytes(value) {
+  const chunks = [];
+  let offset = 0;
+  while (offset < value.length) {
+    let low = 1;
+    let high = value.length - offset;
+    let best = 1;
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2);
+      const candidate = value.slice(offset, offset + mid);
+      const bytes = storageItemBytes(getSettingsChunkKey(chunks.length), candidate);
+      if (bytes <= SYNC_CHUNK_TARGET_BYTES) {
+        best = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    chunks.push(value.slice(offset, offset + best));
+    offset += best;
+  }
+  return chunks;
+}
+function buildSettingsSnapshot(filtersInput, { updatedAt, deviceId } = {}) {
+  const filters = normalizeSettingsFilters(filtersInput);
+  const json = JSON.stringify(filters);
+  const hash = hashString(json);
+  const chunks = splitStringByStorageBytes(json);
+  const manifest = {
+    version: SETTINGS_SYNC_FORMAT_VERSION,
+    updatedAt: normalizeSyncTimestamp(updatedAt) || Date.now(),
+    deviceId: typeof deviceId === "string" && deviceId ? deviceId : null,
+    hash,
+    chunkCount: chunks.length
+  };
+  const totalBytes = storageItemBytes(SETTINGS_SYNC_MANIFEST_STORAGE_KEY, manifest) + chunks.reduce(
+    (sum, chunk, index) => sum + storageItemBytes(getSettingsChunkKey(index), chunk),
+    0
+  );
+  if (totalBytes > SETTINGS_SYNC_TOTAL_TARGET_BYTES) {
+    throw new Error(`Settings sync snapshot is too large (${totalBytes} bytes)`);
+  }
+  return { manifest, chunks, filters, hash, totalBytes };
+}
+function parseSettingsSnapshot(manifest, chunks) {
+  if (!manifest || typeof manifest !== "object" || manifest.version !== SETTINGS_SYNC_FORMAT_VERSION || !Number.isInteger(manifest.chunkCount) || manifest.chunkCount <= 0 || manifest.chunkCount > 100 || !Array.isArray(chunks) || chunks.some((chunk) => typeof chunk !== "string")) {
+    return null;
+  }
+  const json = chunks.join("");
+  const hash = hashString(json);
+  if (hash !== manifest.hash) return null;
+  try {
+    return {
+      manifest,
+      filters: normalizeSettingsFilters(JSON.parse(json)),
+      updatedAt: normalizeSyncTimestamp(manifest.updatedAt),
+      hash
+    };
+  } catch {
+    return null;
+  }
+}
+function mergeArrays(primary = [], secondary = []) {
+  return Array.from(/* @__PURE__ */ new Set([...primary, ...secondary]));
+}
+function mergeRuleSet(primary = {}, secondary = {}) {
+  const merged = {};
+  if (primary.noShorts || secondary.noShorts) merged.noShorts = true;
+  if (primary.noBroadcasts || secondary.noBroadcasts) merged.noBroadcasts = true;
+  ["title", "tags", "playlists"].forEach((key) => {
+    const values = mergeArrays(primary[key] || [], secondary[key] || []);
+    if (values.length) merged[key] = values;
+  });
+  const durations = mergeArrays(
+    (primary.duration || []).map((entry) => JSON.stringify(entry)),
+    (secondary.duration || []).map((entry) => JSON.stringify(entry))
+  ).map((entry) => JSON.parse(entry));
+  if (durations.length) merged.duration = durations;
+  return normalizeRuleSet(merged);
+}
+function mergeFiltersConservatively(localInput, remoteInput) {
+  const local = normalizeSettingsFilters(localInput);
+  const remote = normalizeSettingsFilters(remoteInput);
+  const channels = {};
+  const ids = /* @__PURE__ */ new Set([
+    ...Object.keys(remote.channels || {}),
+    ...Object.keys(local.channels || {})
+  ]);
+  ids.forEach((id) => {
+    channels[id] = mergeRuleSet(remote.channels[id], local.channels[id]);
+  });
+  return normalizeSettingsFilters({
+    global: mergeRuleSet(remote.global, local.global),
+    channels
+  });
+}
+
+// src/store/state/settingsSync.js
+function hasChromeStorageArea2(area) {
+  return typeof chrome !== "undefined" && chrome?.storage?.[area];
+}
+async function storageGet3(area, keys) {
+  return hasChromeStorageArea2(area) ? chrome.storage[area].get(keys) : {};
+}
+async function storageSet3(area, payload) {
+  if (hasChromeStorageArea2(area)) {
+    await chrome.storage[area].set(payload);
+  }
+}
+async function storageRemove(area, keys) {
+  if (hasChromeStorageArea2(area) && keys.length) {
+    await chrome.storage[area].remove(keys);
+  }
+}
+function createDeviceId3() {
+  const random = typeof crypto !== "undefined" && crypto?.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+  return `device_${Date.now().toString(36)}_${random}`;
+}
+function parseStoredFilters(raw) {
+  try {
+    return normalizeSettingsFilters(typeof raw === "string" ? JSON.parse(raw) : raw);
+  } catch {
+    return normalizeSettingsFilters(null);
+  }
+}
+async function readLocalMeta2() {
+  const stored = await storageGet3("local", SETTINGS_SYNC_LOCAL_META_STORAGE_KEY);
+  const meta = stored?.[SETTINGS_SYNC_LOCAL_META_STORAGE_KEY];
+  return meta && typeof meta === "object" ? meta : {};
+}
+async function writeLocalMeta2(meta) {
+  await storageSet3("local", {
+    [SETTINGS_SYNC_LOCAL_META_STORAGE_KEY]: {
+      ...meta,
+      deviceId: typeof meta.deviceId === "string" && meta.deviceId ? meta.deviceId : createDeviceId3()
+    }
+  });
+}
+async function ensureDeviceId2(meta = null) {
+  const current = meta || await readLocalMeta2();
+  if (typeof current.deviceId === "string" && current.deviceId) {
+    return current.deviceId;
+  }
+  const deviceId = createDeviceId3();
+  await writeLocalMeta2({ ...current, deviceId });
+  return deviceId;
+}
+async function scheduleAlarm(dueAt) {
+  if (typeof chrome !== "undefined" && chrome?.alarms?.create) {
+    chrome.alarms.create(SYNC_ALARM_NAME, { when: dueAt });
+  }
+}
+function isSettingsSyncStorageChange(changes = {}) {
+  return Object.keys(changes).some(
+    (key) => key === SETTINGS_SYNC_MANIFEST_STORAGE_KEY || key.startsWith(SETTINGS_SYNC_CHUNK_STORAGE_PREFIX)
+  );
+}
+async function readRemoteSettingsSyncSnapshot() {
+  const storedManifest = await storageGet3("sync", SETTINGS_SYNC_MANIFEST_STORAGE_KEY);
+  const manifest = storedManifest?.[SETTINGS_SYNC_MANIFEST_STORAGE_KEY];
+  if (!manifest || !Number.isInteger(manifest.chunkCount)) return null;
+  const keys = Array.from(
+    { length: manifest.chunkCount },
+    (_, index) => getSettingsChunkKey(index)
+  );
+  const storedChunks = await storageGet3("sync", keys);
+  return parseSettingsSnapshot(manifest, keys.map((key) => storedChunks?.[key]));
+}
+async function readLocalSettingsFilters() {
+  const stored = await storageGet3("local", FILTERS_STORAGE_KEY);
+  return parseStoredFilters(stored?.[FILTERS_STORAGE_KEY]);
+}
+async function writeLocalSettingsFilters(filters) {
+  await storageSet3("local", {
+    [FILTERS_STORAGE_KEY]: JSON.stringify(normalizeSettingsFilters(filters))
+  });
+}
+async function scheduleSettingsSync(filtersInput, { immediate = false } = {}) {
+  if (!hasChromeStorageArea2("sync") || !hasChromeStorageArea2("local")) return;
+  const meta = await readLocalMeta2();
+  if (!immediate && !meta.remoteHash && !meta.syncedHash) return;
+  const localHash = settingsFingerprint(filtersInput);
+  if (localHash === meta.localHash && !immediate) return;
+  const now = Date.now();
+  const dueAt = immediate ? now : now + SYNC_DEBOUNCE_MS;
+  await writeLocalMeta2({
+    ...meta,
+    deviceId: await ensureDeviceId2(meta),
+    localHash,
+    localUpdatedAt: now,
+    baseRemoteHash: meta.pending ? meta.baseRemoteHash || null : meta.remoteHash || meta.syncedHash || null,
+    pending: true,
+    pendingSince: meta.pendingSince || now,
+    flushAfter: dueAt,
+    lastError: null
+  });
+  await scheduleAlarm(dueAt);
+}
+async function flushPendingSettingsSync({ force = false } = {}) {
+  if (!hasChromeStorageArea2("sync") || !hasChromeStorageArea2("local")) {
+    return { wrote: false, reason: "storage-unavailable" };
+  }
+  const meta = await readLocalMeta2();
+  if (!meta.pending) return { wrote: false, reason: "not-pending" };
+  const now = Date.now();
+  const flushAfter = normalizeSyncTimestamp(meta.flushAfter);
+  if (!force && flushAfter && flushAfter > now) {
+    await scheduleAlarm(flushAfter);
+    return { wrote: false, reason: "debounced" };
+  }
+  const localFilters = await readLocalSettingsFilters();
+  const localHash = settingsFingerprint(localFilters);
+  if (localHash !== meta.localHash) {
+    await scheduleSettingsSync(localFilters);
+    return { wrote: false, reason: "state-changed" };
+  }
+  const deviceId = await ensureDeviceId2(meta);
+  const remote = await readRemoteSettingsSyncSnapshot();
+  if (!force && !remote && !meta.remoteHash && !meta.syncedHash && !meta.baseRemoteHash) {
+    await writeLocalMeta2({
+      ...meta,
+      pending: false,
+      flushAfter: null,
+      lastError: "Remote settings sync is not initialized",
+      lastErrorAt: now
+    });
+    return { wrote: false, reason: "remote-not-initialized" };
+  }
+  const remoteFromOther = remote && remote.manifest?.deviceId !== deviceId;
+  const baseHash = typeof meta.baseRemoteHash === "string" ? meta.baseRemoteHash : null;
+  const conflict = !force && remoteFromOther && (!baseHash || remote.hash !== baseHash);
+  const filtersToWrite = conflict ? mergeFiltersConservatively(localFilters, remote.filters) : localFilters;
+  const updatedAt = conflict ? now : normalizeSyncTimestamp(meta.localUpdatedAt) || now;
+  let snapshot;
+  try {
+    snapshot = buildSettingsSnapshot(filtersToWrite, { updatedAt, deviceId });
+  } catch (err) {
+    await writeLocalMeta2({
+      ...meta,
+      pending: false,
+      lastError: err?.message || String(err),
+      lastErrorAt: now
+    });
+    return { wrote: false, reason: "too-large" };
+  }
+  const payload = { [SETTINGS_SYNC_MANIFEST_STORAGE_KEY]: snapshot.manifest };
+  snapshot.chunks.forEach((chunk, index) => {
+    payload[getSettingsChunkKey(index)] = chunk;
+  });
+  await storageSet3("sync", payload);
+  const previousCount = remote?.manifest?.chunkCount || 0;
+  const staleKeys = [];
+  for (let index = snapshot.chunks.length; index < previousCount; index += 1) {
+    staleKeys.push(getSettingsChunkKey(index));
+  }
+  await storageRemove("sync", staleKeys);
+  if (conflict) await writeLocalSettingsFilters(filtersToWrite);
+  await writeLocalMeta2({
+    ...meta,
+    deviceId,
+    localHash: settingsFingerprint(filtersToWrite),
+    localUpdatedAt: updatedAt,
+    syncedHash: snapshot.hash,
+    syncedUpdatedAt: updatedAt,
+    remoteHash: snapshot.hash,
+    remoteUpdatedAt: updatedAt,
+    baseRemoteHash: null,
+    pending: false,
+    pendingSince: null,
+    flushAfter: null,
+    lastWriteAt: now,
+    lastError: null,
+    lastBytes: snapshot.totalBytes
+  });
+  return { wrote: true, conflictMerged: conflict, updatedAt };
+}
+async function pushLocalSettingsSyncNow() {
+  const filters = await readLocalSettingsFilters();
+  await scheduleSettingsSync(filters, { immediate: true });
+  const result = await flushPendingSettingsSync({ force: true });
+  return { ...result, pushed: Boolean(result?.wrote) };
+}
+async function resolveRemoteSettingsSyncFilters(localFiltersInput) {
+  const localFilters = normalizeSettingsFilters(localFiltersInput);
+  const meta = await readLocalMeta2();
+  if (meta.pending) {
+    await scheduleAlarm(
+      normalizeSyncTimestamp(meta.flushAfter) || Date.now() + SYNC_DEBOUNCE_MS
+    );
+  }
+  const remote = await readRemoteSettingsSyncSnapshot();
+  if (!remote) {
+    return { filters: localFilters, imported: false };
+  }
+  const localUpdatedAt = normalizeSyncTimestamp(meta.localUpdatedAt);
+  const shouldImport = !meta.pending && (localUpdatedAt <= 0 || remote.updatedAt > localUpdatedAt);
+  if (!shouldImport) {
+    await writeLocalMeta2({ ...meta, remoteHash: remote.hash, remoteUpdatedAt: remote.updatedAt });
+    return { filters: localFilters, imported: false };
+  }
+  await writeLocalSettingsFilters(remote.filters);
+  await writeLocalMeta2({
+    ...meta,
+    localHash: settingsFingerprint(remote.filters),
+    localUpdatedAt: remote.updatedAt,
+    syncedHash: remote.hash,
+    syncedUpdatedAt: remote.updatedAt,
+    remoteHash: remote.hash,
+    remoteUpdatedAt: remote.updatedAt,
+    baseRemoteHash: null,
+    pending: false,
+    lastError: null
+  });
+  return { filters: remote.filters, imported: true };
+}
+async function importRemoteSettingsSync({ force = false } = {}) {
+  const localFilters = await readLocalSettingsFilters();
+  const remote = await readRemoteSettingsSyncSnapshot();
+  if (!remote) return { imported: false, reason: "no-remote" };
+  const meta = await readLocalMeta2();
+  const localUpdatedAt = normalizeSyncTimestamp(meta.localUpdatedAt);
+  const shouldImport = force || !meta.pending || remote.updatedAt > localUpdatedAt;
+  if (!shouldImport) return { imported: false, reason: "local-pending" };
+  const filters = force ? remote.filters : mergeFiltersConservatively(localFilters, remote.filters);
+  await writeLocalSettingsFilters(filters);
+  await writeLocalMeta2({
+    ...meta,
+    localHash: settingsFingerprint(filters),
+    localUpdatedAt: force ? remote.updatedAt : Date.now(),
+    syncedHash: force ? remote.hash : settingsFingerprint(filters),
+    syncedUpdatedAt: force ? remote.updatedAt : Date.now(),
+    remoteHash: remote.hash,
+    remoteUpdatedAt: remote.updatedAt,
+    baseRemoteHash: null,
+    pending: !force && settingsFingerprint(filters) !== remote.hash,
+    flushAfter: !force ? Date.now() + SYNC_DEBOUNCE_MS : null,
+    lastError: null
+  });
+  if (!force && settingsFingerprint(filters) !== remote.hash) {
+    await scheduleSettingsSync(filters);
+  }
+  return { imported: true, force, updatedAt: remote.updatedAt };
+}
+async function getSettingsSyncStatus() {
+  const [meta, remote] = await Promise.all([
+    readLocalMeta2(),
+    readRemoteSettingsSyncSnapshot()
+  ]);
+  return {
+    localDeviceId: meta.deviceId || null,
+    localUpdatedAt: normalizeSyncTimestamp(meta.localUpdatedAt),
+    remoteUpdatedAt: normalizeSyncTimestamp(remote?.updatedAt),
+    remoteDeviceId: remote?.manifest?.deviceId || null,
+    remoteChunkCount: remote?.manifest?.chunkCount || 0,
+    pending: Boolean(meta.pending),
+    lastWriteAt: normalizeSyncTimestamp(meta.lastWriteAt),
+    lastError: meta.lastError || null,
+    remoteAvailable: Boolean(remote)
+  };
 }
 
 // src/store/actions/core.js
@@ -936,9 +2566,17 @@ function findVideo(state, videoId, { preferListId = null } = {}) {
   }
   return null;
 }
-function appendHistory(state, entry, listId) {
+function normalizeActionTimestamp(value) {
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) && timestamp > 0 ? Math.trunc(timestamp) : Date.now();
+}
+function appendHistory(state, entry, listId, options = {}) {
   state.history.unshift(
-    sanitizeHistoryEntry({ ...entry, listId, watchedAt: Date.now() })
+    sanitizeHistoryEntry({
+      ...entry,
+      listId,
+      watchedAt: normalizeActionTimestamp(options.watchedAt)
+    })
   );
   state.history = state.history.slice(0, HISTORY_LIMIT);
 }
@@ -948,17 +2586,53 @@ function ensureDeletedHistory(state) {
   }
   return state.deletedHistory;
 }
-function appendDeletedHistory(state, entry, listId) {
+function deletedHistoryKey(entry) {
+  const id = typeof entry?.id === "string" ? entry.id : "";
+  const scopedListId = typeof entry?.listId === "string" ? entry.listId : "";
+  return `${scopedListId}\0${id}`;
+}
+function ensureQueueRemovals(state) {
+  if (!Array.isArray(state.queueRemovals)) {
+    state.queueRemovals = [];
+  }
+  return state.queueRemovals;
+}
+function appendQueueRemoval(state, entry, listId, options = {}) {
+  try {
+    const removals = ensureQueueRemovals(state);
+    const sanitized = sanitizeQueueRemovalEntry({
+      id: entry?.id,
+      listId,
+      removedAt: normalizeActionTimestamp(options.removedAt)
+    });
+    const key = deletedHistoryKey(sanitized);
+    state.queueRemovals = removals.filter(
+      (item) => deletedHistoryKey(item) !== key
+    );
+    state.queueRemovals.unshift(sanitized);
+    state.queueRemovals = state.queueRemovals.slice(0, QUEUE_REMOVAL_LOG_LIMIT);
+  } catch {
+  }
+}
+function appendDeletedHistory(state, entry, listId, options = {}) {
   try {
     const history = ensureDeletedHistory(state);
+    const reason = typeof options.reason === "string" && options.reason ? options.reason : null;
     const sanitized = sanitizeDeletedHistoryEntry({
       ...entry,
+      ...reason ? { reason } : {},
       listId,
-      deletedAt: Date.now()
+      deletedAt: normalizeActionTimestamp(options.deletedAt)
     });
-    state.deletedHistory = history.filter((item) => item.id !== sanitized.id);
+    const key = deletedHistoryKey(sanitized);
+    state.deletedHistory = history.filter(
+      (item) => deletedHistoryKey(item) !== key
+    );
     state.deletedHistory.unshift(sanitized);
     state.deletedHistory = state.deletedHistory.slice(0, HISTORY_LIMIT);
+    appendQueueRemoval(state, sanitized, listId, {
+      removedAt: sanitized.deletedAt
+    });
   } catch {
   }
 }
@@ -1240,14 +2914,16 @@ async function markVideoWatched(videoId, { listId = null } = {}) {
       return state;
     }
     const entry = list.queue[index];
+    const watchedAt = Date.now();
     if (list.id === DEFAULT_LIST_ID && entry?.id) {
       rememberAutoCollectSeenIds(state, [entry.id]);
     }
-    appendHistory(state, entry, list.id);
-    applyVideoProgress(state, videoId, 100, { timestamp: Date.now() });
+    appendHistory(state, entry, list.id, { watchedAt });
+    applyVideoProgress(state, videoId, 100, { timestamp: watchedAt });
     const shouldRemove = list.id === DEFAULT_LIST_ID || !list.freeze;
     let listChanged = false;
     if (shouldRemove) {
+      appendQueueRemoval(state, entry, list.id, { removedAt: watchedAt });
       list.queue.splice(index, 1);
       adjustIndexAfterRemoval(list, index);
       listChanged = true;
@@ -1342,7 +3018,9 @@ function moveVideoInState(state, videoId, targetListId) {
   if (!located) return false;
   const { list, index } = located;
   if (list.id === targetListId) return false;
+  const movedAt = Date.now();
   const [entry] = list.queue.splice(index, 1);
+  appendQueueRemoval(state, entry, list.id, { removedAt: movedAt });
   adjustIndexAfterRemoval(list, index);
   bumpListRevision(list);
   if (list.id === DEFAULT_LIST_ID) {
@@ -1360,7 +3038,7 @@ function moveVideoInState(state, videoId, targetListId) {
   if (list.id === DEFAULT_LIST_ID || target.id === DEFAULT_LIST_ID) {
     rememberAutoCollectSeenIds(state, [entry.id]);
   }
-  target.queue.push(entry);
+  target.queue.push({ ...entry, addedAt: movedAt });
   bumpListRevision(target);
   if (target.currentIndex === null) {
     target.currentIndex = 0;
@@ -1454,6 +3132,10 @@ async function removeList(listId, { mode = "move", targetListId = DEFAULT_LIST_I
   return withState((state) => {
     ensureListExists(state, listId);
     const list = detachList(state, listId);
+    state.deletedLists = {
+      ...state.deletedLists || {},
+      [listId]: Date.now()
+    };
     if (mode === "delete") {
       if (list.queue.length) {
         ensureNotificationQueue(state);
@@ -1691,8 +3373,8 @@ async function recordVideoProgress(videoId, percent, options = {}) {
 }
 
 // src/store/actions/presentation.js
-async function getPresentationState() {
-  const state = await getState();
+function buildPresentationState(stateInput) {
+  const state = sanitizeState(stateInput);
   const autoMeta = ensureAutoCollectMeta(state);
   const listsMeta = state.listOrder.map((id) => state.lists[id]).filter(Boolean).map((list) => ({
     id: list.id,
@@ -1727,66 +3409,58 @@ async function getPresentationState() {
     }
   };
 }
+async function getPresentationState() {
+  return buildPresentationState(await getState());
+}
 
-// src/auth.js
-if (typeof chrome !== "undefined") {
-  chrome.storage.local.set({ authStatus: false });
+// src/background/accountSync.js
+var REMOTE_REFRESH_THROTTLE_MS = 30 * 1e3;
+var flushPromise = null;
+var remoteRefreshPromise = null;
+var lastRemoteRefreshAt = 0;
+async function flushPendingAccountSync(options = {}) {
+  if (flushPromise) {
+    return flushPromise;
+  }
+  const forcePlaylist = Boolean(options.forcePlaylist);
+  flushPromise = (async () => {
+    const [playlist] = await Promise.all([
+      flushPendingPlaylistSync({ force: forcePlaylist }),
+      flushPendingSettingsSync()
+    ]);
+    let drive = null;
+    if (playlist?.ready) {
+      drive = await pushLocalDriveSyncNow({ interactive: false });
+    }
+    return { playlist, drive };
+  })();
+  try {
+    return await flushPromise;
+  } finally {
+    flushPromise = null;
+  }
 }
-var currentToken = null;
-function clearToken() {
-  if (typeof chrome !== "undefined" && currentToken) {
-    chrome.identity.removeCachedAuthToken({ token: currentToken }, () => {
-    });
-  }
-  currentToken = null;
-  if (typeof chrome !== "undefined") {
-    chrome.storage.local.set({ authStatus: false });
-  }
-}
-function signInUser() {
-  if (typeof chrome === "undefined") {
-    return Promise.reject(new Error("chrome API unavailable"));
-  }
-  if (currentToken) {
-    chrome.identity.removeCachedAuthToken({ token: currentToken }, () => {
-    });
-    currentToken = null;
-  }
-  return new Promise((resolve, reject) => {
-    chrome.identity.getAuthToken({ interactive: true }, (token) => {
-      if (chrome.runtime.lastError || !token) {
-        console.error("Failed to obtain token", chrome.runtime.lastError);
-        chrome.storage.local.set({ authStatus: false });
-        reject(chrome.runtime.lastError);
-      } else {
-        currentToken = token;
-        chrome.storage.local.set({ authStatus: true });
-        resolve(token);
-      }
-    });
+function requestAccountSyncFlush(options = {}) {
+  flushPendingAccountSync(options).catch((err) => {
+    console.error("Account sync flush failed", err);
   });
 }
-function getToken() {
-  if (typeof chrome === "undefined") {
-    return Promise.reject(new Error("chrome API unavailable"));
+async function refreshRemoteAccountSync(options = {}) {
+  const force = Boolean(options.force);
+  const now = Date.now();
+  if (!force && now - lastRemoteRefreshAt < REMOTE_REFRESH_THROTTLE_MS) {
+    return { imported: false, skipped: true, reason: "throttled" };
   }
-  if (currentToken) return Promise.resolve(currentToken);
-  return new Promise((resolve, reject) => {
-    chrome.identity.getAuthToken({ interactive: false }, async (token) => {
-      if (chrome.runtime.lastError || !token) {
-        try {
-          const t = await signInUser();
-          resolve(t);
-        } catch (err) {
-          reject(err);
-        }
-      } else {
-        currentToken = token;
-        chrome.storage.local.set({ authStatus: true });
-        resolve(token);
-      }
-    });
-  });
+  if (remoteRefreshPromise) {
+    return remoteRefreshPromise;
+  }
+  lastRemoteRefreshAt = now;
+  remoteRefreshPromise = importDriveSync({ interactive: false });
+  try {
+    return await remoteRefreshPromise;
+  } finally {
+    remoteRefreshPromise = null;
+  }
 }
 
 // src/youtube-api/transport.js
@@ -2338,8 +4012,8 @@ async function safeSendMessage(payload) {
     }
   }
 }
-async function notifyState() {
-  const presentation = await getPresentationState();
+async function notifyState(stateInput = null) {
+  const presentation = stateInput ? buildPresentationState(stateInput) : await getPresentationState();
   await safeSendMessage({
     source: MESSAGE_SOURCE,
     type: "playlist:stateUpdated",
@@ -2357,7 +4031,29 @@ function sendCollectionProgress(event) {
 }
 
 // src/youtube-api/channels.js
+var CHANNEL_CACHE_KEY = "channelCache";
+var SUBSCRIPTION_CACHE_KEY = "channelSubscriptionCache";
 var channelCache;
+var subscriptionSnapshot;
+var subscriptionRefreshPromise;
+function chromeGet(keys) {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(keys, (data) => resolve(data || {}));
+  });
+}
+function chromeSet(payload) {
+  return new Promise((resolve) => chrome.storage.local.set(payload, resolve));
+}
+function toSubscriptionSnapshot(subs) {
+  const channels = {};
+  for (const { id, title } of subs) {
+    if (id) channels[id] = { title: title || "" };
+  }
+  return { updatedAt: Date.now(), channels };
+}
+function getExtraIds(extraIds) {
+  return Array.isArray(extraIds) ? extraIds.filter((id) => typeof id === "string" && id) : [];
+}
 async function getSubscriptionsId(pageToken) {
   const data = await callApi("subscriptions", {
     part: "snippet,contentDetails",
@@ -2376,6 +4072,48 @@ async function getSubscriptionsId(pageToken) {
   }
   return subs;
 }
+async function loadSubscriptionSnapshot() {
+  if (subscriptionSnapshot) return subscriptionSnapshot;
+  const data = await chromeGet([SUBSCRIPTION_CACHE_KEY]);
+  subscriptionSnapshot = data[SUBSCRIPTION_CACHE_KEY] || {
+    updatedAt: 0,
+    channels: {}
+  };
+  return subscriptionSnapshot;
+}
+function refreshSubscriptionSnapshot() {
+  if (!subscriptionRefreshPromise) {
+    subscriptionRefreshPromise = getSubscriptionsId().then(toSubscriptionSnapshot).then(async (snapshot) => {
+      subscriptionSnapshot = snapshot;
+      await chromeSet({ [SUBSCRIPTION_CACHE_KEY]: snapshot });
+      return snapshot;
+    }).finally(() => {
+      subscriptionRefreshPromise = null;
+    });
+  }
+  return subscriptionRefreshPromise;
+}
+async function getSubscriptionSnapshot({ refresh = false } = {}) {
+  const snapshot = await loadSubscriptionSnapshot();
+  if (!snapshot.updatedAt) {
+    return refreshSubscriptionSnapshot();
+  }
+  if (refresh) {
+    refreshSubscriptionSnapshot().catch((err) => {
+      console.warn("Failed to refresh subscription cache", err);
+    });
+  }
+  return snapshot;
+}
+async function getActiveSubscriptionChannelIds({ waitForRefresh = false } = {}) {
+  if (waitForRefresh && subscriptionRefreshPromise) {
+    await subscriptionRefreshPromise.catch((err) => {
+      console.warn("Failed to wait for subscription refresh", err);
+    });
+  }
+  const snapshot = await loadSubscriptionSnapshot();
+  return snapshot.updatedAt ? new Set(Object.keys(snapshot.channels || {})) : null;
+}
 async function getChannelInfos(ids) {
   if (!ids || ids.length === 0) return [];
   const data = await callApi("channels", {
@@ -2390,49 +4128,50 @@ async function getChannelInfos(ids) {
     uploads: el.contentDetails.relatedPlaylists.uploads
   }));
 }
-async function getChannelMap(extraIds = []) {
+async function getChannelMap(extraIds = [], options = {}) {
   if (!channelCache) {
-    const data = await new Promise(
-      (r) => chrome.storage.local.get(["channelCache"], r)
-    );
-    channelCache = data.channelCache || {};
+    const data = await chromeGet([CHANNEL_CACHE_KEY]);
+    channelCache = data[CHANNEL_CACHE_KEY] || {};
   }
-  const cache = channelCache;
-  const subs = await getSubscriptionsId();
-  const missing = [];
-  for (const { id, title } of subs) {
-    if (!cache[id]) cache[id] = {};
-    cache[id].title = title;
-    if (!cache[id].uploads) missing.push(id);
-  }
-  extraIds.forEach((id) => {
-    if (!cache[id] || !cache[id].uploads) missing.push(id);
+  const snapshot = await getSubscriptionSnapshot({
+    refresh: options?.refreshSubscriptionsInBackground === true
   });
-  let ids = missing.slice();
-  while (ids.length) {
-    const chunk = ids.splice(0, 50);
-    const infos = await getChannelInfos(chunk);
+  const ids = /* @__PURE__ */ new Set([
+    ...Object.keys(snapshot.channels || {}),
+    ...getExtraIds(extraIds)
+  ]);
+  const missing = [];
+  for (const id of ids) {
+    channelCache[id] = channelCache[id] || {};
+    channelCache[id].title = snapshot.channels?.[id]?.title || channelCache[id].title || "";
+    if (!channelCache[id].uploads) missing.push(id);
+  }
+  for (let i = 0; i < missing.length; i += 50) {
+    const infos = await getChannelInfos(missing.slice(i, i + 50));
     for (const info of infos) {
-      cache[info.id] = cache[info.id] || {};
-      cache[info.id].title = cache[info.id].title || info.title;
-      cache[info.id].uploads = info.uploads;
+      channelCache[info.id] = {
+        ...channelCache[info.id] || {},
+        title: channelCache[info.id]?.title || info.title,
+        uploads: info.uploads
+      };
     }
   }
-  channelCache = cache;
-  chrome.storage.local.set({ channelCache: cache });
-  return cache;
+  await chromeSet({ [CHANNEL_CACHE_KEY]: channelCache });
+  return Object.fromEntries(
+    Array.from(ids).filter((id) => channelCache[id]).map((id) => [id, channelCache[id]])
+  );
 }
 
 // src/filterStorage.js
 var STORAGE_KEYS = {
-  filters: "filters",
-  autoCollect: "subscriptionsCollect"
+  filters: FILTERS_STORAGE_KEY,
+  autoCollect: AUTO_COLLECT_STORAGE_KEY
 };
-var DEFAULT_FILTERS = Object.freeze({
+var DEFAULT_FILTERS2 = Object.freeze({
   global: { noShorts: true },
   channels: {}
 });
-var hasChromeStorage2 = typeof chrome !== "undefined" && chrome?.storage?.local;
+var hasChromeStorage3 = typeof chrome !== "undefined" && chrome?.storage?.local;
 var filtersCache = null;
 var autoCollectLastRun = null;
 function asValidDate2(value) {
@@ -2443,40 +4182,30 @@ function updateAutoCollectLastRun(meta) {
   const candidate = meta && typeof meta === "object" ? meta.lastRunAt ?? meta : meta;
   autoCollectLastRun = asValidDate2(candidate);
 }
-function cloneDefaultFilters() {
+function cloneDefaultFilters2() {
   return {
-    global: { ...DEFAULT_FILTERS.global },
+    global: { ...DEFAULT_FILTERS2.global },
     channels: {}
   };
 }
 function normalizeFilters(raw) {
-  if (!raw || typeof raw !== "object") {
-    return cloneDefaultFilters();
-  }
-  const normalized = cloneDefaultFilters();
-  if (raw.global && typeof raw.global === "object") {
-    normalized.global = { ...normalized.global, ...raw.global };
-  }
-  if (raw.channels && typeof raw.channels === "object") {
-    normalized.channels = { ...raw.channels };
-  }
-  return normalized;
+  return normalizeSettingsFilters(raw);
 }
-function parseStoredFilters(raw) {
-  if (!raw) return cloneDefaultFilters();
+function parseStoredFilters2(raw) {
+  if (!raw) return cloneDefaultFilters2();
   try {
     return normalizeFilters(typeof raw === "string" ? JSON.parse(raw) : raw);
   } catch {
-    return cloneDefaultFilters();
+    return cloneDefaultFilters2();
   }
 }
-var chromeGet = (keys) => new Promise((resolve) => chrome.storage.local.get(keys, (data) => resolve(data || {})));
-var chromeSet = (payload) => new Promise((resolve) => chrome.storage.local.set(payload, resolve));
-if (hasChromeStorage2 && chrome.storage?.onChanged) {
+var chromeGet2 = (keys) => new Promise((resolve) => chrome.storage.local.get(keys, (data) => resolve(data || {})));
+var chromeSet2 = (payload) => new Promise((resolve) => chrome.storage.local.set(payload, resolve));
+if (hasChromeStorage3 && chrome.storage?.onChanged) {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
     if (changes[STORAGE_KEYS.filters]) {
-      filtersCache = parseStoredFilters(changes[STORAGE_KEYS.filters].newValue);
+      filtersCache = parseStoredFilters2(changes[STORAGE_KEYS.filters].newValue);
     }
     if (changes[STORAGE_KEYS.autoCollect]) {
       updateAutoCollectLastRun(changes[STORAGE_KEYS.autoCollect].newValue);
@@ -2487,14 +4216,18 @@ async function getFilters() {
   if (filtersCache) {
     return filtersCache;
   }
-  if (!hasChromeStorage2) {
-    filtersCache = cloneDefaultFilters();
+  if (!hasChromeStorage3) {
+    filtersCache = cloneDefaultFilters2();
     return filtersCache;
   }
-  const data = await chromeGet([STORAGE_KEYS.filters, STORAGE_KEYS.autoCollect]);
-  filtersCache = parseStoredFilters(data?.[STORAGE_KEYS.filters]);
+  const data = await chromeGet2([STORAGE_KEYS.filters, STORAGE_KEYS.autoCollect]);
+  filtersCache = parseStoredFilters2(data?.[STORAGE_KEYS.filters]);
+  const resolved = await resolveRemoteSettingsSyncFilters(filtersCache);
+  if (resolved.imported) {
+    filtersCache = resolved.filters;
+  }
   if (!data?.[STORAGE_KEYS.filters]) {
-    await chromeSet({ [STORAGE_KEYS.filters]: JSON.stringify(filtersCache) });
+    await chromeSet2({ [STORAGE_KEYS.filters]: JSON.stringify(filtersCache) });
   }
   updateAutoCollectLastRun(data?.[STORAGE_KEYS.autoCollect]);
   return filtersCache;
@@ -2520,6 +4253,7 @@ async function fetchInfo(list) {
       response.forEach((video) => infoMap.set(video.id, video));
     } catch (err) {
       console.error("Failed to fetch video info chunk", chunk, err);
+      throw err;
     }
   }
   return list.map((video) => {
@@ -2789,7 +4523,9 @@ async function collectVideos(startDate = new Date(Date.now() - 6048e5), progress
   const excludeIds = new Set(
     Array.isArray(options?.excludeIds) ? options.excludeIds.filter(Boolean) : options?.excludeIds instanceof Set ? Array.from(options.excludeIds).filter(Boolean) : []
   );
-  const channels = await getChannelMap();
+  const channels = await getChannelMap([], {
+    refreshSubscriptionsInBackground: true
+  });
   const sources = Object.entries(channels).map(([channelId, info]) => ({
     channelId,
     channelTitle: info?.title || "",
@@ -2844,13 +4580,39 @@ async function collectVideos(startDate = new Date(Date.now() - 6048e5), progress
   for (const r of results) {
     for (const v of r.videos) {
       if (!excludeIds.has(v.id) && !videoMap.has(v.id)) {
-        videoMap.set(v.id, v);
+        videoMap.set(v.id, {
+          ...v,
+          channelId: v.channelId || r.channelId,
+          channelTitle: v.channelTitle || r.channelTitle
+        });
       }
     }
   }
   let videos = Array.from(videoMap.values());
   console.log("Fetched", videos.length, "videos");
   progress({ phase: "aggregate", videoCount: videos.length });
+  const activeChannelIds = await getActiveSubscriptionChannelIds({
+    waitForRefresh: true
+  });
+  if (activeChannelIds) {
+    const beforeSubscriptionCheck = videos.length;
+    videos = videos.filter(
+      (video) => video?.channelId && activeChannelIds.has(video.channelId)
+    );
+    const skippedUnsubscribed = beforeSubscriptionCheck - videos.length;
+    if (skippedUnsubscribed) {
+      console.log(
+        "Skipped",
+        skippedUnsubscribed,
+        "videos from unsubscribed channels"
+      );
+    }
+    progress({
+      phase: "subscriptionsRechecked",
+      videoCount: videos.length,
+      skippedUnsubscribed
+    });
+  }
   progress({ phase: "filtering", videoCount: videos.length });
   videos = await filterVideos(videos, progress);
   progress({ phase: "filtered", videoCount: videos.length });
@@ -2885,6 +4647,12 @@ function collectAutoCollectSeenIds(state, { listId = DEFAULT_LIST_ID } = {}) {
   }
   const deletedHistory = Array.isArray(state?.deletedHistory) ? state.deletedHistory : [];
   for (const entry of deletedHistory) {
+    if (entry?.listId === listId || !entry?.listId && listId === DEFAULT_LIST_ID) {
+      addEntryIds(seenIds, [entry]);
+    }
+  }
+  const queueRemovals = Array.isArray(state?.queueRemovals) ? state.queueRemovals : [];
+  for (const entry of queueRemovals) {
     if (entry?.listId === listId || !entry?.listId && listId === DEFAULT_LIST_ID) {
       addEntryIds(seenIds, [entry]);
     }
@@ -3097,27 +4865,44 @@ function countAddedEntriesInQueue(nextState, listId, beforeState) {
   const list = nextState?.lists?.[listId];
   return (list?.queue || []).filter((entry) => !previousIds.has(entry.id)).length;
 }
+function notifyMutationState(state) {
+  notifyState(state).catch((err) => {
+    console.error("State notification failed", err);
+  });
+}
+function dispatchMutationNotifications() {
+  dispatchNotifications().catch((err) => {
+    console.error("Notification dispatch failed", err);
+  });
+}
 async function applyMutation(mutator, options = {}) {
   const {
     notify = true,
     dispatch = false,
-    ensureDefault = false
+    ensureDefault = false,
+    sync = null
   } = options;
   const result = await mutator();
   if (notify) {
-    await notifyState();
+    notifyMutationState(result);
   }
-  if (dispatch) {
-    await dispatchNotifications();
+  const hasPendingNotifications = Array.isArray(result?.pendingNotifications) && result.pendingNotifications.length > 0;
+  if (dispatch && hasPendingNotifications) {
+    dispatchMutationNotifications();
   }
   if (ensureDefault) {
-    await ensureDefaultQueueFilled();
+    ensureDefaultQueueFilled().catch((err) => {
+      console.error("Auto collection after mutation failed", err);
+    });
+  }
+  if (sync === "immediate") {
+    requestAccountSyncFlush({ forcePlaylist: true });
   }
   return result;
 }
 async function mutateAndPresent(mutator, options = {}) {
-  await applyMutation(mutator, options);
-  return getPresentationState();
+  const state = await applyMutation(mutator, options);
+  return buildPresentationState(state);
 }
 async function addEntries(entries, listId = null, options = {}) {
   if (!Array.isArray(entries) || !entries.length) {
@@ -3126,10 +4911,11 @@ async function addEntries(entries, listId = null, options = {}) {
   const { ensureDefault = true } = options;
   return mutateAndPresent(() => addVideos(entries, listId), {
     dispatch: true,
-    ensureDefault
+    ensureDefault,
+    sync: "immediate"
   });
 }
-async function handleAddByIds(message, sender = null) {
+async function handleAddByIds(message) {
   const uniqueIds = normalizeVideoIdList(message?.videoIds);
   if (!uniqueIds.length) {
     const state2 = await getPresentationState();
@@ -3142,14 +4928,15 @@ async function handleAddByIds(message, sender = null) {
     };
   }
   const beforeState = await getState();
-  const requestedListId = sender?.tab ? null : message?.listId || null;
+  const requestedListId = message?.listId || null;
   const targetListId = resolveAddTargetListId(beforeState, requestedListId);
   const entries = await fetchVideoEntries(uniqueIds);
   const fetchedIds = new Set(entries.map((entry) => entry?.id).filter(Boolean));
   const missing = uniqueIds.filter((id) => !fetchedIds.has(id)).length;
   const afterState = await applyMutation(() => addVideos(entries, targetListId), {
     dispatch: true,
-    ensureDefault: Boolean(message?.ensureDefault)
+    ensureDefault: Boolean(message?.ensureDefault),
+    sync: "immediate"
   });
   const state = await getPresentationState();
   const added = countAddedEntriesInQueue(afterState, targetListId, beforeState);
@@ -3168,7 +4955,7 @@ async function handleRemoveVideos(videoIds, listId = null) {
   }
   return mutateAndPresent(
     () => removeVideos(filtered, { listId }),
-    { dispatch: true, ensureDefault: true }
+    { dispatch: true, ensureDefault: true, sync: "immediate" }
   );
 }
 async function handleMoveVideos(videoIds, targetListId) {
@@ -3181,7 +4968,7 @@ async function handleMoveVideos(videoIds, targetListId) {
   }
   return mutateAndPresent(
     () => moveVideosToList(ids, targetListId),
-    { dispatch: true, ensureDefault: true }
+    { dispatch: true, ensureDefault: true, sync: "immediate" }
   );
 }
 async function handleVideoMetadata(message) {
@@ -3390,19 +5177,23 @@ var listHandlers = {
       () => addList({
         name: message?.name,
         freeze: Boolean(message?.freeze)
-      })
+      }),
+      { sync: "immediate" }
     );
   },
   async "playlist:renameList"(message) {
     if (!message?.listId || !message?.name) {
       return getPresentationState();
     }
-    return mutateAndPresent(() => renameList(message.listId, message.name));
+    return mutateAndPresent(() => renameList(message.listId, message.name), {
+      sync: "immediate"
+    });
   },
   async "playlist:setFreeze"(message) {
     if (!message?.listId) return getPresentationState();
     return mutateAndPresent(
-      () => setListFreeze(message.listId, Boolean(message.freeze))
+      () => setListFreeze(message.listId, Boolean(message.freeze)),
+      { sync: "immediate" }
     );
   },
   async "playlist:removeList"(message) {
@@ -3411,7 +5202,7 @@ var listHandlers = {
       () => removeList(message.listId, {
         mode: message.mode === "discard" ? "delete" : "move"
       }),
-      { dispatch: true }
+      { dispatch: true, sync: "immediate" }
     );
   },
   async "playlist:getList"(message) {
@@ -3483,7 +5274,7 @@ var listHandlers = {
         mode: message.mode === "append" ? "append" : "new",
         targetListId: message.targetListId || null
       }),
-      { dispatch: true, ensureDefault: true }
+      { dispatch: true, ensureDefault: true, sync: "immediate" }
     );
   }
 };
@@ -3525,6 +5316,87 @@ var optionsHandlers = {
       console.error("Failed to open list settings page", err);
       return { error: err?.message || "FAILED_TO_OPEN_LIST_SETTINGS" };
     }
+  },
+  async "sync:getStatus"(message = {}) {
+    if (message.refreshRemote) {
+      const refreshed = await refreshRemoteAccountSync({ force: true });
+      if (refreshed?.playlistImported) {
+        await notifyState();
+      }
+      await flushPendingAccountSync();
+    }
+    const [playlist, settings, drive] = await Promise.all([
+      getPlaylistSyncStorageStatus(),
+      getSettingsSyncStatus(),
+      getDriveSyncStatus({ refreshRemote: Boolean(message.refreshRemote) })
+    ]);
+    const syncKeys = Object.keys(await chrome.storage.sync.get(null));
+    return {
+      ok: true,
+      extensionId: chrome.runtime.id,
+      playlist,
+      settings,
+      drive,
+      syncKeyCount: syncKeys.length,
+      hasPlaylistManifest: false,
+      hasAutoCollectSync: false,
+      hasSettingsManifest: syncKeys.includes(SETTINGS_SYNC_MANIFEST_STORAGE_KEY)
+    };
+  },
+  async "sync:pullRemote"() {
+    const [drive, settings] = await Promise.all([
+      importDriveSync(),
+      importRemoteSettingsSync()
+    ]);
+    return {
+      ok: true,
+      driveImported: Boolean(drive.imported),
+      driveReason: drive.reason || null,
+      playlistImported: Boolean(drive.playlistImported),
+      settingsImported: Boolean(settings?.imported),
+      settingsReason: settings?.reason || null
+    };
+  },
+  async "sync:replaceLocalFromRemote"() {
+    const [drive, settings] = await Promise.all([
+      importDriveSync({ force: true }),
+      importRemoteSettingsSync({ force: true })
+    ]);
+    return {
+      ok: true,
+      driveImported: Boolean(drive.imported),
+      driveReason: drive.reason || null,
+      playlistImported: Boolean(drive.playlistImported),
+      playlistReason: drive.reason || null,
+      settingsImported: Boolean(settings?.imported),
+      settingsReason: settings?.reason || null
+    };
+  },
+  async "sync:pushLocal"() {
+    const [settings, drive] = await Promise.all([
+      pushLocalSettingsSyncNow(),
+      pushLocalDriveSyncNow()
+    ]);
+    return {
+      ok: true,
+      drivePushed: Boolean(drive?.pushed),
+      driveReason: drive?.reason || null,
+      playlistPushed: Boolean(drive?.pushed),
+      playlistReason: drive?.reason || null,
+      settingsPushed: Boolean(settings?.pushed),
+      settingsReason: settings?.reason || null
+    };
+  },
+  async "sync:restoreCloudVersion"(message = {}) {
+    const offset = typeof message.offset === "number" && Number.isFinite(message.offset) ? Math.max(1, Math.trunc(message.offset)) : 1;
+    const drive = await restoreDrivePlaylistBackup({ offset });
+    return {
+      ok: true,
+      restored: Boolean(drive?.restored),
+      reason: drive?.reason || null,
+      backupOffset: drive?.backupOffset || offset,
+      playlistBackupCount: drive?.playlistBackupCount || 0
+    };
   }
 };
 
@@ -3758,6 +5630,7 @@ async function advanceToNext(options = {}) {
   await dispatchNotifications();
   const afterPresentation = await getPresentationState();
   if (!afterPresentation.currentVideoId || afterPresentation.currentVideoId === targetId) {
+    requestAccountSyncFlush({ forcePlaylist: true });
     return { handled: false, state: afterPresentation };
   }
   ensureDefaultQueueFilled().catch((err) => {
@@ -3767,6 +5640,7 @@ async function advanceToNext(options = {}) {
     tabId: options.tabId || before.currentTabId,
     ensureCurrent: false
   });
+  requestAccountSyncFlush({ forcePlaylist: true });
   const finalPresentation = await getPresentationState();
   return { handled: true, state: finalPresentation };
 }
@@ -3786,6 +5660,7 @@ async function playFromHistory(options = {}) {
   }
   await notifyState();
   await dispatchNotifications();
+  requestAccountSyncFlush({ forcePlaylist: true });
   const presentation = await getPresentationState();
   if (!presentation.currentVideoId) {
     return { handled: false, state: presentation };
@@ -3825,7 +5700,10 @@ async function postponeCurrent(options = {}) {
   await postponeVideo(targetId, { listId: workingState.currentListId });
   await notifyState();
   await dispatchNotifications();
-  await ensureDefaultQueueFilled();
+  ensureDefaultQueueFilled().catch((err) => {
+    console.error("Auto collection after postponing failed", err);
+  });
+  requestAccountSyncFlush({ forcePlaylist: true });
   const afterPresentation = await getPresentationState();
   const nextId = afterPresentation.currentVideoId;
   if (!nextId || nextId === previousCurrentId) {
@@ -4096,7 +5974,20 @@ var playbackHandlers = {
 
 // src/background/handlers/queue.js
 var queueHandlers = {
-  "playlist:getState": getPresentationState,
+  async "playlist:getState"(message, sender) {
+    if (message?.refreshRemote) {
+      refreshRemoteAccountSync({ force: true }).then((result) => {
+        if (result?.playlistImported) {
+          return notifyState();
+        }
+        return null;
+      }).catch((err) => {
+        console.warn("Background remote refresh failed", err);
+      });
+    }
+    requestAccountSyncFlush();
+    return getPresentationState();
+  },
   async "playlist:setCurrentList"(message) {
     if (!message?.listId) return getPresentationState();
     return mutateAndPresent(() => setCurrentList(message.listId));
@@ -4160,14 +6051,15 @@ var queueHandlers = {
     }
     return mutateAndPresent(
       () => postponeVideo(videoId, { listId: message.listId || null }),
-      { notify: true }
+      { notify: true, sync: "immediate" }
     );
   },
   async "playlist:restoreDeleted"(message) {
     const position = typeof message?.position === "number" && Number.isInteger(message.position) ? message.position : 0;
     return mutateAndPresent(() => restoreDeletedEntry(position), {
       dispatch: true,
-      ensureDefault: true
+      ensureDefault: true,
+      sync: "immediate"
     });
   },
   async "playlist:getNext"() {
@@ -4182,7 +6074,8 @@ var queueHandlers = {
       return getPresentationState();
     }
     return mutateAndPresent(
-      () => reorderQueue(message.videoId, message.targetIndex, message.listId || null)
+      () => reorderQueue(message.videoId, message.targetIndex, message.listId || null),
+      { sync: "immediate" }
     );
   },
   async "playlist:moveVideo"(message) {
@@ -4191,7 +6084,7 @@ var queueHandlers = {
     }
     return mutateAndPresent(
       () => moveVideoToList(message.videoId, message.targetListId),
-      { dispatch: true, ensureDefault: true }
+      { dispatch: true, ensureDefault: true, sync: "immediate" }
     );
   },
   async "playlist:moveVideos"(message) {
@@ -4203,7 +6096,7 @@ var queueHandlers = {
     }
     return mutateAndPresent(
       () => moveAllVideos(message.sourceListId, message.targetListId),
-      { dispatch: true, ensureDefault: true }
+      { dispatch: true, ensureDefault: true, sync: "immediate" }
     );
   }
 };
@@ -4218,6 +6111,16 @@ var messageHandlers = {
 };
 
 // src/background.js
+configurePlaylistSyncAccess();
+refreshRemoteAccountSync({ force: true }).then((result) => {
+  if (result?.playlistImported) notifyState();
+}).catch((err) => {
+  console.debug("Initial Drive sync check skipped", err);
+}).finally(() => {
+  flushPendingAccountSync().catch((err) => {
+    console.error("Initial account sync flush failed", err);
+  });
+});
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message.type !== "string") {
     return false;
@@ -4239,4 +6142,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 chrome.tabs.onRemoved.addListener((tabId) => {
   clearCurrentTab(tabId).then(() => notifyState());
+});
+if (chrome.alarms?.onAlarm) {
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm?.name !== SYNC_ALARM_NAME) {
+      return;
+    }
+    flushPendingAccountSync().catch((err) => {
+      console.error("Account sync flush failed", err);
+    });
+  });
+}
+chrome.storage?.onChanged?.addListener((changes, area) => {
+  if (area !== "sync") {
+    return;
+  }
+  const tasks = [];
+  if (isSettingsSyncStorageChange(changes)) {
+    tasks.push(importRemoteSettingsSync());
+  }
+  if (!tasks.length) {
+    return;
+  }
+  Promise.all(tasks).catch((err) => {
+    console.error("Account sync import failed", err);
+  });
 });

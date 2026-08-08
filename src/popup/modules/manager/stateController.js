@@ -34,6 +34,7 @@ export function createManagerStateController({
     detailEmpty,
     detailList,
     openAddLinksModalBtn,
+    openYtdlpModalBtn,
     removeWatchedBtn,
   } = elements;
   let requestedListApplied = false;
@@ -112,6 +113,34 @@ export function createManagerStateController({
     updateCollectionAvailability();
   }
 
+  function applySelectedListDetails(details) {
+    if (!details?.id) return;
+    const previousListId = getSelectedListDetails()?.id;
+    setSelectedListDetails(details);
+    if (previousListId !== details.id) selectionController.clear();
+    renderDetailVideos(details);
+    highlightSelectedList(details.id);
+    updateCollectionAvailability();
+    updateDetailActiveVideo();
+  }
+
+  function applyStateSnapshot(state, options = {}) {
+    if (!state || !Array.isArray(state.lists)) return false;
+    setAppState(state);
+    ensureSelectedList(state);
+    renderLists();
+    populateImportTargets();
+    if (options.details) {
+      applySelectedListDetails(options.details);
+    } else {
+      highlightSelectedList(getSelectedListId());
+      updateDetailActiveVideo();
+      updateRemoveWatchedButton();
+      updateCollectionAvailability();
+    }
+    return true;
+  }
+
   function renderDetailVideos(details) {
     moveMenu.hide();
     dragController.reset();
@@ -119,6 +148,7 @@ export function createManagerStateController({
     const hasList = Boolean(details?.id);
     if (openAddLinksModalBtn) openAddLinksModalBtn.disabled = !hasList;
     const videos = Array.isArray(details?.queue) ? details.queue : [];
+    if (openYtdlpModalBtn) openYtdlpModalBtn.disabled = videos.length === 0;
     selectionController.setVideos(videos);
     if (clearListBtn) clearListBtn.disabled = videos.length === 0;
     updateRemoveWatchedButton();
@@ -177,6 +207,7 @@ export function createManagerStateController({
       if (clearListBtn) clearListBtn.disabled = true;
       updateRemoveWatchedButton();
       if (openAddLinksModalBtn) openAddLinksModalBtn.disabled = true;
+      if (openYtdlpModalBtn) openYtdlpModalBtn.disabled = true;
       updateCollectionAvailability();
       updateDetailActiveVideo();
       return;
@@ -228,6 +259,8 @@ export function createManagerStateController({
   }
 
   return {
+    applySelectedListDetails,
+    applyStateSnapshot,
     ensureSelectedList,
     handleStateUpdated,
     loadListDetails,

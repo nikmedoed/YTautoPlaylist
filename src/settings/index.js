@@ -2,20 +2,19 @@
 import { parseVideoId } from "../utils.js";
 import { parseDuration } from "../time.js";
 import { getFilters } from "../filter.js";
+import { toLocalInputValue } from "./shared/format.js";
 import {
-  toLocalInputValue,
-} from "./shared/format.js";
-import {
+  getSyncStatus,
   getSubscriptionsMeta,
   getVideoDate,
   getVideoInfo,
+  pullRemoteSync,
+  pushLocalSync,
+  replaceLocalFromRemoteSync,
   setStartDate,
 } from "./shared/runtime.js";
-import {
-  createSaveUiState,
-  showToast,
-  updateLastSaveDisplay,
-} from "./shared/saveUi.js";
+import { createSaveUiState, showToast, updateLastSaveDisplay } from "./shared/saveUi.js";
+import { renderSyncStatus } from "./shared/syncStatusView.js";
 import { renderCheckVideoResult } from "./video-check/resultView.js";
 import {
   addDurationFilterToSection,
@@ -26,7 +25,6 @@ import { createFilterSection } from "./filters/sections.js";
 import { bindFilterPersistence } from "./filters/persistence.js";
 import { createQuickFilterBuilder } from "./quick-filter/builder.js";
 import { getChannelMap } from "../youtube-api/channels.js";
-
 
 document.addEventListener("DOMContentLoaded", async () => {
   const startInput = document.getElementById("startDate");
@@ -46,9 +44,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   const addChannelBtn = document.getElementById("addChannel");
   const addCard = document.getElementById("addChannelCard");
   const floatingSaveBtn = document.getElementById("floatingSave");
-
+  const pullSyncBtn = document.getElementById("pullSync");
+  const pushSyncBtn = document.getElementById("pushSync");
+  const replaceFromSyncBtn = document.getElementById("replaceFromSync");
+  const syncStatus = document.getElementById("syncStatus");
   const saveButtons = [saveFiltersBtn, floatingSaveBtn].filter(Boolean);
-
   let globalSec;
   let globalShortsChk;
   let globalBroadcastChk;
@@ -61,6 +61,105 @@ document.addEventListener("DOMContentLoaded", async () => {
     target?.addEventListener("change", markUnsaved, true);
   });
   updateSaveButtons();
+  function setSyncBusy(busy) {
+    [
+      pullSyncBtn,
+      pushSyncBtn,
+      replaceFromSyncBtn,
+    ].forEach((button) => {
+      if (!button) return;
+      button.disabled = busy;
+      button.classList.toggle("is-loading", busy);
+    });
+  }
+  async function refreshSyncStatus(message = "", { refreshRemote = false } = {}) {
+    try {
+      const status = await getSyncStatus({ refreshRemote });
+      renderSyncStatus(syncStatus, status, message);
+    } catch (err) {
+      console.error("Failed to load sync status", err);
+      renderSyncStatus(syncStatus, null, "Не удалось получить статус синхронизации.");
+    }
+  }
+  pullSyncBtn?.addEventListener("click", async () => {
+    try {
+      setSyncBusy(true);
+      const result = await pullRemoteSync();
+      const changed = result?.playlistImported || result?.settingsImported;
+      await refreshSyncStatus(changed
+        ? "Локальные данные слиты с облачной версией."
+        : "Облачной версии пока нет.");
+      if (result?.settingsImported) {
+        window.setTimeout(() => window.location.reload(), 700);
+      }
+    } catch (err) {
+      console.error("Failed to pull account sync", err);
+      showToast("Не удалось слиять данные с облаком", true);
+    } finally {
+      setSyncBusy(false);
+    }
+  });
+
+  pushSyncBtn?.addEventListener("click", async () => {
+    if (saveFiltersBtn && !saveFiltersBtn.classList.contains("is-hidden")) {
+      showToast("Сначала сохраните изменения фильтров", true);
+      return;
+    }
+    try {
+      setSyncBusy(true);
+      const result = await pushLocalSync();
+      const pushed = result?.drivePushed || result?.playlistPushed || result?.settingsPushed;
+      const message = result?.drivePushed
+        ? "Данные отправлены в облако."
+        : pushed
+          ? "Данные сохранены только в резервное хранилище Chrome."
+          : "Не удалось отправить данные в облако.";
+      await refreshSyncStatus(message);
+    } catch (err) {
+      console.error("Failed to push local account sync", err);
+      showToast("Не удалось отправить данные", true);
+    } finally {
+      setSyncBusy(false);
+    }
+  });
+  replaceFromSyncBtn?.addEventListener("click", async () => {
+    const ok = window.confirm(
+      "Полностью заменить локальное состояние и списки облачной версией?"
+    );
+    if (!ok) return;
+    try {
+      setSyncBusy(true);
+      const result = await replaceLocalFromRemoteSync();
+      const changed = result?.playlistImported || result?.settingsImported;
+      await refreshSyncStatus(changed
+        ? "Локальные данные заменены облачной версией."
+        : "Облачной версии пока нет.");
+      if (changed) {
+        window.setTimeout(() => window.location.reload(), 700);
+      }
+    } catch (err) {
+      console.error("Failed to replace local data from account sync", err);
+      showToast("Не удалось заменить локальные данные", true);
+    } finally {
+      setSyncBusy(false);
+    }
+  });
+  syncStatus?.addEventListener("click", async (event) => {
+    if (!event.target.closest("#refreshSyncStatus")) return;
+    try {
+      setSyncBusy(true);
+      const refreshButton = syncStatus.querySelector("#refreshSyncStatus");
+      refreshButton?.classList.add("is-loading");
+      await refreshSyncStatus("Статус облака обновлён.", { refreshRemote: true });
+    } catch (err) {
+      console.error("Failed to refresh sync status", err);
+      showToast("Не удалось обновить статус облака", true);
+    } finally {
+      setSyncBusy(false);
+    }
+  });
+
+  refreshSyncStatus();
 
   getSubscriptionsMeta().then((meta) => {
     const ts = Number(meta?.lastRunAt) || 0;
@@ -234,7 +333,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   globalContainer.appendChild(globalSec);
   globalShortsChk = globalSec.querySelector(".nos");
   globalBroadcastChk = globalSec.querySelector(".nob");
-
   function updateCheckboxVisibility() {
     const hideShorts = globalShortsChk?.checked;
     const hideBroadcasts = globalBroadcastChk?.checked;

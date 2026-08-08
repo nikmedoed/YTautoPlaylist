@@ -1,8 +1,33 @@
 // Background service worker entrypoint. Routes runtime messages to background handlers and clears playback tab ownership when tabs close.
 import { MESSAGE_SOURCE } from "./background/constants.js";
+import {
+  flushPendingAccountSync,
+  refreshRemoteAccountSync,
+} from "./background/accountSync.js";
 import { messageHandlers } from "./background/messages.js";
 import { notifyState } from "./background/channel.js";
-import { clearCurrentTab } from "./store/index.js";
+import {
+  clearCurrentTab,
+  configurePlaylistSyncAccess,
+  importRemoteSettingsSync,
+  isSettingsSyncStorageChange,
+  SYNC_ALARM_NAME,
+} from "./store/index.js";
+
+configurePlaylistSyncAccess();
+refreshRemoteAccountSync({ force: true })
+  .then((result) => {
+    if (result?.playlistImported) notifyState();
+  })
+  .catch((err) => {
+    console.debug("Initial Drive sync check skipped", err);
+  })
+  .finally(() => {
+    flushPendingAccountSync().catch((err) => {
+      console.error("Initial account sync flush failed", err);
+    });
+  });
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message.type !== "string") {
     return false;
@@ -27,4 +52,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   clearCurrentTab(tabId).then(() => notifyState());
+});
+
+if (chrome.alarms?.onAlarm) {
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm?.name !== SYNC_ALARM_NAME) {
+      return;
+    }
+    flushPendingAccountSync().catch((err) => {
+      console.error("Account sync flush failed", err);
+    });
+  });
+}
+
+chrome.storage?.onChanged?.addListener((changes, area) => {
+  if (area !== "sync") {
+    return;
+  }
+  const tasks = [];
+  if (isSettingsSyncStorageChange(changes)) {
+    tasks.push(importRemoteSettingsSync());
+  }
+  if (!tasks.length) {
+    return;
+  }
+  Promise.all(tasks).catch((err) => {
+    console.error("Account sync import failed", err);
+  });
 });

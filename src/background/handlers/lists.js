@@ -66,11 +66,13 @@ function extractPlaylistErrorReason(err) {
 
 export const listHandlers = {
   async "playlist:createList"(message) {
-    return mutateAndPresent(() =>
-      addList({
-        name: message?.name,
-        freeze: Boolean(message?.freeze),
-      })
+    return mutateAndPresent(
+      () =>
+        addList({
+          name: message?.name,
+          freeze: Boolean(message?.freeze),
+        }),
+      { sync: "immediate" }
     );
   },
 
@@ -78,13 +80,16 @@ export const listHandlers = {
     if (!message?.listId || !message?.name) {
       return getPresentationState();
     }
-    return mutateAndPresent(() => renameList(message.listId, message.name));
+    return mutateAndPresent(() => renameList(message.listId, message.name), {
+      sync: "immediate",
+    });
   },
 
   async "playlist:setFreeze"(message) {
     if (!message?.listId) return getPresentationState();
-    return mutateAndPresent(() =>
-      setListFreeze(message.listId, Boolean(message.freeze))
+    return mutateAndPresent(
+      () => setListFreeze(message.listId, Boolean(message.freeze)),
+      { sync: "immediate" }
     );
   },
 
@@ -95,7 +100,7 @@ export const listHandlers = {
         removeList(message.listId, {
           mode: message.mode === "discard" ? "delete" : "move",
         }),
-      { dispatch: true }
+      { dispatch: true, sync: "immediate" }
     );
   },
 
@@ -181,7 +186,7 @@ export const listHandlers = {
           mode: message.mode === "append" ? "append" : "new",
           targetListId: message.targetListId || null,
         }),
-      { dispatch: true, ensureDefault: true }
+      { dispatch: true, ensureDefault: true, sync: "immediate" }
     );
   },
 };

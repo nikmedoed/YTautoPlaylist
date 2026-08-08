@@ -37,7 +37,7 @@ export function signInUser() {
   });
 }
 
-export function getToken() {
+export function getToken({ interactive = true } = {}) {
   if (typeof chrome === "undefined") {
     return Promise.reject(new Error("chrome API unavailable"));
   }
@@ -45,6 +45,10 @@ export function getToken() {
   return new Promise((resolve, reject) => {
     chrome.identity.getAuthToken({ interactive: false }, async (token) => {
       if (chrome.runtime.lastError || !token) {
+        if (!interactive) {
+          reject(chrome.runtime.lastError || new Error("Auth token unavailable"));
+          return;
+        }
         try {
           const t = await signInUser();
           resolve(t);

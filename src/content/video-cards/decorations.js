@@ -224,8 +224,13 @@ export function createVideoCardDecorationController({
     let button = buttonOwnership.findCardPrimaryButton(card, overlay);
     if (!button && target.type === "video") {
       const mappedButton = inlineButtonsByVideoId.get(target.id);
-      if (mappedButton instanceof HTMLButtonElement) {
+      if (
+        mappedButton instanceof HTMLButtonElement &&
+        inlineButtonOwners.get(mappedButton) === card
+      ) {
         button = mappedButton;
+      } else if (mappedButton instanceof HTMLButtonElement && !mappedButton.isConnected) {
+        inlineButtonsByVideoId.delete(target.id);
       }
     }
     if (button && button.parentElement !== overlay) {

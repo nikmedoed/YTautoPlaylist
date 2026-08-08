@@ -1,0 +1,42 @@
+/* yt-dlp command constructor styles for the list manager modal. */
+.modal-content--wide {
+  width: min(820px, 92vw);
+}
+
+.modal-field textarea {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  color: inherit;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.45;
+  min-height: 120px;
+  padding: 8px 12px;
+  resize: vertical;
+  white-space: pre;
+}
+
+.modal-help {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 12px;
+}
+
+.modal-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.modal-checklist {
+  display: grid;
+  gap: 10px 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 720px) {
+  .modal-grid,
+  .modal-checklist {
+    grid-template-columns: 1fr;
+  }
+}

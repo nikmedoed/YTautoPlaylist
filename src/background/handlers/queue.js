@@ -12,6 +12,11 @@ import {
   setCurrentList,
 } from "../../store/index.js";
 import { parsePlaylistId, parseVideoId } from "../../utils.js";
+import {
+  requestAccountSyncFlush,
+  refreshRemoteAccountSync,
+} from "../accountSync.js";
+import { notifyState } from "../channel.js";
 import { fetchPlaylistVideoIds } from "../collector.js";
 import {
   addEntries,
@@ -24,7 +29,22 @@ import {
 // Queue/list-item message handlers. This table is the Chrome runtime boundary:
 // every key is a message type sent by popup or content scripts.
 export const queueHandlers = {
-  "playlist:getState": getPresentationState,
+  async "playlist:getState"(message, sender) {
+    if (message?.refreshRemote) {
+      refreshRemoteAccountSync({ force: true })
+        .then((result) => {
+          if (result?.playlistImported) {
+            return notifyState();
+          }
+          return null;
+        })
+        .catch((err) => {
+          console.warn("Background remote refresh failed", err);
+        });
+    }
+    requestAccountSyncFlush();
+    return getPresentationState();
+  },
 
   async "playlist:setCurrentList"(message) {
     if (!message?.listId) return getPresentationState();
@@ -99,7 +119,7 @@ export const queueHandlers = {
     }
     return mutateAndPresent(
       () => postponeVideo(videoId, { listId: message.listId || null }),
-      { notify: true }
+      { notify: true, sync: "immediate" }
     );
   },
 
@@ -111,6 +131,7 @@ export const queueHandlers = {
     return mutateAndPresent(() => restoreDeletedEntry(position), {
       dispatch: true,
       ensureDefault: true,
+      sync: "immediate",
     });
   },
 
@@ -127,8 +148,10 @@ export const queueHandlers = {
     if (!message?.videoId) {
       return getPresentationState();
     }
-    return mutateAndPresent(() =>
-      reorderQueue(message.videoId, message.targetIndex, message.listId || null)
+    return mutateAndPresent(
+      () =>
+        reorderQueue(message.videoId, message.targetIndex, message.listId || null),
+      { sync: "immediate" }
     );
   },
 
@@ -138,7 +161,7 @@ export const queueHandlers = {
     }
     return mutateAndPresent(
       () => moveVideoToList(message.videoId, message.targetListId),
-      { dispatch: true, ensureDefault: true }
+      { dispatch: true, ensureDefault: true, sync: "immediate" }
     );
   },
 
@@ -152,7 +175,7 @@ export const queueHandlers = {
     }
     return mutateAndPresent(
       () => moveAllVideos(message.sourceListId, message.targetListId),
-      { dispatch: true, ensureDefault: true }
+      { dispatch: true, ensureDefault: true, sync: "immediate" }
     );
   },
 };

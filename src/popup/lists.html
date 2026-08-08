@@ -6,11 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>YT Auto Playlist — Списки</title>
     <link rel="stylesheet" href="styles/base.css" />
+    <link rel="stylesheet" href="styles/sync.css" />
     <link rel="stylesheet" href="styles/video-item.css" />
     <link rel="stylesheet" href="styles/status.css" />
     <link rel="stylesheet" href="styles/collection.css" />
     <link rel="stylesheet" href="styles/queue.css" />
     <link rel="stylesheet" href="styles/manager.css" />
+    <link rel="stylesheet" href="styles/ytdlp.css" />
   </head>
   <body class="full-page">
     <div id="app">
@@ -26,6 +28,40 @@
           </button>
         </div>
       </header>
+      <section class="popup-sync manager-sync" aria-label="Синхронизация">
+        <span id="managerSyncState" class="popup-sync__state">Синхронизация...</span>
+        <span id="managerSyncMeta" class="popup-sync__meta"></span>
+        <div class="popup-sync__actions" role="group" aria-label="Действия синхронизации">
+          <button
+            id="managerSyncPull"
+            class="icon-button popup-sync__button"
+            type="button"
+            title="Слить с облаком"
+            aria-label="Слить с облаком"
+          >
+            <span aria-hidden="true">⇣</span>
+          </button>
+          <button
+            id="managerSyncPush"
+            class="icon-button popup-sync__button"
+            type="button"
+            title="Отправить в облако"
+            aria-label="Отправить в облако"
+          >
+            <span aria-hidden="true">⇡</span>
+          </button>
+          <button
+            id="managerSyncRestore"
+            class="icon-button popup-sync__button"
+            type="button"
+            title="Откатить облако на предыдущую версию"
+            aria-label="Откатить облако на предыдущую версию"
+            disabled
+          >
+            <span aria-hidden="true">↶</span>
+          </button>
+        </div>
+      </section>
       <section id="status" hidden>
         <span id="statusText"></span>
         <div id="statusProgress" class="status-progress" hidden>
@@ -48,6 +84,14 @@
         <div class="detail-bulk-group">
           <button id="openAddLinksModal" type="button" class="secondary">
             Добавить по ссылке
+          </button>
+          <button
+            id="openYtdlpModal"
+            type="button"
+            class="secondary"
+            disabled
+          >
+            yt-dlp
           </button>
           <button
             id="removeWatchedBtn"
@@ -200,6 +244,68 @@
           <button type="submit">Добавить</button>
           <button type="button" class="secondary" data-close-modal>
             Отмена
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div id="ytdlpModal" class="modal" hidden>
+      <form id="ytdlpForm" class="modal-content modal-content--wide">
+        <h3>Команда yt-dlp</h3>
+        <div class="modal-grid">
+          <label class="modal-field">
+            <span>Что скачать</span>
+            <select id="ytdlpFormat">
+              <option value="best">Видео: лучшее качество</option>
+              <option value="mp4">Видео: MP4</option>
+              <option value="mp4-720">Видео: MP4 до 720p</option>
+              <option value="mp3">Аудио: MP3</option>
+              <option value="m4a">Аудио: M4A</option>
+            </select>
+          </label>
+          <label class="modal-field">
+            <span>Папка вывода</span>
+            <input
+              id="ytdlpOutputDir"
+              type="text"
+              placeholder="Пусто = текущая папка"
+            />
+          </label>
+        </div>
+        <div class="modal-checklist">
+          <label class="modal-checkbox">
+            <input id="ytdlpArchive" type="checkbox" />
+            <span>Вести архив скачанных ID</span>
+          </label>
+          <label class="modal-checkbox">
+            <input id="ytdlpNoOverwrites" type="checkbox" checked />
+            <span>Не перезаписывать файлы</span>
+          </label>
+          <label class="modal-checkbox">
+            <input id="ytdlpMetadata" type="checkbox" checked />
+            <span>Встроить метаданные</span>
+          </label>
+          <label class="modal-checkbox">
+            <input id="ytdlpThumbnail" type="checkbox" />
+            <span>Встроить обложку</span>
+          </label>
+          <label class="modal-checkbox">
+            <input id="ytdlpCookies" type="checkbox" />
+            <span>Использовать cookies из Chrome</span>
+          </label>
+        </div>
+        <label class="modal-field">
+          <span>Готовая команда для PowerShell</span>
+          <textarea id="ytdlpCommand" rows="10" readonly></textarea>
+          <span id="ytdlpSummary" class="modal-help"></span>
+          <span class="modal-help"
+            >Для MP3/M4A yt-dlp может временно скачать аудиопоток webm и затем удалить его после конвертации.</span
+          >
+        </label>
+        <div class="modal-actions">
+          <button id="copyYtdlpCommand" type="button">Копировать</button>
+          <button type="button" class="secondary" data-close-modal>
+            Закрыть
           </button>
         </div>
       </form>

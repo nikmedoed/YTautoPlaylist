@@ -2,6 +2,17 @@
 import { createVideoItem } from "../../lib/videoItem.js";
 import { buildDetailParts } from "../../lib/detailParts.js";
 
+function getDeletedHistoryItems(state) {
+  const source = Array.isArray(state?.deletedHistory) ? state.deletedHistory : [];
+  return source
+    .map((entry, index) =>
+      entry && typeof entry === "object"
+        ? { ...entry, __historyPosition: index }
+        : entry
+    )
+    .filter((entry) => entry?.reason !== "watched");
+}
+
 const MODE_CONFIG = {
   latest: {
     limit: 1,
@@ -17,8 +28,7 @@ const MODE_CONFIG = {
   },
   deleted: {
     limit: 10,
-    source: (state) =>
-      Array.isArray(state?.deletedHistory) ? state.deletedHistory : [],
+    source: getDeletedHistoryItems,
     emptyText: "Удалённых пока нет",
     restore: "deleted",
   },
@@ -112,7 +122,10 @@ export function createHistoryController({
       if (typeof limit === "number" && rendered >= limit) {
         return;
       }
-      const dataset = { id: entry.id, position: index };
+      const position = Number.isInteger(entry.__historyPosition)
+        ? entry.__historyPosition
+        : index;
+      const dataset = { id: entry.id, position };
 
       const detailParts = buildDetailParts(entry, {
         listIdKey: "listId",

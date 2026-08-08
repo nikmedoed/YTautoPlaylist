@@ -777,7 +777,8 @@ function resolveThumbnailUrl(entry, fallback = "") {
   if (!entry || typeof entry !== "object") {
     return fallback || "";
   }
-  return pickThumbnailValue(entry.thumbnail) || pickThumbnailSet(entry.thumbnails) || fallback || "";
+  const id = parseVideoId(entry.id);
+  return pickThumbnailValue(entry.thumbnail) || pickThumbnailSet(entry.thumbnails) || (id ? `https://i.ytimg.com/vi/${id}/mqdefault.jpg` : "") || fallback || "";
 }
 
 // src/popup/modules/manager/runtime.js
@@ -976,7 +977,9 @@ function createPlaylistCreationTracker({ setStatus: setStatus2 }) {
 
 // src/popup/modules/manager/detailActions.js
 function createManagerDetailActions({
+  applyRemoveLocally: applyRemoveLocally2,
   getAppState,
+  handleRemoveResult: handleRemoveResult2,
   loadState,
   openQuickFilter: openQuickFilter2,
   sendMessage: sendMessage3,
@@ -993,15 +996,28 @@ function createManagerDetailActions({
       case "quickFilter":
         openQuickFilter2(videoId);
         break;
-      case "remove":
-        await sendMessage3("playlist:remove", {
-          videoId,
-          listId,
-          videoIds: [videoId]
-        });
-        await loadState();
-        setStatus2("\u0412\u0438\u0434\u0435\u043E \u0443\u0434\u0430\u043B\u0435\u043D\u043E", "info");
+      case "remove": {
+        try {
+          const appliedOptimistically = typeof applyRemoveLocally2 === "function" ? applyRemoveLocally2([videoId], listId) : false;
+          const response = await sendMessage3("playlist:remove", {
+            videoId,
+            listId,
+            videoIds: [videoId]
+          });
+          if (typeof handleRemoveResult2 === "function") {
+            handleRemoveResult2(response, [videoId], listId);
+          } else if (!appliedOptimistically) {
+            await loadState();
+          }
+          setStatus2("\u0412\u0438\u0434\u0435\u043E \u0443\u0434\u0430\u043B\u0435\u043D\u043E", "info");
+        } catch (err) {
+          console.error("Failed to delete video", err);
+          setStatus2("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C", "error", 3500);
+          loadState().catch(() => {
+          });
+        }
         break;
+      }
       case "move":
         showMoveMenu2([videoId], listId, button);
         break;
@@ -1095,6 +1111,61 @@ function formatAddResultMessage({
   };
 }
 
+// src/popup/modules/manager/ytdlpCommand.js
+var YOUTUBE_WATCH_URL = "https://www.youtube.com/watch?v=";
+var FORMAT_OPTIONS = {
+  best: [],
+  mp4: ["-f", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b"],
+  "mp4-720": [
+    "-f",
+    "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/b[height<=720]"
+  ],
+  mp3: ["-f", "bestaudio/best", "-x", "--audio-format", "mp3"],
+  m4a: ["-f", "bestaudio[ext=m4a]/bestaudio/best", "-x", "--audio-format", "m4a"]
+};
+function quotePowerShell(value) {
+  return `"${String(value).replace(/`/g, "``").replace(/"/g, '`"')}"`;
+}
+function normalizePath(value) {
+  return String(value || "").trim();
+}
+function buildVideoUrls(queue) {
+  if (!Array.isArray(queue)) return [];
+  const seen = /* @__PURE__ */ new Set();
+  const urls = [];
+  for (const video of queue) {
+    const id = String(video?.id || "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    urls.push(`${YOUTUBE_WATCH_URL}${encodeURIComponent(id)}`);
+  }
+  return urls;
+}
+function buildYtdlpCommand(queue, options = {}) {
+  const urls = buildVideoUrls(queue);
+  if (!urls.length) return "";
+  const args = ["--batch-file", "-"];
+  args.push(...FORMAT_OPTIONS[options.format] || FORMAT_OPTIONS.best);
+  if (options.quiet === true) args.push("--quiet", "--no-warnings");
+  if (options.ignoreErrors !== false) args.push("--ignore-errors");
+  if (options.continueDownloads !== false) args.push("--continue");
+  if (options.noOverwrites) args.push("--no-overwrites");
+  if (options.windowsFilenames !== false) args.push("--windows-filenames");
+  if (options.embedMetadata) args.push("--embed-metadata");
+  if (options.embedThumbnail) args.push("--embed-thumbnail");
+  if (options.downloadArchive) args.push("--download-archive", "downloaded.txt");
+  if (options.cookiesFromBrowser) args.push("--cookies-from-browser", options.cookiesFromBrowser);
+  const outputDir = normalizePath(options.outputDir) || ".";
+  const outputTemplate = "%(title).200B [%(id)s].%(ext)s";
+  args.push("-P", outputDir, "-o", outputTemplate);
+  const quotedArgs = args.map(quotePowerShell).join(" ");
+  const quotedUrls = urls.map((url) => `  ${quotePowerShell(url)}`).join(",\n");
+  return `$urls = @(
+${quotedUrls}
+)
+$urls | yt-dlp ${quotedArgs}`;
+}
+
 // src/popup/modules/manager/modalController.js
 function createManagerModalController({
   defaultListId,
@@ -1112,9 +1183,11 @@ function createManagerModalController({
     importModal,
     editModal,
     addLinksModal,
+    ytdlpModal,
     openCreateModalBtn,
     openImportModalBtn,
     openAddLinksModalBtn,
+    openYtdlpModalBtn,
     createForm,
     createName,
     createFreeze,
@@ -1126,10 +1199,22 @@ function createManagerModalController({
     editName,
     editFreeze,
     addLinksForm,
-    addLinksTextarea
+    addLinksTextarea,
+    ytdlpForm,
+    ytdlpFormat,
+    ytdlpOutputDir,
+    ytdlpArchive,
+    ytdlpNoOverwrites,
+    ytdlpMetadata,
+    ytdlpThumbnail,
+    ytdlpCookies,
+    ytdlpCommand,
+    ytdlpSummary,
+    copyYtdlpCommand
   } = elements2;
-  const modals = [createModal, importModal, editModal, addLinksModal];
+  const modals = [createModal, importModal, editModal, addLinksModal, ytdlpModal];
   let editingListId = null;
+  let ytdlpListDetails = null;
   function openModal(modal) {
     if (!modal) return;
     modalBackdrop.hidden = false;
@@ -1143,6 +1228,9 @@ function createManagerModalController({
   function closeModal(modal) {
     if (!modal) return;
     modal.hidden = true;
+    if (modal === ytdlpModal) {
+      ytdlpListDetails = null;
+    }
     if (modals.every((item) => item?.hidden)) {
       modalBackdrop.hidden = true;
       document.body.dataset.modalOpen = "";
@@ -1156,6 +1244,7 @@ function createManagerModalController({
     });
     modalBackdrop.hidden = true;
     document.body.dataset.modalOpen = "";
+    ytdlpListDetails = null;
   }
   function openEditModal(listId) {
     const lists = Array.isArray(getAppState()?.lists) ? getAppState().lists : [];
@@ -1206,6 +1295,17 @@ function createManagerModalController({
       resetAddLinksModal();
       openModal(addLinksModal);
     });
+    openYtdlpModalBtn?.addEventListener("click", () => {
+      const selectedListDetails2 = getSelectedListDetails();
+      const videoCount = buildVideoUrls(selectedListDetails2?.queue).length;
+      if (!selectedListDetails2?.id || !videoCount) {
+        setStatus2("\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u043E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \u043D\u0435\u043F\u0443\u0441\u0442\u043E\u0439 \u0441\u043F\u0438\u0441\u043E\u043A", "info", 2500);
+        return;
+      }
+      ytdlpListDetails = selectedListDetails2;
+      updateYtdlpCommand();
+      openModal(ytdlpModal);
+    });
   }
   function registerForms() {
     createForm.addEventListener("submit", handleCreateSubmit);
@@ -1213,6 +1313,10 @@ function createManagerModalController({
     importForm.addEventListener("submit", handleImportSubmit);
     editForm.addEventListener("submit", handleEditSubmit);
     addLinksForm?.addEventListener("submit", handleAddLinksSubmit);
+    ytdlpForm?.addEventListener("input", updateYtdlpCommand);
+    ytdlpForm?.addEventListener("change", updateYtdlpCommand);
+    ytdlpForm?.addEventListener("submit", (event) => event.preventDefault());
+    copyYtdlpCommand?.addEventListener("click", copyYtdlpCommandText);
   }
   function resetCreateModal() {
     createForm.reset();
@@ -1227,6 +1331,63 @@ function createManagerModalController({
     addLinksForm?.reset();
     if (addLinksTextarea) {
       addLinksTextarea.value = "";
+    }
+  }
+  async function openYtdlpModalForList(listId) {
+    if (!listId) return;
+    try {
+      const details = await sendMessage3("playlist:getList", { listId });
+      const videoCount = buildVideoUrls(details?.queue).length;
+      if (!details?.id || !videoCount) {
+        setStatus2("\u0412 \u044D\u0442\u043E\u043C \u0441\u043F\u0438\u0441\u043A\u0435 \u043D\u0435\u0442 \u0432\u0438\u0434\u0435\u043E \u0434\u043B\u044F \u043A\u043E\u043C\u0430\u043D\u0434\u044B", "info", 2500);
+        return;
+      }
+      ytdlpListDetails = details;
+      updateYtdlpCommand();
+      openModal(ytdlpModal);
+    } catch (err) {
+      console.error("Failed to load list for yt-dlp command", err);
+      setStatus2("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043A\u0440\u044B\u0442\u044C \u043A\u043E\u043D\u0441\u0442\u0440\u0443\u043A\u0442\u043E\u0440 yt-dlp", "error", 3500);
+    }
+  }
+  function getYtdlpOptions() {
+    return {
+      format: ytdlpFormat?.value || "best",
+      outputDir: ytdlpOutputDir?.value || "",
+      downloadArchive: Boolean(ytdlpArchive?.checked),
+      noOverwrites: Boolean(ytdlpNoOverwrites?.checked),
+      embedMetadata: Boolean(ytdlpMetadata?.checked),
+      embedThumbnail: Boolean(ytdlpThumbnail?.checked),
+      cookiesFromBrowser: ytdlpCookies?.checked ? "chrome" : ""
+    };
+  }
+  function updateYtdlpCommand() {
+    const listDetails = ytdlpListDetails || getSelectedListDetails();
+    const queue = Array.isArray(listDetails?.queue) ? listDetails.queue : [];
+    const urls = buildVideoUrls(queue);
+    const command = buildYtdlpCommand(queue, getYtdlpOptions());
+    if (ytdlpCommand) {
+      ytdlpCommand.value = command;
+    }
+    if (ytdlpSummary) {
+      const title = listDetails?.name || "\u0442\u0435\u043A\u0443\u0449\u0438\u0439 \u0441\u043F\u0438\u0441\u043E\u043A";
+      ytdlpSummary.textContent = urls.length ? `${urls.length} \u0432\u0438\u0434\u0435\u043E \u0438\u0437 \u0441\u043F\u0438\u0441\u043A\u0430 \xAB${title}\xBB. \u0420\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0435 \u043D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u0441\u043A\u0430\u0447\u0438\u0432\u0430\u0435\u0442.` : "\u0412 \u0442\u0435\u043A\u0443\u0449\u0435\u043C \u0441\u043F\u0438\u0441\u043A\u0435 \u043D\u0435\u0442 \u0432\u0438\u0434\u0435\u043E \u0434\u043B\u044F \u043A\u043E\u043C\u0430\u043D\u0434\u044B.";
+    }
+    if (copyYtdlpCommand) {
+      copyYtdlpCommand.disabled = !command;
+    }
+  }
+  async function copyYtdlpCommandText() {
+    const command = ytdlpCommand?.value || "";
+    if (!command) return;
+    try {
+      await navigator.clipboard.writeText(command);
+      setStatus2("\u041A\u043E\u043C\u0430\u043D\u0434\u0430 \u0441\u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u043D\u0430", "success", 2200);
+    } catch (err) {
+      console.warn("Clipboard write failed", err);
+      ytdlpCommand?.focus();
+      ytdlpCommand?.select();
+      setStatus2("\u041A\u043E\u043C\u0430\u043D\u0434\u0443 \u043C\u043E\u0436\u043D\u043E \u0441\u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0438\u0437 \u043F\u043E\u043B\u044F", "info", 3e3);
     }
   }
   async function handleCreateSubmit(event) {
@@ -1351,6 +1512,7 @@ function createManagerModalController({
     closeModal,
     openEditModal,
     openModal,
+    openYtdlpModalForList,
     register
   };
 }
@@ -1408,6 +1570,9 @@ function createManagerListActions({
         break;
       case "export":
         await exportList(listId);
+        break;
+      case "ytdlp":
+        await managerModalController2.openYtdlpModalForList(listId);
         break;
       case "createYoutubePlaylist":
         await createYouTubePlaylistForList(listId, button);
@@ -1501,10 +1666,12 @@ function createManagerListActions({
 
 // src/popup/modules/manager/bulkActions.js
 function registerManagerBulkActions({
+  applyRemoveLocally: applyRemoveLocally2,
   buttons,
   clearSelection: clearSelection2,
   getSelectedListDetails,
   getWatchedVideoIds: getWatchedVideoIds2,
+  handleRemoveResult: handleRemoveResult2,
   loadState,
   selectionController: selectionController2,
   sendMessage: sendMessage3,
@@ -1516,11 +1683,17 @@ function registerManagerBulkActions({
   async function removeFromSelectedList(videoIds) {
     const selectedListDetails2 = getSelectedListDetails();
     if (!selectedListDetails2?.id || !videoIds.length) return false;
-    await sendMessage3("playlist:remove", {
-      listId: selectedListDetails2.id,
+    const listId = selectedListDetails2.id;
+    const appliedOptimistically = typeof applyRemoveLocally2 === "function" ? applyRemoveLocally2(videoIds, listId) : false;
+    const response = await sendMessage3("playlist:remove", {
+      listId,
       videoIds
     });
-    await loadState();
+    if (typeof handleRemoveResult2 === "function") {
+      handleRemoveResult2(response, videoIds, listId);
+    } else if (!appliedOptimistically) {
+      await loadState();
+    }
     return true;
   }
   if (removeWatchedBtn) {
@@ -1552,6 +1725,8 @@ function registerManagerBulkActions({
       } catch (err) {
         console.error("Failed to delete watched videos", err);
         setStatus2("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u043F\u0440\u043E\u0441\u043C\u043E\u0442\u0440\u0435\u043D\u043D\u044B\u0435", "error", 3500);
+        loadState().catch(() => {
+        });
         updateRemoveWatchedButton2();
       }
     });
@@ -1578,6 +1753,8 @@ function registerManagerBulkActions({
       } catch (err) {
         console.error("Failed to delete selected videos", err);
         setStatus2("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C", "error", 3500);
+        loadState().catch(() => {
+        });
       }
     });
   }
@@ -1598,6 +1775,8 @@ function registerManagerBulkActions({
       } catch (err) {
         console.error("Failed to clear list", err);
         setStatus2("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0447\u0438\u0441\u0442\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A", "error", 3500);
+        loadState().catch(() => {
+        });
         if (getSelectedListDetails()?.queue?.length) {
           clearListBtn.disabled = false;
         }
@@ -2170,6 +2349,7 @@ function createManagerStateController({
     detailEmpty,
     detailList,
     openAddLinksModalBtn,
+    openYtdlpModalBtn,
     removeWatchedBtn
   } = elements2;
   let requestedListApplied = false;
@@ -2232,6 +2412,32 @@ function createManagerStateController({
     await loadListDetails(getSelectedListId(), { syncCurrent: false });
     updateCollectionAvailability();
   }
+  function applySelectedListDetails(details) {
+    if (!details?.id) return;
+    const previousListId = getSelectedListDetails()?.id;
+    setSelectedListDetails(details);
+    if (previousListId !== details.id) selectionController2.clear();
+    renderDetailVideos(details);
+    highlightSelectedList2(details.id);
+    updateCollectionAvailability();
+    updateDetailActiveVideo();
+  }
+  function applyStateSnapshot(state, options = {}) {
+    if (!state || !Array.isArray(state.lists)) return false;
+    setAppState(state);
+    ensureSelectedList(state);
+    renderLists2();
+    populateImportTargets3();
+    if (options.details) {
+      applySelectedListDetails(options.details);
+    } else {
+      highlightSelectedList2(getSelectedListId());
+      updateDetailActiveVideo();
+      updateRemoveWatchedButton2();
+      updateCollectionAvailability();
+    }
+    return true;
+  }
   function renderDetailVideos(details) {
     moveMenu2.hide();
     dragController2.reset();
@@ -2239,6 +2445,7 @@ function createManagerStateController({
     const hasList = Boolean(details?.id);
     if (openAddLinksModalBtn) openAddLinksModalBtn.disabled = !hasList;
     const videos = Array.isArray(details?.queue) ? details.queue : [];
+    if (openYtdlpModalBtn) openYtdlpModalBtn.disabled = videos.length === 0;
     selectionController2.setVideos(videos);
     if (clearListBtn) clearListBtn.disabled = videos.length === 0;
     updateRemoveWatchedButton2();
@@ -2293,6 +2500,7 @@ function createManagerStateController({
       if (clearListBtn) clearListBtn.disabled = true;
       updateRemoveWatchedButton2();
       if (openAddLinksModalBtn) openAddLinksModalBtn.disabled = true;
+      if (openYtdlpModalBtn) openYtdlpModalBtn.disabled = true;
       updateCollectionAvailability();
       updateDetailActiveVideo();
       return;
@@ -2336,6 +2544,8 @@ function createManagerStateController({
     }
   }
   return {
+    applySelectedListDetails,
+    applyStateSnapshot,
     ensureSelectedList,
     handleStateUpdated,
     loadListDetails,
@@ -2670,6 +2880,11 @@ var MANAGER_ELEMENT_IDS = [
   "statusText",
   "statusProgress",
   "statusProgressBar",
+  "managerSyncState",
+  "managerSyncMeta",
+  "managerSyncPull",
+  "managerSyncPush",
+  "managerSyncRestore",
   "managerCollectionArea",
   "managerCollectSubscriptions",
   "managerCollectionNote",
@@ -2680,11 +2895,13 @@ var MANAGER_ELEMENT_IDS = [
   "openCreateModal",
   "openImportModal",
   "openAddLinksModal",
+  "openYtdlpModal",
   "modalBackdrop",
   "createModal",
   "importModal",
   "editModal",
   "addLinksModal",
+  "ytdlpModal",
   "createForm",
   "createName",
   "createFreeze",
@@ -2697,13 +2914,25 @@ var MANAGER_ELEMENT_IDS = [
   "editName",
   "editFreeze",
   "addLinksForm",
-  "addLinksTextarea"
+  "addLinksTextarea",
+  "ytdlpForm",
+  "ytdlpFormat",
+  "ytdlpOutputDir",
+  "ytdlpArchive",
+  "ytdlpNoOverwrites",
+  "ytdlpMetadata",
+  "ytdlpThumbnail",
+  "ytdlpCookies",
+  "ytdlpCommand",
+  "ytdlpSummary",
+  "copyYtdlpCommand"
 ];
 var ELEMENT_ALIASES = {
   managerCollectSubscriptions: "managerCollectBtn",
   openAddLinksModal: "openAddLinksModalBtn",
   openCreateModal: "openCreateModalBtn",
   openImportModal: "openImportModalBtn",
+  openYtdlpModal: "openYtdlpModalBtn",
   status: "statusBox"
 };
 function getManagerElements(documentRef = document) {
@@ -2735,6 +2964,7 @@ var PHASE_TO_STAGE = {
   playlistFetch: "playlists",
   playlistFetched: "playlists",
   aggregate: "playlists",
+  subscriptionsRechecked: "videos",
   filtering: "videos",
   filterProgress: "videos",
   filterStats: "videos",
@@ -3164,6 +3394,10 @@ function formatStageLog(event = {}, summary) {
     }
     case "aggregate":
       return `\u0421\u043E\u0431\u0440\u0430\u043D\u043E ${event.videoCount || 0} \u0443\u043D\u0438\u043A\u0430\u043B\u044C\u043D\u044B\u0445 \u0432\u0438\u0434\u0435\u043E`;
+    case "subscriptionsRechecked":
+      return event.skippedUnsubscribed ? `\u041F\u043E\u0441\u043B\u0435 \u0441\u0432\u0435\u0440\u043A\u0438 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A \u043E\u0442\u0431\u0440\u043E\u0448\u0435\u043D\u043E ${formatCount(
+        event.skippedUnsubscribed
+      )} \u0432\u0438\u0434\u0435\u043E` : "\u041F\u043E\u0434\u043F\u0438\u0441\u043A\u0438 \u0441\u0432\u0435\u0440\u0435\u043D\u044B";
     case "filtering":
       return `\u0424\u0438\u043B\u044C\u0442\u0440\u0430\u0446\u0438\u044F (${formatCount(event.videoCount || 0)})`;
     case "filterProgress":
@@ -3219,6 +3453,16 @@ function getStatusInfo(event = {}, summary) {
     case "aggregate":
       return {
         text: `\u041D\u0430\u0439\u0434\u0435\u043D\u043E ${event.videoCount || 0} \u0432\u0438\u0434\u0435\u043E`,
+        kind: "info",
+        timeout: 0
+      };
+    case "subscriptionsRechecked":
+      return event.skippedUnsubscribed ? {
+        text: `\u041E\u0442\u0431\u0440\u043E\u0448\u0435\u043D\u043E \u0441 \u043E\u0442\u043F\u0438\u0441\u0430\u043D\u043D\u044B\u0445 \u043A\u0430\u043D\u0430\u043B\u043E\u0432: ${event.skippedUnsubscribed}`,
+        kind: "info",
+        timeout: 0
+      } : {
+        text: "\u041F\u043E\u0434\u043F\u0438\u0441\u043A\u0438 \u0441\u0432\u0435\u0440\u0435\u043D\u044B",
         kind: "info",
         timeout: 0
       };
@@ -3932,6 +4176,238 @@ function createCollectionAvailabilityController({
   };
 }
 
+// src/popup/modules/sync/index.js
+var AUTO_REFRESH_MS = 20 * 1e3;
+function maxTimestamp(...values) {
+  return Math.max(...values.map((value) => Number(value) || 0), 0);
+}
+function isBenignSyncError(error) {
+  const text = String(error || "");
+  return !text || /not initialized/i.test(text) || /no-drive-remote/i.test(text) || /no-remote/i.test(text);
+}
+function formatFullTime(timestamp) {
+  const value = Number(timestamp) || 0;
+  if (!value) return "\u043D\u0435\u0442 \u0434\u0430\u043D\u043D\u044B\u0445";
+  return new Date(value).toLocaleString("ru-RU");
+}
+function formatAge(timestamp) {
+  const value = Number(timestamp) || 0;
+  if (!value) return "\u043D\u0435\u0442";
+  const diff = Math.max(0, Date.now() - value);
+  return formatDuration2(diff);
+}
+function formatDuration2(diff) {
+  const minutes = Math.floor(diff / 6e4);
+  if (minutes < 1) return "\u0441\u0435\u0439\u0447\u0430\u0441";
+  if (minutes < 60) return `${minutes} \u043C\u0438\u043D \u043D\u0430\u0437\u0430\u0434`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} \u0447 \u043D\u0430\u0437\u0430\u0434`;
+  return `${Math.floor(hours / 24)} \u0434 \u043D\u0430\u0437\u0430\u0434`;
+}
+function formatDelta(fromTimestamp, toTimestamp) {
+  const from = Number(fromTimestamp) || 0;
+  const to = Number(toTimestamp) || 0;
+  if (!from || !to) return "";
+  const diff = Math.abs(from - to);
+  const label = formatDuration2(diff).replace(" \u043D\u0430\u0437\u0430\u0434", "");
+  return label === "\u0441\u0435\u0439\u0447\u0430\u0441" ? "\u043C\u0435\u043D\u044C\u0448\u0435 \u043C\u0438\u043D\u0443\u0442\u044B" : label;
+}
+function createSummary(statusText, kind, localUpdatedAt, remoteUpdatedAt, { backupCount = 0, metaOverride = "" } = {}) {
+  const localAge = formatAge(localUpdatedAt);
+  const remoteAge = formatAge(remoteUpdatedAt);
+  const hasRemote = Boolean(remoteUpdatedAt);
+  let meta = "\u041E\u0431\u043B\u0430\u043A\u0430 \u043D\u0435\u0442";
+  if (hasRemote && localUpdatedAt > remoteUpdatedAt + 1e3) {
+    meta = `\u041E\u0431\u043B\u0430\u043A\u043E \u043E\u0442\u0441\u0442\u0430\u0451\u0442 \u043D\u0430 ${formatDelta(localUpdatedAt, remoteUpdatedAt)}`;
+  } else if (hasRemote && remoteUpdatedAt > localUpdatedAt + 1e3) {
+    meta = `\u041E\u0431\u043B\u0430\u043A\u043E \u043D\u043E\u0432\u0435\u0435 \u043D\u0430 ${formatDelta(remoteUpdatedAt, localUpdatedAt)}`;
+  } else if (hasRemote) {
+    meta = `\u041E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u043E ${remoteAge}`;
+  }
+  if (metaOverride) {
+    meta = metaOverride;
+  }
+  const title = [
+    `\u041D\u0430 \u0443\u0441\u0442\u0440\u043E\u0439\u0441\u0442\u0432\u0435: ${formatFullTime(localUpdatedAt)} (${localAge})`,
+    `\u0412 \u043E\u0431\u043B\u0430\u043A\u0435: ${formatFullTime(remoteUpdatedAt)} (${remoteAge})`,
+    metaOverride ? `\u041E\u0448\u0438\u0431\u043A\u0430: ${metaOverride}` : "",
+    backupCount ? `\u0420\u0435\u0437\u0435\u0440\u0432\u043D\u044B\u0445 \u0432\u0435\u0440\u0441\u0438\u0439: ${backupCount}` : ""
+  ].join("\n");
+  return { text: statusText, meta, title, kind };
+}
+function describeSyncStatus(status) {
+  const playlist = status?.playlist || {};
+  const settings = status?.settings || {};
+  const drive = status?.drive || {};
+  const localUpdatedAt = maxTimestamp(
+    playlist.localUpdatedAt,
+    settings.localUpdatedAt
+  );
+  const remoteUpdatedAt = maxTimestamp(
+    drive.remoteUpdatedAt,
+    settings.remoteUpdatedAt
+  );
+  const backupCount = Number(drive.playlistBackupCount) || 0;
+  const errors = [
+    playlist.lastError,
+    settings.lastError,
+    drive.lastError
+  ].filter((error) => !isBenignSyncError(error));
+  if (errors.length) {
+    const metaOverride = String(errors[0]).slice(0, 120);
+    return createSummary("\u041E\u0448\u0438\u0431\u043A\u0430 \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u0438", "error", localUpdatedAt, remoteUpdatedAt, {
+      backupCount,
+      metaOverride
+    });
+  }
+  if (!remoteUpdatedAt) {
+    return createSummary("\u041E\u0431\u043B\u0430\u043A\u043E \u043D\u0435 \u0441\u043E\u0437\u0434\u0430\u043D\u043E", "warning", localUpdatedAt, remoteUpdatedAt, {
+      backupCount
+    });
+  }
+  if (playlist.pending || settings.pending || localUpdatedAt > remoteUpdatedAt + 1e3) {
+    return createSummary("\u0415\u0441\u0442\u044C \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F", "warning", localUpdatedAt, remoteUpdatedAt, {
+      backupCount
+    });
+  }
+  if (remoteUpdatedAt > localUpdatedAt + 1e3) {
+    return createSummary("\u0412 \u043E\u0431\u043B\u0430\u043A\u0435 \u0441\u0432\u0435\u0436\u0435\u0435", "warning", localUpdatedAt, remoteUpdatedAt, {
+      backupCount
+    });
+  }
+  return createSummary("\u0410\u043A\u0442\u0443\u0430\u043B\u044C\u043D\u043E", "ok", localUpdatedAt, remoteUpdatedAt, {
+    backupCount
+  });
+}
+function createPopupSyncController({
+  stateEl,
+  metaEl,
+  pullBtn,
+  pushBtn,
+  restoreBtn,
+  sendMessage: sendMessage3,
+  setStatus: setStatus2 = () => {
+  },
+  refreshState = () => {
+  }
+}) {
+  const buttons = [pullBtn, pushBtn, restoreBtn].filter(Boolean);
+  let refreshTimer = null;
+  let refreshInFlight = false;
+  let busy = false;
+  let restoreAvailable = false;
+  function updateButtonState() {
+    buttons.forEach((button) => {
+      button.disabled = busy;
+      button.classList.toggle("is-loading", busy);
+    });
+    if (restoreBtn) {
+      restoreBtn.disabled = busy || !restoreAvailable;
+    }
+  }
+  function setBusy(value) {
+    busy = Boolean(value);
+    updateButtonState();
+  }
+  function renderStatus(status) {
+    if (!stateEl) return;
+    const summary = describeSyncStatus(status);
+    restoreAvailable = Number(status?.drive?.playlistBackupCount) > 0;
+    stateEl.textContent = summary.text;
+    stateEl.dataset.kind = summary.kind;
+    stateEl.title = summary.title;
+    if (metaEl) {
+      metaEl.textContent = summary.meta;
+      metaEl.title = summary.title;
+      metaEl.dataset.kind = summary.kind;
+    }
+    updateButtonState();
+  }
+  async function refresh({ refreshRemote = false } = {}) {
+    if (refreshInFlight) return;
+    refreshInFlight = true;
+    try {
+      const status = await sendMessage3("sync:getStatus", { refreshRemote });
+      renderStatus(status);
+    } catch (err) {
+      console.error("Failed to load popup sync status", err);
+      if (stateEl) {
+        stateEl.textContent = "\u0421\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u044F \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0430";
+        stateEl.dataset.kind = "error";
+      }
+      if (metaEl) {
+        metaEl.textContent = "";
+        metaEl.removeAttribute("data-kind");
+      }
+    } finally {
+      refreshInFlight = false;
+    }
+  }
+  function scheduleRefresh(delay2 = 500) {
+    if (refreshTimer) {
+      window.clearTimeout(refreshTimer);
+    }
+    refreshTimer = window.setTimeout(() => {
+      refreshTimer = null;
+      refresh();
+    }, delay2);
+  }
+  window.setInterval(() => {
+    refresh({ refreshRemote: true });
+  }, AUTO_REFRESH_MS);
+  async function runAction(action, message, afterLocalChange = false) {
+    try {
+      setBusy(true);
+      const result = await action();
+      await refresh({ refreshRemote: true });
+      if (afterLocalChange && (result?.playlistImported || result?.driveImported)) {
+        await refreshState();
+      }
+      const outcome = message(result);
+      const text = typeof outcome === "object" ? outcome.text : outcome;
+      const kind = typeof outcome === "object" ? outcome.kind || "success" : "success";
+      setStatus2(text, kind, 2200);
+    } catch (err) {
+      console.error("Popup sync action failed", err);
+      await refresh();
+      setStatus2("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0432\u044B\u043F\u043E\u043B\u043D\u0438\u0442\u044C \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u044E", "error", 3e3);
+    } finally {
+      setBusy(false);
+    }
+  }
+  pullBtn?.addEventListener("click", () => {
+    runAction(
+      () => sendMessage3("sync:pullRemote"),
+      (result) => result?.playlistImported || result?.settingsImported ? "\u0414\u0430\u043D\u043D\u044B\u0435 \u0441\u043B\u0438\u0442\u044B \u0441 \u043E\u0431\u043B\u0430\u043A\u043E\u043C" : "\u041E\u0431\u043B\u0430\u0447\u043D\u043E\u0439 \u0432\u0435\u0440\u0441\u0438\u0438 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442",
+      true
+    );
+  });
+  pushBtn?.addEventListener("click", () => {
+    runAction(
+      () => sendMessage3("sync:pushLocal"),
+      (result) => result?.drivePushed || result?.playlistPushed || result?.settingsPushed ? "\u0414\u0430\u043D\u043D\u044B\u0435 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u044B \u0432 \u043E\u0431\u043B\u0430\u043A\u043E" : { text: result?.driveReason || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435", kind: "error" }
+    );
+  });
+  restoreBtn?.addEventListener("click", () => {
+    if (!restoreAvailable) {
+      setStatus2("\u0412 \u043E\u0431\u043B\u0430\u043A\u0435 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442 \u0440\u0435\u0437\u0435\u0440\u0432\u043D\u043E\u0439 \u0432\u0435\u0440\u0441\u0438\u0438", "error", 2500);
+      return;
+    }
+    const confirmed = window.confirm(
+      "\u041E\u0442\u043A\u0430\u0442\u0438\u0442\u044C \u043E\u0431\u043B\u0430\u0447\u043D\u044B\u0439 \u0441\u043F\u0438\u0441\u043E\u043A \u043D\u0430 \u043F\u0440\u0435\u0434\u044B\u0434\u0443\u0449\u0443\u044E \u0432\u0435\u0440\u0441\u0438\u044E \u0438 \u0437\u0430\u043C\u0435\u043D\u0438\u0442\u044C \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0441\u043F\u0438\u0441\u043A\u0438?"
+    );
+    if (!confirmed) {
+      return;
+    }
+    runAction(
+      () => sendMessage3("sync:restoreCloudVersion", { offset: 1 }),
+      (result) => result?.restored ? "\u041E\u0442\u043A\u0430\u0442 \u0432\u044B\u043F\u043E\u043B\u043D\u0435\u043D" : { text: result?.reason || "\u0420\u0435\u0437\u0435\u0440\u0432\u043D\u0430\u044F \u0432\u0435\u0440\u0441\u0438\u044F \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430", kind: "error" },
+      true
+    );
+  });
+  return { refresh, scheduleRefresh };
+}
+
 // src/popup/modules/manager/listView.js
 function makeActionButton(text, action, listId, options = {}) {
   const button = document.createElement("button");
@@ -4033,6 +4509,12 @@ function createListCard({
   item.appendChild(main);
   const actions = document.createElement("div");
   actions.className = "list-card-actions";
+  actions.appendChild(
+    makeActionButton("yt-dlp", "ytdlp", list.id, {
+      className: "secondary",
+      disabled: (list.length ?? 0) === 0
+    })
+  );
   if (!isDefaultList) {
     actions.appendChild(makeActionButton("\u0420\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C", "edit", list.id));
   }
@@ -4161,28 +4643,7 @@ var { moveMenu, showMoveMenu } = createManagerMoveActions({
 });
 var managerModalController = createManagerModalController({
   defaultListId: DEFAULT_LIST_ID,
-  elements: {
-    modalBackdrop: elements.modalBackdrop,
-    createModal: elements.createModal,
-    importModal: elements.importModal,
-    editModal: elements.editModal,
-    addLinksModal: elements.addLinksModal,
-    openCreateModalBtn: elements.openCreateModalBtn,
-    openImportModalBtn: elements.openImportModalBtn,
-    openAddLinksModalBtn: elements.openAddLinksModalBtn,
-    createForm: elements.createForm,
-    createName: elements.createName,
-    createFreeze: elements.createFreeze,
-    importForm: elements.importForm,
-    importFile: elements.importFile,
-    importModeSelect: elements.importModeSelect,
-    importTargetSelect: elements.importTargetSelect,
-    editForm: elements.editForm,
-    editName: elements.editName,
-    editFreeze: elements.editFreeze,
-    addLinksForm: elements.addLinksForm,
-    addLinksTextarea: elements.addLinksTextarea
-  },
+  elements,
   getAppState: () => appState,
   getSelectedListDetails: () => selectedListDetails,
   loadState: () => managerStateController.loadState(),
@@ -4191,7 +4652,9 @@ var managerModalController = createManagerModalController({
   toggleImportTarget: toggleImportTarget2
 });
 var handleDetailAction = createManagerDetailActions({
+  applyRemoveLocally,
   getAppState: () => appState,
+  handleRemoveResult,
   loadState: () => managerStateController.loadState(),
   openQuickFilter,
   sendMessage: sendMessage2,
@@ -4200,13 +4663,7 @@ var handleDetailAction = createManagerDetailActions({
 });
 managerStateController = createManagerStateController({
   dragController,
-  elements: {
-    clearListBtn: elements.clearListBtn,
-    detailEmpty: elements.detailEmpty,
-    detailList: elements.detailList,
-    openAddLinksModalBtn: elements.openAddLinksModalBtn,
-    removeWatchedBtn: elements.removeWatchedBtn
-  },
+  elements,
   fallbackThumbnail,
   getAppState: () => appState,
   getSelectedListDetails: () => selectedListDetails,
@@ -4232,6 +4689,16 @@ managerStateController = createManagerStateController({
     listId: requestedListId,
     listName: requestedListName
   }
+});
+var managerSyncController = createPopupSyncController({
+  stateEl: elements.managerSyncState,
+  metaEl: elements.managerSyncMeta,
+  pullBtn: elements.managerSyncPull,
+  pushBtn: elements.managerSyncPush,
+  restoreBtn: elements.managerSyncRestore,
+  sendMessage: sendMessage2,
+  setStatus,
+  refreshState: () => managerStateController.loadState()
 });
 var collectionController = createCollectionController({
   progressEl: elements.managerCollectionProgress,
@@ -4310,6 +4777,61 @@ async function syncManagerCollectionState(state) {
 async function sendMessage2(type, payload = {}) {
   return sendMessage(type, payload, { label: "sendMessage failed" });
 }
+function buildDetailsAfterRemoval(videoIds, listId) {
+  if (!selectedListDetails?.id || selectedListDetails.id !== listId) {
+    return null;
+  }
+  const idSet = new Set((Array.isArray(videoIds) ? videoIds : [videoIds]).filter(Boolean));
+  if (!idSet.size) return null;
+  const queue = Array.isArray(selectedListDetails.queue) ? selectedListDetails.queue.filter((video) => !idSet.has(video?.id)) : [];
+  const removed = (selectedListDetails.queue?.length || 0) - queue.length;
+  if (removed <= 0) return null;
+  return {
+    ...selectedListDetails,
+    queue,
+    length: queue.length,
+    revision: (Number.isInteger(selectedListDetails.revision) ? selectedListDetails.revision : 0) + 1
+  };
+}
+function applyRemoveLocally(videoIds, listId) {
+  const details = buildDetailsAfterRemoval(videoIds, listId);
+  if (!details) return false;
+  const idSet = new Set((Array.isArray(videoIds) ? videoIds : [videoIds]).filter(Boolean));
+  const nextState = appState && Array.isArray(appState.lists) ? {
+    ...appState,
+    lists: appState.lists.map(
+      (list) => list.id === listId ? { ...list, length: details.length, revision: details.revision } : list
+    ),
+    currentVideoId: idSet.has(appState.currentVideoId) ? null : appState.currentVideoId,
+    currentQueue: appState.currentQueue?.id === listId ? {
+      ...appState.currentQueue,
+      queue: details.queue,
+      currentIndex: details.queue.length === 0 ? null : Math.min(
+        appState.currentQueue.currentIndex || 0,
+        details.queue.length - 1
+      )
+    } : appState.currentQueue
+  } : null;
+  if (nextState) {
+    managerStateController.applyStateSnapshot(nextState, { details });
+  } else {
+    managerStateController.applySelectedListDetails(details);
+  }
+  return true;
+}
+function handleRemoveResult(state, videoIds, listId) {
+  const details = buildDetailsAfterRemoval(videoIds, listId);
+  if (state && Array.isArray(state.lists)) {
+    managerStateController.applyStateSnapshot(state, { details });
+    return;
+  }
+  if (details) {
+    managerStateController.applySelectedListDetails(details);
+    return;
+  }
+  managerStateController.loadState().catch(() => {
+  });
+}
 async function reorderVideo({ videoId, targetIndex, listId }) {
   if (!videoId || typeof targetIndex !== "number") {
     return;
@@ -4336,15 +4858,12 @@ function clearSelection() {
   selectionController.clear();
 }
 registerManagerBulkActions({
-  buttons: {
-    bulkDeleteBtn: elements.bulkDeleteBtn,
-    bulkMoveBtn: elements.bulkMoveBtn,
-    clearListBtn: elements.clearListBtn,
-    removeWatchedBtn: elements.removeWatchedBtn
-  },
+  buttons: elements,
   clearSelection,
+  applyRemoveLocally,
   getSelectedListDetails: () => selectedListDetails,
   getWatchedVideoIds: (details = selectedListDetails) => getWatchedVideoIds(details, appState?.videoProgress),
+  handleRemoveResult,
   loadState: managerStateController.loadState,
   selectionController,
   sendMessage: sendMessage2,
@@ -4360,13 +4879,7 @@ registerManagerEvents({
   controllers: {
     drag: dragController
   },
-  elements: {
-    clearSelectionBtn: elements.clearSelectionBtn,
-    detailList: elements.detailList,
-    listsBody: elements.listsBody,
-    managerCollectBtn: elements.managerCollectBtn,
-    selectAllBtn: elements.selectAllBtn
-  },
+  elements,
   handlers: {
     clearSelection,
     handleDetailAction,
@@ -4389,6 +4902,7 @@ chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "playlist:stateUpdated") {
     if (message.state && Array.isArray(message.state.lists)) {
       managerStateController.handleStateUpdated(message.state);
+      managerSyncController.scheduleRefresh();
     }
     return;
   }
@@ -4401,3 +4915,4 @@ managerStateController.loadState().catch((err) => {
   console.error("Failed to load lists state", err);
   setStatus("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043A\u0438", "error", 4e3);
 });
+managerSyncController.refresh({ refreshRemote: true });

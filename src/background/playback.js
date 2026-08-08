@@ -9,6 +9,7 @@ import {
   setCurrentVideo,
 } from "../store/index.js";
 import { parseVideoId } from "../utils.js";
+import { requestAccountSyncFlush } from "./accountSync.js";
 import { notifyState } from "./channel.js";
 import { dispatchNotifications, ensureDefaultQueueFilled } from "./collectionSync.js";
 
@@ -273,6 +274,7 @@ export async function advanceToNext(options = {}) {
   await dispatchNotifications();
   const afterPresentation = await getPresentationState();
   if (!afterPresentation.currentVideoId || afterPresentation.currentVideoId === targetId) {
+    requestAccountSyncFlush({ forcePlaylist: true });
     return { handled: false, state: afterPresentation };
   }
   ensureDefaultQueueFilled().catch((err) => {
@@ -282,6 +284,7 @@ export async function advanceToNext(options = {}) {
     tabId: options.tabId || before.currentTabId,
     ensureCurrent: false,
   });
+  requestAccountSyncFlush({ forcePlaylist: true });
   const finalPresentation = await getPresentationState();
   return { handled: true, state: finalPresentation };
 }
@@ -304,6 +307,7 @@ export async function playFromHistory(options = {}) {
   }
   await notifyState();
   await dispatchNotifications();
+  requestAccountSyncFlush({ forcePlaylist: true });
   const presentation = await getPresentationState();
   if (!presentation.currentVideoId) {
     return { handled: false, state: presentation };
@@ -355,7 +359,10 @@ export async function postponeCurrent(options = {}) {
   await postponeVideo(targetId, { listId: workingState.currentListId });
   await notifyState();
   await dispatchNotifications();
-  await ensureDefaultQueueFilled();
+  ensureDefaultQueueFilled().catch((err) => {
+    console.error("Auto collection after postponing failed", err);
+  });
+  requestAccountSyncFlush({ forcePlaylist: true });
   const afterPresentation = await getPresentationState();
   const nextId = afterPresentation.currentVideoId;
   if (!nextId || nextId === previousCurrentId) {

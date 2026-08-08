@@ -13,6 +13,10 @@ import {
   haveListMetaChanged,
   shouldReloadSelectedDetails,
 } from '../src/popup/modules/manager/detailHelpers.js';
+import {
+  buildVideoUrls,
+  buildYtdlpCommand,
+} from '../src/popup/modules/manager/ytdlpCommand.js';
 import { computePlaybackMeta } from '../src/popup/modules/playback/meta.js';
 
 {
@@ -180,4 +184,34 @@ import { computePlaybackMeta } from '../src/popup/modules/playback/meta.js';
     true
   );
   console.log('manager selected-list detail reload decisions are covered');
+}
+
+{
+  const queue = [{ id: 'abc123' }, { id: 'abc123' }, { id: 'def456' }, {}];
+  assert.deepStrictEqual(buildVideoUrls(queue), [
+    'https://www.youtube.com/watch?v=abc123',
+    'https://www.youtube.com/watch?v=def456',
+  ]);
+  const command = buildYtdlpCommand(queue, {
+    format: 'mp3',
+    outputDir: 'D:\\Downloads',
+    downloadArchive: true,
+    noOverwrites: true,
+    embedMetadata: true,
+    embedThumbnail: false,
+    cookiesFromBrowser: 'chrome',
+  });
+  assert.match(command, /^\$urls = @\(\n {2}"https:\/\/www\.youtube\.com\/watch\?v=abc123"/);
+  assert.match(command, /yt-dlp "--batch-file" "-"/);
+  assert.doesNotMatch(command, /"--quiet"|"--no-warnings"/);
+  assert.match(buildYtdlpCommand(queue, { quiet: true }), /"--quiet" "--no-warnings"/);
+  assert.match(command, /"-f" "bestaudio\/best"/);
+  assert.match(command, /"-x" "--audio-format" "mp3"/);
+  assert.match(command, /"--cookies-from-browser" "chrome"/);
+  assert.ok(command.includes('"-P" "D:\\Downloads"'));
+  assert.ok(command.includes('"-o" "%(title).200B [%(id)s].%(ext)s"'));
+  assert.ok(buildYtdlpCommand(queue, {}).includes('"-P" "."'));
+  assert.ok(!buildYtdlpCommand(queue, {}).includes('"--download-archive"'));
+  assert.strictEqual(buildYtdlpCommand([], { format: 'mp4' }), '');
+  console.log('manager yt-dlp command builder prepares copyable PowerShell commands');
 }

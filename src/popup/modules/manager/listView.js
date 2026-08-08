@@ -117,6 +117,12 @@ function createListCard({
 
   const actions = document.createElement("div");
   actions.className = "list-card-actions";
+  actions.appendChild(
+    makeActionButton("yt-dlp", "ytdlp", list.id, {
+      className: "secondary",
+      disabled: (list.length ?? 0) === 0,
+    })
+  );
   if (!isDefaultList) {
     actions.appendChild(makeActionButton("Редактировать", "edit", list.id));
   }

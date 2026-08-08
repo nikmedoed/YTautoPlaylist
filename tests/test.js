@@ -134,6 +134,10 @@ console.log('getNewVideos falls back to search');
     'local.png'
   );
   assert.strictEqual(resolveThumbnailUrl({}, 'fallback.png'), 'fallback.png');
+  assert.strictEqual(
+    resolveThumbnailUrl({ id: 'HxdM7D8rnpw' }),
+    'https://i.ytimg.com/vi/HxdM7D8rnpw/mqdefault.jpg'
+  );
   console.log('resolveThumbnailUrl handles API thumbnails, local thumbnail objects and fallback');
 }
 
@@ -246,4 +250,9 @@ console.log('getNewVideos falls back to search');
 }
 
 await import('./storeActions.test.js');
+await import('./channelCache.test.js');
 await import('./autoCollect.test.js');
+await import('./syncState.test.js');
+await import('./driveSync.test.js');
+await import('./syncStorage.test.js');
+await import('./settingsSync.test.js');

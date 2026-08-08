@@ -14,12 +14,10 @@ import { createManagerMoveActions } from "./modules/manager/moveActions.js";
 import { getManagerElements } from "./modules/manager/elements.js";
 import { createCollectionController } from "./modules/collection/index.js";
 import { createCollectionAvailabilityController } from "./modules/collection/availability.js";
+import { createPopupSyncController } from "./modules/sync/index.js";
 import { sendMessage as sendRuntimeMessage } from "./lib/runtimeMessages.js";
 import { setButtonLoading } from "./modules/manager/runtime.js";
-import {
-  getWatchedVideoIds as getWatchedVideoIdsFromDetails,
-  updateRemoveWatchedButton as updateRemoveWatchedButtonState,
-} from "./modules/manager/detailHelpers.js";
+import { getWatchedVideoIds as getWatchedVideoIdsFromDetails, updateRemoveWatchedButton as updateRemoveWatchedButtonState } from "./modules/manager/detailHelpers.js";
 import {
   highlightSelectedList,
   populateImportTargets as renderImportTargets,
@@ -88,28 +86,7 @@ const { moveMenu, showMoveMenu } = createManagerMoveActions({
 
 const managerModalController = createManagerModalController({
   defaultListId: DEFAULT_LIST_ID,
-  elements: {
-    modalBackdrop: elements.modalBackdrop,
-    createModal: elements.createModal,
-    importModal: elements.importModal,
-    editModal: elements.editModal,
-    addLinksModal: elements.addLinksModal,
-    openCreateModalBtn: elements.openCreateModalBtn,
-    openImportModalBtn: elements.openImportModalBtn,
-    openAddLinksModalBtn: elements.openAddLinksModalBtn,
-    createForm: elements.createForm,
-    createName: elements.createName,
-    createFreeze: elements.createFreeze,
-    importForm: elements.importForm,
-    importFile: elements.importFile,
-    importModeSelect: elements.importModeSelect,
-    importTargetSelect: elements.importTargetSelect,
-    editForm: elements.editForm,
-    editName: elements.editName,
-    editFreeze: elements.editFreeze,
-    addLinksForm: elements.addLinksForm,
-    addLinksTextarea: elements.addLinksTextarea,
-  },
+  elements,
   getAppState: () => appState,
   getSelectedListDetails: () => selectedListDetails,
   loadState: () => managerStateController.loadState(),
@@ -119,7 +96,9 @@ const managerModalController = createManagerModalController({
 });
 
 const handleDetailAction = createManagerDetailActions({
+  applyRemoveLocally,
   getAppState: () => appState,
+  handleRemoveResult,
   loadState: () => managerStateController.loadState(),
   openQuickFilter,
   sendMessage,
@@ -129,13 +108,7 @@ const handleDetailAction = createManagerDetailActions({
 
 managerStateController = createManagerStateController({
   dragController,
-  elements: {
-    clearListBtn: elements.clearListBtn,
-    detailEmpty: elements.detailEmpty,
-    detailList: elements.detailList,
-    openAddLinksModalBtn: elements.openAddLinksModalBtn,
-    removeWatchedBtn: elements.removeWatchedBtn,
-  },
+  elements,
   fallbackThumbnail,
   getAppState: () => appState,
   getSelectedListDetails: () => selectedListDetails,
@@ -161,6 +134,17 @@ managerStateController = createManagerStateController({
     listId: requestedListId,
     listName: requestedListName,
   },
+});
+
+const managerSyncController = createPopupSyncController({
+  stateEl: elements.managerSyncState,
+  metaEl: elements.managerSyncMeta,
+  pullBtn: elements.managerSyncPull,
+  pushBtn: elements.managerSyncPush,
+  restoreBtn: elements.managerSyncRestore,
+  sendMessage,
+  setStatus,
+  refreshState: () => managerStateController.loadState(),
 });
 
 const collectionController = createCollectionController({
@@ -249,6 +233,77 @@ async function sendMessage(type, payload = {}) {
   return sendRuntimeMessage(type, payload, { label: "sendMessage failed" });
 }
 
+function buildDetailsAfterRemoval(videoIds, listId) {
+  if (!selectedListDetails?.id || selectedListDetails.id !== listId) {
+    return null;
+  }
+  const idSet = new Set((Array.isArray(videoIds) ? videoIds : [videoIds]).filter(Boolean));
+  if (!idSet.size) return null;
+  const queue = Array.isArray(selectedListDetails.queue)
+    ? selectedListDetails.queue.filter((video) => !idSet.has(video?.id))
+    : [];
+  const removed = (selectedListDetails.queue?.length || 0) - queue.length;
+  if (removed <= 0) return null;
+  return {
+    ...selectedListDetails,
+    queue,
+    length: queue.length,
+    revision: (Number.isInteger(selectedListDetails.revision)
+      ? selectedListDetails.revision
+      : 0) + 1,
+  };
+}
+
+function applyRemoveLocally(videoIds, listId) {
+  const details = buildDetailsAfterRemoval(videoIds, listId);
+  if (!details) return false;
+  const idSet = new Set((Array.isArray(videoIds) ? videoIds : [videoIds]).filter(Boolean));
+  const nextState = appState && Array.isArray(appState.lists)
+    ? {
+        ...appState,
+        lists: appState.lists.map((list) =>
+          list.id === listId
+            ? { ...list, length: details.length, revision: details.revision }
+            : list
+        ),
+        currentVideoId: idSet.has(appState.currentVideoId) ? null : appState.currentVideoId,
+        currentQueue:
+          appState.currentQueue?.id === listId
+            ? {
+                ...appState.currentQueue,
+                queue: details.queue,
+                currentIndex:
+                  details.queue.length === 0
+                    ? null
+                    : Math.min(
+                        appState.currentQueue.currentIndex || 0,
+                        details.queue.length - 1
+                      ),
+              }
+            : appState.currentQueue,
+      }
+    : null;
+  if (nextState) {
+    managerStateController.applyStateSnapshot(nextState, { details });
+  } else {
+    managerStateController.applySelectedListDetails(details);
+  }
+  return true;
+}
+
+function handleRemoveResult(state, videoIds, listId) {
+  const details = buildDetailsAfterRemoval(videoIds, listId);
+  if (state && Array.isArray(state.lists)) {
+    managerStateController.applyStateSnapshot(state, { details });
+    return;
+  }
+  if (details) {
+    managerStateController.applySelectedListDetails(details);
+    return;
+  }
+  managerStateController.loadState().catch(() => {});
+}
+
 async function reorderVideo({ videoId, targetIndex, listId }) {
   if (!videoId || typeof targetIndex !== "number") {
     return;
@@ -277,16 +332,13 @@ function clearSelection() {
 }
 
 registerManagerBulkActions({
-  buttons: {
-    bulkDeleteBtn: elements.bulkDeleteBtn,
-    bulkMoveBtn: elements.bulkMoveBtn,
-    clearListBtn: elements.clearListBtn,
-    removeWatchedBtn: elements.removeWatchedBtn,
-  },
+  buttons: elements,
   clearSelection,
+  applyRemoveLocally,
   getSelectedListDetails: () => selectedListDetails,
   getWatchedVideoIds: (details = selectedListDetails) =>
     getWatchedVideoIdsFromDetails(details, appState?.videoProgress),
+  handleRemoveResult,
   loadState: managerStateController.loadState,
   selectionController,
   sendMessage,
@@ -304,13 +356,7 @@ registerManagerEvents({
   controllers: {
     drag: dragController,
   },
-  elements: {
-    clearSelectionBtn: elements.clearSelectionBtn,
-    detailList: elements.detailList,
-    listsBody: elements.listsBody,
-    managerCollectBtn: elements.managerCollectBtn,
-    selectAllBtn: elements.selectAllBtn,
-  },
+  elements,
   handlers: {
     clearSelection,
     handleDetailAction,
@@ -334,6 +380,7 @@ chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "playlist:stateUpdated") {
     if (message.state && Array.isArray(message.state.lists)) {
       managerStateController.handleStateUpdated(message.state);
+      managerSyncController.scheduleRefresh();
     }
     return;
   }
@@ -348,3 +395,4 @@ managerStateController.loadState().catch((err) => {
   console.error("Failed to load lists state", err);
   setStatus("Не удалось загрузить списки", "error", 4000);
 });
+managerSyncController.refresh({ refreshRemote: true });

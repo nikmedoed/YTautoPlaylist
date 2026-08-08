@@ -1,9 +1,11 @@
 // Manager bulk-action wiring. Contains delete selected, clear list, remove watched, and move selected button behavior.
 export function registerManagerBulkActions({
+  applyRemoveLocally,
   buttons,
   clearSelection,
   getSelectedListDetails,
   getWatchedVideoIds,
+  handleRemoveResult,
   loadState,
   selectionController,
   sendMessage,
@@ -18,11 +20,20 @@ export function registerManagerBulkActions({
   async function removeFromSelectedList(videoIds) {
     const selectedListDetails = getSelectedListDetails();
     if (!selectedListDetails?.id || !videoIds.length) return false;
-    await sendMessage("playlist:remove", {
-      listId: selectedListDetails.id,
+    const listId = selectedListDetails.id;
+    const appliedOptimistically =
+      typeof applyRemoveLocally === "function"
+        ? applyRemoveLocally(videoIds, listId)
+        : false;
+    const response = await sendMessage("playlist:remove", {
+      listId,
       videoIds,
     });
-    await loadState();
+    if (typeof handleRemoveResult === "function") {
+      handleRemoveResult(response, videoIds, listId);
+    } else if (!appliedOptimistically) {
+      await loadState();
+    }
     return true;
   }
 
@@ -58,6 +69,7 @@ export function registerManagerBulkActions({
       } catch (err) {
         console.error("Failed to delete watched videos", err);
         setStatus("Не удалось удалить просмотренные", "error", 3500);
+        loadState().catch(() => {});
         updateRemoveWatchedButton();
       }
     });
@@ -86,6 +98,7 @@ export function registerManagerBulkActions({
       } catch (err) {
         console.error("Failed to delete selected videos", err);
         setStatus("Не удалось удалить", "error", 3500);
+        loadState().catch(() => {});
       }
     });
   }
@@ -109,6 +122,7 @@ export function registerManagerBulkActions({
       } catch (err) {
         console.error("Failed to clear list", err);
         setStatus("Не удалось очистить список", "error", 3500);
+        loadState().catch(() => {});
         if (getSelectedListDetails()?.queue?.length) {
           clearListBtn.disabled = false;
         }

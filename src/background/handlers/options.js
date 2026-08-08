@@ -1,5 +1,21 @@
 // Background options message handlers. Contains option-page routing and settings-related runtime actions.
+import {
+  getDriveSyncStatus,
+  getPlaylistSyncStorageStatus,
+  getSettingsSyncStatus,
+  importDriveSync,
+  importRemoteSettingsSync,
+  pushLocalDriveSyncNow,
+  pushLocalSettingsSyncNow,
+  restoreDrivePlaylistBackup,
+  SETTINGS_SYNC_MANIFEST_STORAGE_KEY,
+} from "../../store/index.js";
 import { parseVideoId } from "../../utils.js";
+import {
+  flushPendingAccountSync,
+  refreshRemoteAccountSync,
+} from "../accountSync.js";
+import { notifyState } from "../channel.js";
 
 export const optionsHandlers = {
   async "options:openQuickFilter"(message) {
@@ -40,5 +56,94 @@ export const optionsHandlers = {
       console.error("Failed to open list settings page", err);
       return { error: err?.message || "FAILED_TO_OPEN_LIST_SETTINGS" };
     }
+  },
+
+  async "sync:getStatus"(message = {}) {
+    if (message.refreshRemote) {
+      const refreshed = await refreshRemoteAccountSync({ force: true });
+      if (refreshed?.playlistImported) {
+        await notifyState();
+      }
+      await flushPendingAccountSync();
+    }
+    const [playlist, settings, drive] = await Promise.all([
+      getPlaylistSyncStorageStatus(),
+      getSettingsSyncStatus(),
+      getDriveSyncStatus({ refreshRemote: Boolean(message.refreshRemote) }),
+    ]);
+    const syncKeys = Object.keys(await chrome.storage.sync.get(null));
+    return {
+      ok: true,
+      extensionId: chrome.runtime.id,
+      playlist,
+      settings,
+      drive,
+      syncKeyCount: syncKeys.length,
+      hasPlaylistManifest: false,
+      hasAutoCollectSync: false,
+      hasSettingsManifest: syncKeys.includes(SETTINGS_SYNC_MANIFEST_STORAGE_KEY),
+    };
+  },
+
+  async "sync:pullRemote"() {
+    const [drive, settings] = await Promise.all([
+      importDriveSync(),
+      importRemoteSettingsSync(),
+    ]);
+    return {
+      ok: true,
+      driveImported: Boolean(drive.imported),
+      driveReason: drive.reason || null,
+      playlistImported: Boolean(drive.playlistImported),
+      settingsImported: Boolean(settings?.imported),
+      settingsReason: settings?.reason || null,
+    };
+  },
+
+  async "sync:replaceLocalFromRemote"() {
+    const [drive, settings] = await Promise.all([
+      importDriveSync({ force: true }),
+      importRemoteSettingsSync({ force: true }),
+    ]);
+    return {
+      ok: true,
+      driveImported: Boolean(drive.imported),
+      driveReason: drive.reason || null,
+      playlistImported: Boolean(drive.playlistImported),
+      playlistReason: drive.reason || null,
+      settingsImported: Boolean(settings?.imported),
+      settingsReason: settings?.reason || null,
+    };
+  },
+
+  async "sync:pushLocal"() {
+    const [settings, drive] = await Promise.all([
+      pushLocalSettingsSyncNow(),
+      pushLocalDriveSyncNow(),
+    ]);
+    return {
+      ok: true,
+      drivePushed: Boolean(drive?.pushed),
+      driveReason: drive?.reason || null,
+      playlistPushed: Boolean(drive?.pushed),
+      playlistReason: drive?.reason || null,
+      settingsPushed: Boolean(settings?.pushed),
+      settingsReason: settings?.reason || null,
+    };
+  },
+
+  async "sync:restoreCloudVersion"(message = {}) {
+    const offset =
+      typeof message.offset === "number" && Number.isFinite(message.offset)
+        ? Math.max(1, Math.trunc(message.offset))
+        : 1;
+    const drive = await restoreDrivePlaylistBackup({ offset });
+    return {
+      ok: true,
+      restored: Boolean(drive?.restored),
+      reason: drive?.reason || null,
+      backupOffset: drive?.backupOffset || offset,
+      playlistBackupCount: drive?.playlistBackupCount || 0,
+    };
   },
 };

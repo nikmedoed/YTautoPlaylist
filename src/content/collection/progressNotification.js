@@ -17,6 +17,10 @@ function formatAutoCollectProgress(event = {}) {
       return `Плейлист ${event.index || 0}/${event.total || 0}: +${event.videoCount || 0}`;
     case "aggregate":
       return `Собрано ${event.videoCount || 0} видео`;
+    case "subscriptionsRechecked":
+      return event.skippedUnsubscribed
+        ? `Отписанные каналы: -${event.skippedUnsubscribed} видео`
+        : "Подписки сверены";
     case "filtering":
       return `Фильтрую ${event.videoCount || 0} видео`;
     case "filterProgress": {
