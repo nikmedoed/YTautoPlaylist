@@ -4690,8 +4690,12 @@
       return;
     }
     const focusTargetId = resolveInlineQueuePostponeFocusTarget(videoItem);
+    const row = videoItem.closest(".yta-inline-queue__item") || videoItem;
+    const parent = row.parentNode;
+    const nextSibling = row.nextSibling;
     target.dataset.loading = "1";
     target.disabled = true;
+    row.remove();
     context.setInlineQueuePendingFocus?.(focusTargetId || videoId);
     const payload = { videoId };
     if (inlinePlaylistState.currentListId) {
@@ -4703,6 +4707,11 @@
       }
     }).catch((err) => {
       console.warn("Failed to remove video from inline queue", err);
+      if (parent && !row.isConnected) {
+        parent.insertBefore(row, nextSibling?.parentNode === parent ? nextSibling : null);
+      }
+      target.disabled = false;
+      delete target.dataset.loading;
     }).finally(() => {
       if (!target.isConnected) {
         return;
@@ -4727,8 +4736,12 @@
     const listId = inlinePlaylistState.currentListId || null;
     const isCurrent = videoId === inlinePlaylistState.currentVideoId;
     const focusTargetId = resolveInlineQueuePostponeFocusTarget(videoItem);
+    const row = videoItem.closest(".yta-inline-queue__item") || videoItem;
+    const parent = row.parentNode;
+    const nextSibling = row.nextSibling;
     target.dataset.loading = "1";
     target.disabled = true;
+    parent?.appendChild(row);
     context.setInlineQueuePendingFocus?.(focusTargetId || videoId);
     const request = isCurrent ? sendMessage("playlist:postpone", { videoId }) : sendMessage("playlist:postponeVideo", { videoId, listId });
     request.then((response) => {
@@ -4754,6 +4767,9 @@
       }
     }).catch((err) => {
       console.warn("Failed to postpone video from inline queue", err);
+      if (parent) {
+        parent.insertBefore(row, nextSibling?.parentNode === parent ? nextSibling : null);
+      }
       context.clearInlineQueuePendingFocus?.();
     }).finally(() => {
       if (!target.isConnected) {

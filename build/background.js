@@ -457,24 +457,22 @@ function splitStateForStorage(state) {
       currentIndex: Number.isInteger(list.currentIndex) ? list.currentIndex : null,
       revision: Number.isInteger(list.revision) ? list.revision : 0
     };
-    listContents[id] = {
-      queue: deepClone(list.queue)
-    };
+    listContents[id] = { queue: list.queue };
   });
-  const meta = deepClone({
+  const meta = {
     lists: listsMeta,
     listOrder: state.listOrder
-  });
-  const runtime = deepClone({
+  };
+  const runtime = {
     currentListId: state.currentListId,
     currentVideoId: state.currentVideoId,
     history: state.history,
     queueRemovals: state.queueRemovals,
     deletedLists: state.deletedLists,
     currentTabId: state.currentTabId
-  });
-  const autoCollect = deepClone(state.autoCollect);
-  const deletedHistory = Array.isArray(state.deletedHistory) ? deepClone(state.deletedHistory) : [];
+  };
+  const autoCollect = state.autoCollect;
+  const deletedHistory = Array.isArray(state.deletedHistory) ? state.deletedHistory : [];
   const videoProgress = sanitizeVideoProgressMap(state.videoProgress);
   return {
     listContents,
@@ -1137,6 +1135,17 @@ function buildSyncSnapshot(stateInput, { updatedAt, deviceId, maxTotalBytes = Nu
 }
 
 // src/store/state/sync.js
+var playlistMutationVersion = 0;
+var latestPlaylistMutationAt = 0;
+function notePlaylistSyncMutation(changedAt = Date.now()) {
+  const normalizedAt = normalizeSyncTimestamp(changedAt) || Date.now();
+  playlistMutationVersion += 1;
+  latestPlaylistMutationAt = Math.max(latestPlaylistMutationAt, normalizedAt);
+  return { changedAt: normalizedAt, mutationVersion: playlistMutationVersion };
+}
+function isPlaylistSyncMutationCurrent(mutationVersion) {
+  return mutationVersion === playlistMutationVersion;
+}
 function hasChromeStorageArea(area) {
   return typeof chrome !== "undefined" && chrome?.storage?.[area];
 }
@@ -1266,23 +1275,14 @@ async function getPlaylistSyncStatus() {
     technicalOnly: false
   };
 }
-async function schedulePlaylistSync(stateInput, { immediate = false } = {}) {
+async function schedulePlaylistSync(stateInput, { immediate = false, changedAt = Date.now() } = {}) {
   if (!hasChromeLocalStorage()) return;
   const localMeta = await readLocalSyncMeta();
-  const localHash = getSyncStateFingerprint2(stateInput);
-  if (localHash === localMeta.localHash && !immediate) {
-    if (localMeta.pending) {
-      const flushAfter = normalizeSyncTimestamp(localMeta.flushAfter) || Date.now() + SYNC_DEBOUNCE_MS;
-      await scheduleSyncAlarm(flushAfter);
-    }
-    return;
-  }
-  const now = Date.now();
+  const now = normalizeSyncTimestamp(changedAt) || Date.now();
   const dueAt = immediate ? now : now + SYNC_DEBOUNCE_MS;
   await writeLocalSyncMeta({
     ...localMeta,
     localUpdatedAt: now,
-    localHash,
     pending: true,
     pendingSince: localMeta.pendingSince || now,
     flushAfter: dueAt,
@@ -1301,12 +1301,40 @@ async function writePendingPlaylistSync(stateInput = null, options = {}) {
   }
   const now = Date.now();
   const flushAfter = normalizeSyncTimestamp(localMeta.flushAfter);
+  const activeMutationDueAt = latestPlaylistMutationAt ? latestPlaylistMutationAt + SYNC_DEBOUNCE_MS : 0;
+  if (!force && activeMutationDueAt > now) {
+    await writeLocalSyncMeta({
+      ...localMeta,
+      localUpdatedAt: Math.max(
+        normalizeSyncTimestamp(localMeta.localUpdatedAt),
+        latestPlaylistMutationAt
+      ),
+      pending: true,
+      pendingSince: localMeta.pendingSince || latestPlaylistMutationAt,
+      flushAfter: activeMutationDueAt,
+      lastError: null
+    });
+    await scheduleSyncAlarm(activeMutationDueAt);
+    return { wrote: false, reason: "debounced" };
+  }
   if (!force && flushAfter && flushAfter > now) {
     await scheduleSyncAlarm(flushAfter);
     return { wrote: false, reason: "debounced" };
   }
+  const localHash = getSyncStateFingerprint2(stateInput);
+  if (!force && localHash === localMeta.localHash) {
+    await writeLocalSyncMeta({
+      ...localMeta,
+      pending: false,
+      pendingSince: null,
+      flushAfter: null,
+      lastError: null
+    });
+    return { wrote: false, reason: "unchanged" };
+  }
   await writeLocalSyncMeta({
     ...localMeta,
+    localHash,
     pending: true,
     pendingSince: localMeta.pendingSince || now,
     flushAfter: null,
@@ -1315,7 +1343,8 @@ async function writePendingPlaylistSync(stateInput = null, options = {}) {
   return {
     wrote: false,
     ready: true,
-    reason: "drive-pending"
+    reason: "drive-pending",
+    mutationVersion: playlistMutationVersion
   };
 }
 
@@ -1348,6 +1377,7 @@ function resolvePlaylistImportDecision({
 
 // src/store/state/storage.js
 var memoryState = null;
+var memoryStorageArea = null;
 var stateWriteQueue = Promise.resolve();
 var checkedRemotePlaylistSync = false;
 function hasChromeStorage() {
@@ -1363,6 +1393,9 @@ async function loadLocalRawState() {
   if (!hasChromeStorage()) {
     const source = memoryState ?? defaultState;
     return deepClone(source);
+  }
+  if (memoryState && memoryStorageArea === chrome.storage.local) {
+    return deepClone(memoryState);
   }
   const stored = await chrome.storage.local.get([
     META_STORAGE_KEY,
@@ -1494,7 +1527,7 @@ async function loadRawState({ checkRemoteSync = true } = {}) {
   }
   return resolved.state;
 }
-async function persistState(state, { scheduleSync = true } = {}) {
+async function persistState(state, { scheduleSync = true, forceListWrite = false } = {}) {
   if (!hasChromeStorage()) {
     memoryState = deepClone(state);
     return state;
@@ -1514,23 +1547,33 @@ async function persistState(state, { scheduleSync = true } = {}) {
     [DELETED_HISTORY_STORAGE_KEY]: deletedHistory,
     [VIDEO_PROGRESS_STORAGE_KEY]: videoProgress
   };
+  let previousLists = null;
+  if (memoryState && memoryStorageArea === chrome.storage.local) {
+    previousLists = memoryState.lists;
+  } else {
+    const existingMeta = await chrome.storage.local.get(META_STORAGE_KEY);
+    previousLists = existingMeta?.[META_STORAGE_KEY]?.lists && typeof existingMeta[META_STORAGE_KEY].lists === "object" ? existingMeta[META_STORAGE_KEY].lists : {};
+  }
   Object.entries(listContents).forEach(([id, content]) => {
-    payload[getListStorageKey(id)] = content;
+    const previous = previousLists[id];
+    const next = state.lists[id];
+    const contentChanged = forceListWrite || !scheduleSync || !previous || Number(previous.revision) !== Number(next?.revision);
+    if (contentChanged) {
+      payload[getListStorageKey(id)] = content;
+    }
   });
-  const existingMeta = await chrome.storage.local.get(META_STORAGE_KEY);
-  const previousLists = existingMeta?.[META_STORAGE_KEY]?.lists && typeof existingMeta[META_STORAGE_KEY].lists === "object" ? existingMeta[META_STORAGE_KEY].lists : {};
   const nextListIds = Object.keys(listContents);
   const toRemove = Object.keys(previousLists).filter((id) => !nextListIds.includes(id)).map(getListStorageKey);
   if (toRemove.length) {
     await chrome.storage.local.remove(toRemove);
   }
   await chrome.storage.local.set(payload);
-  if (LEGACY_AUTO_COLLECT_STORAGE_KEY !== AUTO_COLLECT_STORAGE_KEY) {
-    await chrome.storage.local.remove(LEGACY_AUTO_COLLECT_STORAGE_KEY);
-  }
   if (scheduleSync) {
-    await schedulePlaylistSync(state);
+    const activity = notePlaylistSyncMutation();
+    await schedulePlaylistSync(state, { changedAt: activity.changedAt });
   }
+  memoryState = deepClone(state);
+  memoryStorageArea = chrome.storage.local;
   return state;
 }
 async function getState() {
@@ -1540,7 +1583,7 @@ async function getState() {
 async function replaceState(newState) {
   return enqueueStateWrite(async () => {
     const sanitized = sanitizeState(newState);
-    await persistState(sanitized);
+    await persistState(sanitized, { forceListWrite: true });
     return sanitized;
   });
 }
@@ -1719,8 +1762,13 @@ async function ensureDeviceId(meta = null) {
   await writeLocalMeta({ ...current, deviceId });
   return deviceId;
 }
-async function driveFetch(url, init = {}, { interactive = false } = {}) {
+async function driveFetch(url, init = {}, { interactive = false, shouldContinue = null } = {}) {
   const token = await getToken({ interactive });
+  if (typeof shouldContinue === "function" && !shouldContinue()) {
+    const err = new Error("Playlist sync superseded by newer local changes");
+    err.code = "SYNC_SUPERSEDED";
+    throw err;
+  }
   const headers = {
     ...init.headers || {},
     Authorization: `Bearer ${token}`
@@ -1779,7 +1827,7 @@ function buildMultipartBody(metadata, payload) {
   ].join("\r\n");
   return { boundary, body };
 }
-async function writeDrivePayload(payload, { interactive = true, existing = null } = {}) {
+async function writeDrivePayload(payload, { interactive = true, existing = null, shouldContinue = null } = {}) {
   const existingFile = existing || await findDriveFile({ interactive });
   const metadata = existingFile?.id ? { name: DRIVE_SYNC_FILE_NAME } : { name: DRIVE_SYNC_FILE_NAME, parents: ["appDataFolder"] };
   const { boundary, body } = buildMultipartBody(metadata, payload);
@@ -1792,10 +1840,13 @@ async function writeDrivePayload(payload, { interactive = true, existing = null 
     method: existingFile?.id ? "PATCH" : "POST",
     headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
     body
-  }, { interactive });
+  }, { interactive, shouldContinue });
   return response.json();
 }
-async function pushLocalDriveSyncNow({ interactive = true } = {}) {
+async function pushLocalDriveSyncNow({
+  interactive = true,
+  expectedMutationVersion = null
+} = {}) {
   const meta = await readLocalMeta();
   const deviceId = await ensureDeviceId(meta);
   try {
@@ -1819,10 +1870,14 @@ async function pushLocalDriveSyncNow({ interactive = true } = {}) {
     };
     const file = await writeDrivePayload(payload, {
       interactive,
-      existing: remote.file
+      existing: remote.file,
+      shouldContinue: expectedMutationVersion === null ? null : () => isPlaylistSyncMutationCurrent(expectedMutationVersion)
     });
     const now = Date.now();
-    await recordPushedPlaylistSyncSnapshot(playlist);
+    const superseded = expectedMutationVersion !== null && !isPlaylistSyncMutationCurrent(expectedMutationVersion);
+    if (!superseded) {
+      await recordPushedPlaylistSyncSnapshot(playlist);
+    }
     await writeLocalMeta({
       ...meta,
       deviceId,
@@ -1835,8 +1890,15 @@ async function pushLocalDriveSyncNow({ interactive = true } = {}) {
       lastReadAt: now,
       lastError: null
     });
-    return { pushed: true, updatedAt: payload.updatedAt };
+    return {
+      pushed: true,
+      updatedAt: payload.updatedAt,
+      superseded
+    };
   } catch (err) {
+    if (err?.code === "SYNC_SUPERSEDED") {
+      return { pushed: false, skipped: true, reason: "newer-local-changes" };
+    }
     await recordPlaylistSyncError(err);
     await writeLocalMeta({ ...meta, deviceId, lastError: err.message });
     return { pushed: false, reason: err.message };
@@ -3430,19 +3492,21 @@ var REMOTE_REFRESH_THROTTLE_MS = 30 * 1e3;
 var flushPromise = null;
 var remoteRefreshPromise = null;
 var lastRemoteRefreshAt = 0;
-async function flushPendingAccountSync(options = {}) {
+async function flushPendingAccountSync() {
   if (flushPromise) {
     return flushPromise;
   }
-  const forcePlaylist = Boolean(options.forcePlaylist);
   flushPromise = (async () => {
     const [playlist] = await Promise.all([
-      flushPendingPlaylistSync({ force: forcePlaylist }),
+      flushPendingPlaylistSync(),
       flushPendingSettingsSync()
     ]);
     let drive = null;
     if (playlist?.ready) {
-      drive = await pushLocalDriveSyncNow({ interactive: false });
+      drive = await pushLocalDriveSyncNow({
+        interactive: false,
+        expectedMutationVersion: playlist.mutationVersion
+      });
     }
     return { playlist, drive };
   })();
@@ -3452,8 +3516,8 @@ async function flushPendingAccountSync(options = {}) {
     flushPromise = null;
   }
 }
-function requestAccountSyncFlush(options = {}) {
-  flushPendingAccountSync(options).catch((err) => {
+function requestAccountSyncFlush() {
+  flushPendingAccountSync().catch((err) => {
     console.error("Account sync flush failed", err);
   });
 }
@@ -4891,8 +4955,7 @@ async function applyMutation(mutator, options = {}) {
   const {
     notify = true,
     dispatch = false,
-    ensureDefault = false,
-    sync = null
+    ensureDefault = false
   } = options;
   const result = await mutator();
   if (notify) {
@@ -4907,9 +4970,6 @@ async function applyMutation(mutator, options = {}) {
       console.error("Auto collection after mutation failed", err);
     });
   }
-  if (sync === "immediate") {
-    requestAccountSyncFlush({ forcePlaylist: true });
-  }
   return result;
 }
 async function mutateAndPresent(mutator, options = {}) {
@@ -4923,8 +4983,7 @@ async function addEntries(entries, listId = null, options = {}) {
   const { ensureDefault = true } = options;
   return mutateAndPresent(() => addVideos(entries, listId), {
     dispatch: true,
-    ensureDefault,
-    sync: "immediate"
+    ensureDefault
   });
 }
 async function handleAddByIds(message) {
@@ -4947,8 +5006,7 @@ async function handleAddByIds(message) {
   const missing = uniqueIds.filter((id) => !fetchedIds.has(id)).length;
   const afterState = await applyMutation(() => addVideos(entries, targetListId), {
     dispatch: true,
-    ensureDefault: Boolean(message?.ensureDefault),
-    sync: "immediate"
+    ensureDefault: Boolean(message?.ensureDefault)
   });
   const state = await getPresentationState();
   const added = countAddedEntriesInQueue(afterState, targetListId, beforeState);
@@ -4967,7 +5025,7 @@ async function handleRemoveVideos(videoIds, listId = null) {
   }
   return mutateAndPresent(
     () => removeVideos(filtered, { listId }),
-    { dispatch: true, ensureDefault: true, sync: "immediate" }
+    { dispatch: true, ensureDefault: true }
   );
 }
 async function handleMoveVideos(videoIds, targetListId) {
@@ -4980,7 +5038,7 @@ async function handleMoveVideos(videoIds, targetListId) {
   }
   return mutateAndPresent(
     () => moveVideosToList(ids, targetListId),
-    { dispatch: true, ensureDefault: true, sync: "immediate" }
+    { dispatch: true, ensureDefault: true }
   );
 }
 async function handleVideoMetadata(message) {
@@ -5642,7 +5700,6 @@ async function advanceToNext(options = {}) {
   await dispatchNotifications();
   const afterPresentation = await getPresentationState();
   if (!afterPresentation.currentVideoId || afterPresentation.currentVideoId === targetId) {
-    requestAccountSyncFlush({ forcePlaylist: true });
     return { handled: false, state: afterPresentation };
   }
   ensureDefaultQueueFilled().catch((err) => {
@@ -5652,7 +5709,6 @@ async function advanceToNext(options = {}) {
     tabId: options.tabId || before.currentTabId,
     ensureCurrent: false
   });
-  requestAccountSyncFlush({ forcePlaylist: true });
   const finalPresentation = await getPresentationState();
   return { handled: true, state: finalPresentation };
 }
@@ -5672,7 +5728,6 @@ async function playFromHistory(options = {}) {
   }
   await notifyState();
   await dispatchNotifications();
-  requestAccountSyncFlush({ forcePlaylist: true });
   const presentation = await getPresentationState();
   if (!presentation.currentVideoId) {
     return { handled: false, state: presentation };
@@ -5715,7 +5770,6 @@ async function postponeCurrent(options = {}) {
   ensureDefaultQueueFilled().catch((err) => {
     console.error("Auto collection after postponing failed", err);
   });
-  requestAccountSyncFlush({ forcePlaylist: true });
   const afterPresentation = await getPresentationState();
   const nextId = afterPresentation.currentVideoId;
   if (!nextId || nextId === previousCurrentId) {

@@ -12,6 +12,7 @@ import {
 import {
   buildSyncSnapshot,
   getPlaylistSyncStatus,
+  isPlaylistSyncMutationCurrent,
   recordPlaylistSyncError,
   recordPushedPlaylistSyncSnapshot,
 } from "./sync.js";
@@ -89,8 +90,17 @@ async function ensureDeviceId(meta = null) {
   return deviceId;
 }
 
-async function driveFetch(url, init = {}, { interactive = false } = {}) {
+async function driveFetch(
+  url,
+  init = {},
+  { interactive = false, shouldContinue = null } = {}
+) {
   const token = await getToken({ interactive });
+  if (typeof shouldContinue === "function" && !shouldContinue()) {
+    const err = new Error("Playlist sync superseded by newer local changes");
+    err.code = "SYNC_SUPERSEDED";
+    throw err;
+  }
   const headers = {
     ...(init.headers || {}),
     Authorization: `Bearer ${token}`,
@@ -153,7 +163,10 @@ function buildMultipartBody(metadata, payload) {
   return { boundary, body };
 }
 
-async function writeDrivePayload(payload, { interactive = true, existing = null } = {}) {
+async function writeDrivePayload(
+  payload,
+  { interactive = true, existing = null, shouldContinue = null } = {}
+) {
   const existingFile = existing || (await findDriveFile({ interactive }));
   const metadata = existingFile?.id
     ? { name: DRIVE_SYNC_FILE_NAME }
@@ -170,11 +183,14 @@ async function writeDrivePayload(payload, { interactive = true, existing = null 
     method: existingFile?.id ? "PATCH" : "POST",
     headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
     body,
-  }, { interactive });
+  }, { interactive, shouldContinue });
   return response.json();
 }
 
-export async function pushLocalDriveSyncNow({ interactive = true } = {}) {
+export async function pushLocalDriveSyncNow({
+  interactive = true,
+  expectedMutationVersion = null,
+} = {}) {
   const meta = await readLocalMeta();
   const deviceId = await ensureDeviceId(meta);
   try {
@@ -200,9 +216,18 @@ export async function pushLocalDriveSyncNow({ interactive = true } = {}) {
     const file = await writeDrivePayload(payload, {
       interactive,
       existing: remote.file,
+      shouldContinue:
+        expectedMutationVersion === null
+          ? null
+          : () => isPlaylistSyncMutationCurrent(expectedMutationVersion),
     });
     const now = Date.now();
-    await recordPushedPlaylistSyncSnapshot(playlist);
+    const superseded =
+      expectedMutationVersion !== null &&
+      !isPlaylistSyncMutationCurrent(expectedMutationVersion);
+    if (!superseded) {
+      await recordPushedPlaylistSyncSnapshot(playlist);
+    }
     await writeLocalMeta({
       ...meta,
       deviceId,
@@ -215,8 +240,15 @@ export async function pushLocalDriveSyncNow({ interactive = true } = {}) {
       lastReadAt: now,
       lastError: null,
     });
-    return { pushed: true, updatedAt: payload.updatedAt };
+    return {
+      pushed: true,
+      updatedAt: payload.updatedAt,
+      superseded,
+    };
   } catch (err) {
+    if (err?.code === "SYNC_SUPERSEDED") {
+      return { pushed: false, skipped: true, reason: "newer-local-changes" };
+    }
     await recordPlaylistSyncError(err);
     await writeLocalMeta({ ...meta, deviceId, lastError: err.message });
     return { pushed: false, reason: err.message };

@@ -132,29 +132,27 @@ export function splitStateForStorage(state) {
         : null,
       revision: Number.isInteger(list.revision) ? list.revision : 0,
     };
-    listContents[id] = {
-      queue: deepClone(list.queue),
-    };
+    listContents[id] = { queue: list.queue };
   });
 
-  const meta = deepClone({
+  const meta = {
     lists: listsMeta,
     listOrder: state.listOrder,
-  });
+  };
 
-  const runtime = deepClone({
+  const runtime = {
     currentListId: state.currentListId,
     currentVideoId: state.currentVideoId,
     history: state.history,
     queueRemovals: state.queueRemovals,
     deletedLists: state.deletedLists,
     currentTabId: state.currentTabId,
-  });
+  };
 
-  const autoCollect = deepClone(state.autoCollect);
+  const autoCollect = state.autoCollect;
 
   const deletedHistory = Array.isArray(state.deletedHistory)
-    ? deepClone(state.deletedHistory)
+    ? state.deletedHistory
     : [];
 
   const videoProgress = sanitizeVideoProgressMap(state.videoProgress);

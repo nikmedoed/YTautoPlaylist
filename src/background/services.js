@@ -11,7 +11,6 @@ import {
 } from "../store/index.js";
 import { parseVideoId } from "../utils.js";
 import { formatStorageTimestamp } from "../time.js";
-import { requestAccountSyncFlush } from "./accountSync.js";
 import { notifyState } from "./channel.js";
 import { dispatchNotifications, ensureDefaultQueueFilled } from "./collectionSync.js";
 import { fetchVideoEntries } from "./collector.js";
@@ -75,7 +74,6 @@ export async function applyMutation(mutator, options = {}) {
     notify = true,
     dispatch = false,
     ensureDefault = false,
-    sync = null,
   } = options;
   const result = await mutator();
   if (notify) {
@@ -90,9 +88,6 @@ export async function applyMutation(mutator, options = {}) {
     ensureDefaultQueueFilled().catch((err) => {
       console.error("Auto collection after mutation failed", err);
     });
-  }
-  if (sync === "immediate") {
-    requestAccountSyncFlush({ forcePlaylist: true });
   }
   return result;
 }
@@ -112,7 +107,6 @@ export async function addEntries(entries, listId = null, options = {}) {
   return mutateAndPresent(() => addVideos(entries, listId), {
     dispatch: true,
     ensureDefault,
-    sync: "immediate",
   });
 }
 
@@ -140,7 +134,6 @@ export async function handleAddByIds(message) {
   const afterState = await applyMutation(() => addVideos(entries, targetListId), {
     dispatch: true,
     ensureDefault: Boolean(message?.ensureDefault),
-    sync: "immediate",
   });
   const state = await getPresentationState();
   const added = countAddedEntriesInQueue(afterState, targetListId, beforeState);
@@ -160,7 +153,7 @@ export async function handleRemoveVideos(videoIds, listId = null) {
   }
   return mutateAndPresent(
     () => removeVideos(filtered, { listId }),
-    { dispatch: true, ensureDefault: true, sync: "immediate" }
+    { dispatch: true, ensureDefault: true }
   );
 }
 
@@ -174,7 +167,7 @@ export async function handleMoveVideos(videoIds, targetListId) {
   }
   return mutateAndPresent(
     () => moveVideosToList(ids, targetListId),
-    { dispatch: true, ensureDefault: true, sync: "immediate" }
+    { dispatch: true, ensureDefault: true }
   );
 }
 

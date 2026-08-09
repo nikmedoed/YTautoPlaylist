@@ -67,6 +67,9 @@ export function createQueueController({
     if (!videoId) return;
     const playlistState = getPlaylistState();
     const listId = item.dataset.listId || playlistState?.currentQueue?.id;
+    const parent = item.parentNode;
+    const nextSibling = item.nextSibling;
+    item.remove();
     try {
       const state = await sendMessage("playlist:remove", { videoId, listId });
       if (state) {
@@ -75,6 +78,9 @@ export function createQueueController({
       }
     } catch (err) {
       console.error(err);
+      if (parent && !item.isConnected) {
+        parent.insertBefore(item, nextSibling?.parentNode === parent ? nextSibling : null);
+      }
       setStatus("Не удалось удалить видео", "error", 3000);
     }
   }
@@ -90,6 +96,9 @@ export function createQueueController({
       Boolean(listId) &&
       listId === playlistState?.currentQueue?.id &&
       playlistState?.currentVideoId === videoId;
+    const parent = item.parentNode;
+    const nextSibling = item.nextSibling;
+    parent?.appendChild(item);
     setStatus("Откладываю видео...", "info");
     try {
       if (isCurrent) {
@@ -117,6 +126,9 @@ export function createQueueController({
       setStatus("Видео отложено", "success", 2200);
     } catch (err) {
       console.error(err);
+      if (parent) {
+        parent.insertBefore(item, nextSibling?.parentNode === parent ? nextSibling : null);
+      }
       setStatus("Не удалось отложить", "error", 3000);
     }
   }

@@ -1283,6 +1283,9 @@ function createQueueController({
     if (!videoId) return;
     const playlistState2 = getPlaylistState();
     const listId = item.dataset.listId || playlistState2?.currentQueue?.id;
+    const parent = item.parentNode;
+    const nextSibling = item.nextSibling;
+    item.remove();
     try {
       const state = await sendMessage2("playlist:remove", { videoId, listId });
       if (state) {
@@ -1291,6 +1294,9 @@ function createQueueController({
       }
     } catch (err) {
       console.error(err);
+      if (parent && !item.isConnected) {
+        parent.insertBefore(item, nextSibling?.parentNode === parent ? nextSibling : null);
+      }
       setStatus2("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u0432\u0438\u0434\u0435\u043E", "error", 3e3);
     }
   }
@@ -1302,6 +1308,9 @@ function createQueueController({
     const playlistState2 = getPlaylistState();
     const listId = item.dataset.listId || playlistState2?.currentQueue?.id || null;
     const isCurrent = Boolean(listId) && listId === playlistState2?.currentQueue?.id && playlistState2?.currentVideoId === videoId;
+    const parent = item.parentNode;
+    const nextSibling = item.nextSibling;
+    parent?.appendChild(item);
     setStatus2("\u041E\u0442\u043A\u043B\u0430\u0434\u044B\u0432\u0430\u044E \u0432\u0438\u0434\u0435\u043E...", "info");
     try {
       if (isCurrent) {
@@ -1327,6 +1336,9 @@ function createQueueController({
       setStatus2("\u0412\u0438\u0434\u0435\u043E \u043E\u0442\u043B\u043E\u0436\u0435\u043D\u043E", "success", 2200);
     } catch (err) {
       console.error(err);
+      if (parent) {
+        parent.insertBefore(item, nextSibling?.parentNode === parent ? nextSibling : null);
+      }
       setStatus2("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043B\u043E\u0436\u0438\u0442\u044C", "error", 3e3);
     }
   }

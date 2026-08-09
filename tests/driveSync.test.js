@@ -4,8 +4,10 @@ import {
   addVideos,
   buildSyncSnapshot,
   DRIVE_SYNC_LOCAL_META_STORAGE_KEY,
+  getPlaylistSyncStatus,
   getState,
   importDriveSync,
+  notePlaylistSyncMutation,
   pushLocalDriveSyncNow,
   replaceState,
   restoreDrivePlaylistBackup,
@@ -63,12 +65,13 @@ function parseMultipartDrivePayload(body) {
   return JSON.parse(parts[2].replace(/^\s+/, '').split('\r\n--')[0]);
 }
 
-function installDriveFetchMock() {
+function installDriveFetchMock({ onUpload = null } = {}) {
   const originalFetch = globalThis.fetch;
   let payload = null;
   globalThis.fetch = async (url, init = {}) => {
     const href = String(url);
     if (href.includes('/upload/drive/v3/files')) {
+      onUpload?.();
       payload = parseMultipartDrivePayload(init.body);
       return jsonResponse({ id: 'drive-file', modifiedTime: '2026-06-18T00:00:01Z' });
     }
@@ -95,6 +98,44 @@ function installDriveFetchMock() {
       globalThis.fetch = originalFetch;
     },
   };
+}
+
+{
+  const chromeMock = installChromeStorageMock();
+  let mutateDuringUpload = false;
+  const driveMock = installDriveFetchMock({
+    onUpload: () => {
+      if (mutateDuringUpload) notePlaylistSyncMutation();
+    },
+  });
+  try {
+    await replaceState({
+      lists: {
+        default: {
+          id: 'default',
+          name: 'Основной',
+          freeze: false,
+          queue: [{ id: 'raceGuard01', addedAt: 1 }],
+          currentIndex: 0,
+          revision: 1,
+        },
+      },
+      listOrder: ['default'],
+    });
+    const activity = notePlaylistSyncMutation();
+    mutateDuringUpload = true;
+    const pushed = await pushLocalDriveSyncNow({
+      interactive: false,
+      expectedMutationVersion: activity.mutationVersion,
+    });
+    assert.strictEqual(pushed.pushed, true);
+    assert.strictEqual(pushed.superseded, true);
+    assert.strictEqual((await getPlaylistSyncStatus()).pending, true);
+    console.log('Drive upload completion cannot clear newer pending changes');
+  } finally {
+    driveMock.restore();
+    chromeMock.restore();
+  }
 }
 
 {

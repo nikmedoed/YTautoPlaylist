@@ -85,6 +85,37 @@ function installChromeStorageMock() {
 
 {
   const chromeMock = installChromeStorageMock();
+  const originalNow = Date.now;
+  try {
+    let now = 1_000_000;
+    Date.now = () => now;
+    await addVideos([{ id: 'debounce001', addedAt: 1 }], 'default');
+    const firstFlushAt = chromeMock.stores.local[SYNC_LOCAL_META_STORAGE_KEY].flushAfter;
+
+    now += 5_000;
+    await addVideos([{ id: 'debounce002', addedAt: 2 }], 'default');
+    assert.strictEqual(
+      chromeMock.stores.local[SYNC_LOCAL_META_STORAGE_KEY].localHash,
+      undefined
+    );
+    let secondFlushAt = chromeMock.stores.local[SYNC_LOCAL_META_STORAGE_KEY].flushAfter;
+    for (let attempt = 0; attempt < 20 && secondFlushAt !== 1_020_000; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      secondFlushAt = chromeMock.stores.local[SYNC_LOCAL_META_STORAGE_KEY].flushAfter;
+    }
+
+    assert.strictEqual(firstFlushAt, 1_015_000);
+    assert.strictEqual(secondFlushAt, 1_020_000);
+    assert.strictEqual(chromeMock.alarms.at(-1).info.when, secondFlushAt);
+    console.log('playlist sync debounce restarts without fingerprinting active edits');
+  } finally {
+    Date.now = originalNow;
+    chromeMock.restore();
+  }
+}
+
+{
+  const chromeMock = installChromeStorageMock();
   try {
     await addVideos([{ id: 'retryPush01', addedAt: 1 }], 'default');
     const ready = await pushLocalPlaylistSyncNow();

@@ -17,6 +17,20 @@ import {
   normalizeSyncTimestamp,
 } from "./syncSnapshot.js";
 
+let playlistMutationVersion = 0;
+let latestPlaylistMutationAt = 0;
+
+export function notePlaylistSyncMutation(changedAt = Date.now()) {
+  const normalizedAt = normalizeSyncTimestamp(changedAt) || Date.now();
+  playlistMutationVersion += 1;
+  latestPlaylistMutationAt = Math.max(latestPlaylistMutationAt, normalizedAt);
+  return { changedAt: normalizedAt, mutationVersion: playlistMutationVersion };
+}
+
+export function isPlaylistSyncMutationCurrent(mutationVersion) {
+  return mutationVersion === playlistMutationVersion;
+}
+
 export {
   buildSyncSnapshot,
   buildSyncState,
@@ -196,25 +210,17 @@ export async function getPlaylistSyncStatus() {
   };
 }
 
-export async function schedulePlaylistSync(stateInput, { immediate = false } = {}) {
+export async function schedulePlaylistSync(
+  stateInput,
+  { immediate = false, changedAt = Date.now() } = {}
+) {
   if (!hasChromeLocalStorage()) return;
   const localMeta = await readLocalSyncMeta();
-  const localHash = getSyncStateFingerprint(stateInput);
-  if (localHash === localMeta.localHash && !immediate) {
-    if (localMeta.pending) {
-      const flushAfter =
-        normalizeSyncTimestamp(localMeta.flushAfter) ||
-        Date.now() + SYNC_DEBOUNCE_MS;
-      await scheduleSyncAlarm(flushAfter);
-    }
-    return;
-  }
-  const now = Date.now();
+  const now = normalizeSyncTimestamp(changedAt) || Date.now();
   const dueAt = immediate ? now : now + SYNC_DEBOUNCE_MS;
   await writeLocalSyncMeta({
     ...localMeta,
     localUpdatedAt: now,
-    localHash,
     pending: true,
     pendingSince: localMeta.pendingSince || now,
     flushAfter: dueAt,
@@ -234,12 +240,42 @@ export async function writePendingPlaylistSync(stateInput = null, options = {}) 
   }
   const now = Date.now();
   const flushAfter = normalizeSyncTimestamp(localMeta.flushAfter);
+  const activeMutationDueAt = latestPlaylistMutationAt
+    ? latestPlaylistMutationAt + SYNC_DEBOUNCE_MS
+    : 0;
+  if (!force && activeMutationDueAt > now) {
+    await writeLocalSyncMeta({
+      ...localMeta,
+      localUpdatedAt: Math.max(
+        normalizeSyncTimestamp(localMeta.localUpdatedAt),
+        latestPlaylistMutationAt
+      ),
+      pending: true,
+      pendingSince: localMeta.pendingSince || latestPlaylistMutationAt,
+      flushAfter: activeMutationDueAt,
+      lastError: null,
+    });
+    await scheduleSyncAlarm(activeMutationDueAt);
+    return { wrote: false, reason: "debounced" };
+  }
   if (!force && flushAfter && flushAfter > now) {
     await scheduleSyncAlarm(flushAfter);
     return { wrote: false, reason: "debounced" };
   }
+  const localHash = getSyncStateFingerprint(stateInput);
+  if (!force && localHash === localMeta.localHash) {
+    await writeLocalSyncMeta({
+      ...localMeta,
+      pending: false,
+      pendingSince: null,
+      flushAfter: null,
+      lastError: null,
+    });
+    return { wrote: false, reason: "unchanged" };
+  }
   await writeLocalSyncMeta({
     ...localMeta,
+    localHash,
     pending: true,
     pendingSince: localMeta.pendingSince || now,
     flushAfter: null,
@@ -249,5 +285,6 @@ export async function writePendingPlaylistSync(stateInput = null, options = {}) 
     wrote: false,
     ready: true,
     reason: "drive-pending",
+    mutationVersion: playlistMutationVersion,
   };
 }

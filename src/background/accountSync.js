@@ -1,6 +1,5 @@
 // Background account sync flushing. Converts pending local playlist/settings
-// markers into Drive/storage writes and provides a forced playlist flush for
-// watch/removal mutations that must reach the cloud promptly.
+// markers into Drive/storage writes after their debounce window expires.
 import {
   flushPendingPlaylistSync,
   flushPendingSettingsSync,
@@ -14,19 +13,21 @@ let flushPromise = null;
 let remoteRefreshPromise = null;
 let lastRemoteRefreshAt = 0;
 
-export async function flushPendingAccountSync(options = {}) {
+export async function flushPendingAccountSync() {
   if (flushPromise) {
     return flushPromise;
   }
-  const forcePlaylist = Boolean(options.forcePlaylist);
   flushPromise = (async () => {
     const [playlist] = await Promise.all([
-      flushPendingPlaylistSync({ force: forcePlaylist }),
+      flushPendingPlaylistSync(),
       flushPendingSettingsSync(),
     ]);
     let drive = null;
     if (playlist?.ready) {
-      drive = await pushLocalDriveSyncNow({ interactive: false });
+      drive = await pushLocalDriveSyncNow({
+        interactive: false,
+        expectedMutationVersion: playlist.mutationVersion,
+      });
     }
     return { playlist, drive };
   })();
@@ -37,8 +38,8 @@ export async function flushPendingAccountSync(options = {}) {
   }
 }
 
-export function requestAccountSyncFlush(options = {}) {
-  flushPendingAccountSync(options).catch((err) => {
+export function requestAccountSyncFlush() {
+  flushPendingAccountSync().catch((err) => {
     console.error("Account sync flush failed", err);
   });
 }

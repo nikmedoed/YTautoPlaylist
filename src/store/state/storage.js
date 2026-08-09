@@ -19,6 +19,7 @@ import {
   hasSyncableUserData,
   mergeRemoteSyncState,
   mergeSyncStatesConservatively,
+  notePlaylistSyncMutation,
   recordImportedPlaylistSyncSnapshot,
   resolveRemotePlaylistSyncState,
   schedulePlaylistSync,
@@ -30,6 +31,7 @@ import { resolvePlaylistImportDecision } from "./syncImportDecision.js";
 import { deepClone } from "../../utils.js";
 
 let memoryState = null;
+let memoryStorageArea = null;
 let stateWriteQueue = Promise.resolve();
 let checkedRemotePlaylistSync = false;
 
@@ -50,6 +52,9 @@ async function loadLocalRawState() {
   if (!hasChromeStorage()) {
     const source = memoryState ?? defaultState;
     return deepClone(source);
+  }
+  if (memoryState && memoryStorageArea === chrome.storage.local) {
+    return deepClone(memoryState);
   }
 
   const stored = await chrome.storage.local.get([
@@ -216,7 +221,10 @@ async function loadRawState({ checkRemoteSync = true } = {}) {
   return resolved.state;
 }
 
-async function persistState(state, { scheduleSync = true } = {}) {
+async function persistState(
+  state,
+  { scheduleSync = true, forceListWrite = false } = {}
+) {
   if (!hasChromeStorage()) {
     memoryState = deepClone(state);
     return state;
@@ -237,16 +245,29 @@ async function persistState(state, { scheduleSync = true } = {}) {
     [VIDEO_PROGRESS_STORAGE_KEY]: videoProgress,
   };
 
+  let previousLists = null;
+  if (memoryState && memoryStorageArea === chrome.storage.local) {
+    previousLists = memoryState.lists;
+  } else {
+    const existingMeta = await chrome.storage.local.get(META_STORAGE_KEY);
+    previousLists =
+      existingMeta?.[META_STORAGE_KEY]?.lists &&
+      typeof existingMeta[META_STORAGE_KEY].lists === "object"
+        ? existingMeta[META_STORAGE_KEY].lists
+        : {};
+  }
   Object.entries(listContents).forEach(([id, content]) => {
-    payload[getListStorageKey(id)] = content;
+    const previous = previousLists[id];
+    const next = state.lists[id];
+    const contentChanged =
+      forceListWrite ||
+      !scheduleSync ||
+      !previous ||
+      Number(previous.revision) !== Number(next?.revision);
+    if (contentChanged) {
+      payload[getListStorageKey(id)] = content;
+    }
   });
-
-  const existingMeta = await chrome.storage.local.get(META_STORAGE_KEY);
-  const previousLists =
-    existingMeta?.[META_STORAGE_KEY]?.lists &&
-    typeof existingMeta[META_STORAGE_KEY].lists === "object"
-      ? existingMeta[META_STORAGE_KEY].lists
-      : {};
   const nextListIds = Object.keys(listContents);
   const toRemove = Object.keys(previousLists)
     .filter((id) => !nextListIds.includes(id))
@@ -257,12 +278,12 @@ async function persistState(state, { scheduleSync = true } = {}) {
   }
 
   await chrome.storage.local.set(payload);
-  if (LEGACY_AUTO_COLLECT_STORAGE_KEY !== AUTO_COLLECT_STORAGE_KEY) {
-    await chrome.storage.local.remove(LEGACY_AUTO_COLLECT_STORAGE_KEY);
-  }
   if (scheduleSync) {
-    await schedulePlaylistSync(state);
+    const activity = notePlaylistSyncMutation();
+    await schedulePlaylistSync(state, { changedAt: activity.changedAt });
   }
+  memoryState = deepClone(state);
+  memoryStorageArea = chrome.storage.local;
   return state;
 }
 
@@ -274,7 +295,7 @@ export async function getState() {
 export async function replaceState(newState) {
   return enqueueStateWrite(async () => {
     const sanitized = sanitizeState(newState);
-    await persistState(sanitized);
+    await persistState(sanitized, { forceListWrite: true });
     return sanitized;
   });
 }
@@ -320,7 +341,7 @@ export async function pushLocalPlaylistSyncNow() {
   return enqueueStateWrite(async () => {
     const localRaw = await loadRawState({ checkRemoteSync: false });
     await schedulePlaylistSync(localRaw, { immediate: true });
-    const result = await writePendingPlaylistSync(localRaw);
+    const result = await writePendingPlaylistSync(localRaw, { force: true });
     return {
       ...result,
       pushed: Boolean(result?.ready),
