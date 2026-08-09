@@ -362,7 +362,7 @@
   installRuntimeInvalidationGuard();
   function determinePageContext() {
     const pathname = window.location.pathname || "";
-    if (pathname.startsWith("/watch") || pathname.startsWith("/shorts/")) {
+    if (pathname.startsWith("/watch") || pathname.startsWith("/shorts/") || pathname.startsWith("/live/")) {
       return "watch";
     }
     if (pathname.startsWith("/results")) {
@@ -1453,7 +1453,7 @@
     font-size: 16px;
     line-height: 1;
   }
-  .yta-player-controls[data-hidden="1"] {
+  .html5-video-player.ytp-autohide:not(:hover) .yta-player-controls[data-autohide="1"] {
     opacity: 0;
     pointer-events: none;
   }
@@ -2777,8 +2777,8 @@
   }
   function syncPlayerControlsVisibility(host) {
     if (!playerControls.container) return;
-    const hide = host?.classList?.contains("ytp-autohide");
-    playerControls.container.dataset.hidden = hide ? "1" : "0";
+    const autohide = host?.classList?.contains("ytp-autohide");
+    playerControls.container.dataset.autohide = autohide ? "1" : "0";
   }
   function observePlayerHost(host) {
     if (!host || playerControls.host === host) {
@@ -2798,7 +2798,13 @@
     syncPlayerControlsVisibility(host);
   }
   function resolvePlayerHost() {
-    return document.querySelector("#movie_player.html5-video-player") || document.querySelector(".html5-video-player");
+    const video = stateVideoElement();
+    return document.querySelector("#movie_player.html5-video-player") || document.querySelector(".html5-video-player") || video?.closest?.(
+      "#movie_player, .html5-video-player, ytd-player, #player-container-inner, #player-container"
+    ) || document.querySelector("ytd-player") || document.querySelector("#player-container-inner") || document.querySelector("#player-container");
+  }
+  function stateVideoElement() {
+    return document.querySelector("video.html5-main-video") || document.querySelector("video");
   }
   function bindAddCurrentButton(addCurrentBtn, context) {
     addCurrentBtn.addEventListener("click", (event) => {
@@ -2913,7 +2919,7 @@
       destroyPlayerControls();
       return;
     }
-    if (!playerControls.container) {
+    if (!playerControls.container || !playerControls.container.isConnected) {
       createPlayerControls(host, context);
     }
     observePlayerHost(host);
@@ -3689,6 +3695,9 @@
   function markPlaybackStarted() {
     playbackWatchdog.playStarted = true;
   }
+  function hasPlaybackStarted() {
+    return playbackWatchdog.playStarted;
+  }
   function stopPlaybackWatchdog() {
     if (playbackWatchdog.timerId !== null) {
       window.clearInterval(playbackWatchdog.timerId);
@@ -3717,7 +3726,7 @@
       if (!playbackWatchdog.pendingSince) {
         playbackWatchdog.pendingSince = now;
       }
-      const video = state.videoElement || document.querySelector("video");
+      const video = state.videoElement || document.querySelector("video.html5-main-video") || document.querySelector("#movie_player video") || document.querySelector("video");
       if (!video) {
         if (now - playbackWatchdog.pendingSince > PLAYBACK_START_TIMEOUT_MS) {
           context.handleVideoUnavailable?.({ reason: "\u041F\u043B\u0435\u0435\u0440 \u043D\u0435 \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u043B\u0441\u044F" });
@@ -3741,7 +3750,7 @@
         return;
       }
       if (!playbackWatchdog.playStarted) {
-        const active = !video.paused || video.currentTime > 0;
+        const active = !video.paused && !video.ended;
         if (active) {
           markPlaybackStarted();
           return;
@@ -3806,6 +3815,10 @@
       resetVideoEndState(videoId);
     }
     if (videoEndState.handled) {
+      return;
+    }
+    if (!hasPlaybackStarted()) {
+      videoEndFallbackState.matchedAt = 0;
       return;
     }
     if (video.seeking) {
@@ -3913,7 +3926,7 @@
     if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(current)) {
       return;
     }
-    if (current > 0) {
+    if (!video.paused && !video.ended) {
       markPlaybackStarted();
     }
     const ratio = duration > 0 ? current / duration * 100 : 0;
@@ -4101,6 +4114,7 @@
   function handleVideoEnded() {
     const videoId = getCurrentVideoId();
     if (!videoId) return;
+    if (!hasPlaybackStarted()) return;
     if (!beginVideoEndHandling(videoId)) {
       return;
     }
@@ -4153,7 +4167,7 @@
   }
   function scanForVideo() {
     ensurePlayerErrorMonitoring(playerErrorContext);
-    const video = document.querySelector("video");
+    const video = document.querySelector("video.html5-main-video") || document.querySelector("#movie_player video") || document.querySelector("video");
     if (video) {
       attachVideoListeners(video);
       ensurePlayerControls2();

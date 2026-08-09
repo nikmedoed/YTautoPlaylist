@@ -26,8 +26,11 @@ function destroyPlayerControls() {
 
 function syncPlayerControlsVisibility(host) {
   if (!playerControls.container) return;
-  const hide = host?.classList?.contains("ytp-autohide");
-  playerControls.container.dataset.hidden = hide ? "1" : "0";
+  // YouTube's current player can keep `ytp-autohide` while revealing its
+  // controls on hover. CSS handles that transient hover state; this marker is
+  // only a stable reflection of the player's autohide mode.
+  const autohide = host?.classList?.contains("ytp-autohide");
+  playerControls.container.dataset.autohide = autohide ? "1" : "0";
 }
 
 function observePlayerHost(host) {
@@ -49,10 +52,21 @@ function observePlayerHost(host) {
 }
 
 function resolvePlayerHost() {
+  const video = stateVideoElement();
   return (
     document.querySelector("#movie_player.html5-video-player") ||
-    document.querySelector(".html5-video-player")
+    document.querySelector(".html5-video-player") ||
+    video?.closest?.(
+      "#movie_player, .html5-video-player, ytd-player, #player-container-inner, #player-container"
+    ) ||
+    document.querySelector("ytd-player") ||
+    document.querySelector("#player-container-inner") ||
+    document.querySelector("#player-container")
   );
+}
+
+function stateVideoElement() {
+  return document.querySelector("video.html5-main-video") || document.querySelector("video");
 }
 
 function bindAddCurrentButton(addCurrentBtn, context) {
@@ -180,7 +194,7 @@ export function ensurePlayerControls(context = {}) {
     destroyPlayerControls();
     return;
   }
-  if (!playerControls.container) {
+  if (!playerControls.container || !playerControls.container.isConnected) {
     createPlayerControls(host, context);
   }
   observePlayerHost(host);

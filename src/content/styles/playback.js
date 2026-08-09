@@ -155,7 +155,7 @@ export function getPlaybackStyles() {
     font-size: 16px;
     line-height: 1;
   }
-  .yta-player-controls[data-hidden="1"] {
+  .html5-video-player.ytp-autohide:not(:hover) .yta-player-controls[data-autohide="1"] {
     opacity: 0;
     pointer-events: none;
   }

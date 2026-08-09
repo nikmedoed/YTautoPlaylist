@@ -130,7 +130,11 @@ installRuntimeInvalidationGuard();
 
 export function determinePageContext() {
   const pathname = window.location.pathname || "";
-  if (pathname.startsWith("/watch") || pathname.startsWith("/shorts/")) {
+  if (
+    pathname.startsWith("/watch") ||
+    pathname.startsWith("/shorts/") ||
+    pathname.startsWith("/live/")
+  ) {
     return "watch";
   }
   if (pathname.startsWith("/results")) {

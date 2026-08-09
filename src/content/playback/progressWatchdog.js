@@ -63,6 +63,10 @@ export function markPlaybackStarted() {
   playbackWatchdog.playStarted = true;
 }
 
+export function hasPlaybackStarted() {
+  return playbackWatchdog.playStarted;
+}
+
 export function stopPlaybackWatchdog() {
   if (playbackWatchdog.timerId !== null) {
     window.clearInterval(playbackWatchdog.timerId);
@@ -92,7 +96,11 @@ function playbackWatchdogTick(context = {}) {
     if (!playbackWatchdog.pendingSince) {
       playbackWatchdog.pendingSince = now;
     }
-    const video = state.videoElement || document.querySelector("video");
+    const video =
+      state.videoElement ||
+      document.querySelector("video.html5-main-video") ||
+      document.querySelector("#movie_player video") ||
+      document.querySelector("video");
     if (!video) {
       if (now - playbackWatchdog.pendingSince > PLAYBACK_START_TIMEOUT_MS) {
         context.handleVideoUnavailable?.({ reason: "Плеер не загрузился" });
@@ -121,7 +129,7 @@ function playbackWatchdogTick(context = {}) {
       return;
     }
     if (!playbackWatchdog.playStarted) {
-      const active = !video.paused || video.currentTime > 0;
+      const active = !video.paused && !video.ended;
       if (active) {
         markPlaybackStarted();
         return;
@@ -194,6 +202,13 @@ function maybeTriggerVideoEndFallback(percent = null, context = {}, options = {}
     resetVideoEndState(videoId);
   }
   if (videoEndState.handled) {
+    return;
+  }
+  // A restored browser tab can expose the previous media position with
+  // `ended=true` before this content-script instance has observed playback.
+  // Never turn that stale restored state into a queue advance.
+  if (!hasPlaybackStarted()) {
+    videoEndFallbackState.matchedAt = 0;
     return;
   }
   if (video.seeking) {
@@ -314,7 +329,7 @@ export function handleVideoProgressUpdate(context = {}, options = {}) {
   if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(current)) {
     return;
   }
-  if (current > 0) {
+  if (!video.paused && !video.ended) {
     markPlaybackStarted();
   }
   const ratio = duration > 0 ? (current / duration) * 100 : 0;

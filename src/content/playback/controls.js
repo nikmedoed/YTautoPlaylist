@@ -36,6 +36,7 @@ import {
   ensurePlaybackWatchdog as ensurePlaybackWatchdogBase,
   beginVideoEndHandling,
   handleVideoProgressUpdate as handleVideoProgressUpdateBase,
+  hasPlaybackStarted,
   markPlaybackStarted,
   maybeFinalizeVideoEndedBeforeNavigation as maybeFinalizeVideoEndedBeforeNavigationBase,
   maybeSendVideoProgress,
@@ -242,6 +243,7 @@ function handleVideoPaused() {
 function handleVideoEnded() {
   const videoId = getCurrentVideoId();
   if (!videoId) return;
+  if (!hasPlaybackStarted()) return;
   if (!beginVideoEndHandling(videoId)) {
     return;
   }
@@ -297,7 +299,10 @@ function attachVideoListeners(video) {
 
 export function scanForVideo() {
   ensurePlayerErrorMonitoringBase(playerErrorContext);
-  const video = document.querySelector("video");
+  const video =
+    document.querySelector("video.html5-main-video") ||
+    document.querySelector("#movie_player video") ||
+    document.querySelector("video");
   if (video) {
     attachVideoListeners(video);
     ensurePlayerControls();
