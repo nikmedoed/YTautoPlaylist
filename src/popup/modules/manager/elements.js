@@ -6,6 +6,7 @@ const MANAGER_ELEMENT_IDS = [
   "selectAllBtn",
   "removeWatchedBtn",
   "clearSelectionBtn",
+  "bulkPostponeBtn",
   "bulkMoveBtn",
   "bulkDeleteBtn",
   "clearListBtn",

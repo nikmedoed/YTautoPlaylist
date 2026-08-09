@@ -2948,36 +2948,48 @@ async function markVideoWatched(videoId, { listId = null } = {}) {
     return state;
   });
 }
+function postponeVideoInState(state, videoId, listId = null) {
+  const located = findVideo(state, videoId, { preferListId: listId });
+  if (!located) {
+    return state;
+  }
+  const { list, index } = located;
+  if (index < 0 || list.queue.length <= 1 || list.freeze) {
+    return state;
+  }
+  const [entry] = list.queue.splice(index, 1);
+  if (!entry) {
+    return state;
+  }
+  const wasCurrentVideo = list.currentIndex === index && state.currentListId === list.id && state.currentVideoId === videoId;
+  adjustIndexAfterRemoval(list, index);
+  list.queue.push(entry);
+  if (list.id === DEFAULT_LIST_ID) {
+    rememberAutoCollectSeenIds(state, [entry.id]);
+  }
+  bumpListRevision(list);
+  if (list.currentIndex === null && list.queue.length) {
+    list.currentIndex = 0;
+  }
+  if (wasCurrentVideo) {
+    const nextEntry = list.currentIndex !== null ? list.queue[list.currentIndex] : null;
+    state.currentVideoId = nextEntry ? nextEntry.id : null;
+    state.currentListId = nextEntry ? list.id : state.currentListId;
+  }
+  return state;
+}
 async function postponeVideo(videoId, { listId = null } = {}) {
   if (!videoId) return getState();
+  return withState((state) => postponeVideoInState(state, videoId, listId));
+}
+async function postponeVideos(videoIds, { listId = null } = {}) {
+  if (!Array.isArray(videoIds) || !videoIds.length) return getState();
   return withState((state) => {
-    const located = findVideo(state, videoId, { preferListId: listId });
-    if (!located) {
-      return state;
-    }
-    const { list, index } = located;
-    if (index < 0 || list.queue.length <= 1 || list.freeze) {
-      return state;
-    }
-    const [entry] = list.queue.splice(index, 1);
-    if (!entry) {
-      return state;
-    }
-    const wasCurrentVideo = list.currentIndex === index && state.currentListId === list.id && state.currentVideoId === videoId;
-    adjustIndexAfterRemoval(list, index);
-    list.queue.push(entry);
-    if (list.id === DEFAULT_LIST_ID) {
-      rememberAutoCollectSeenIds(state, [entry.id]);
-    }
-    bumpListRevision(list);
-    if (list.currentIndex === null && list.queue.length) {
-      list.currentIndex = 0;
-    }
-    if (wasCurrentVideo) {
-      const nextEntry = list.currentIndex !== null ? list.queue[list.currentIndex] : null;
-      state.currentVideoId = nextEntry ? nextEntry.id : null;
-      state.currentListId = nextEntry ? list.id : state.currentListId;
-    }
+    const list = resolveList(state, listId);
+    if (list.freeze || list.queue.length <= 1) return state;
+    const selectedIds = new Set(videoIds.filter(Boolean));
+    const orderedIds = list.queue.map((entry) => entry?.id).filter((id) => id && selectedIds.has(id));
+    orderedIds.forEach((videoId) => postponeVideoInState(state, videoId, list.id));
     return state;
   });
 }
@@ -6051,6 +6063,16 @@ var queueHandlers = {
     }
     return mutateAndPresent(
       () => postponeVideo(videoId, { listId: message.listId || null }),
+      { notify: true, sync: "immediate" }
+    );
+  },
+  async "playlist:postponeVideos"(message) {
+    const videoIds = Array.isArray(message?.videoIds) ? message.videoIds.map(parseVideoId).filter(Boolean) : [];
+    if (!videoIds.length) {
+      return getPresentationState();
+    }
+    return mutateAndPresent(
+      () => postponeVideos(videoIds, { listId: message.listId || null }),
       { notify: true, sync: "immediate" }
     );
   },

@@ -6,6 +6,7 @@ import {
   getState,
   markVideoWatched,
   moveVideosToList,
+  postponeVideos,
   removeVideos,
   recordDefaultAutoCollect,
   replaceState,
@@ -30,6 +31,38 @@ import { __setCallApi } from '../src/youtube-api/transport.js';
     ['queueVid001', 'queueVid002']
   );
   console.log('default-list additions are remembered for future auto-collect dedupe');
+}
+
+{
+  await replaceState({
+    lists: {
+      default: {
+        id: 'default',
+        name: 'Основной',
+        freeze: false,
+        queue: [
+          { id: 'postpone01', title: 'First' },
+          { id: 'keepVideo01', title: 'Keep' },
+          { id: 'postpone02', title: 'Second' },
+          { id: 'keepVideo02', title: 'Keep too' },
+        ],
+        currentIndex: 0,
+        revision: 0,
+      },
+    },
+    listOrder: ['default'],
+    currentListId: 'default',
+    currentVideoId: 'postpone01',
+  });
+  await postponeVideos(['postpone02', 'postpone01'], { listId: 'default' });
+  const stateAfterPostpone = await getState();
+  assert.deepStrictEqual(
+    stateAfterPostpone.lists.default.queue.map((entry) => entry.id),
+    ['keepVideo01', 'keepVideo02', 'postpone01', 'postpone02']
+  );
+  assert.strictEqual(stateAfterPostpone.currentVideoId, 'keepVideo01');
+  assert.strictEqual(stateAfterPostpone.lists.default.currentIndex, 0);
+  console.log('batch postpone moves selected videos to the end in queue order');
 }
 
 {

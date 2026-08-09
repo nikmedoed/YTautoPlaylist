@@ -62,6 +62,7 @@ const { setStatus } = createStatusController({
 
 const selectionController = createSelectionController({
   detailList: elements.detailList,
+  bulkPostponeBtn: elements.bulkPostponeBtn,
   bulkMoveBtn: elements.bulkMoveBtn,
   bulkDeleteBtn: elements.bulkDeleteBtn,
   floatingActions: elements.floatingSelectionActions,

@@ -616,6 +616,7 @@ function normalizeVideos(videos) {
 }
 function createSelectionController({
   detailList,
+  bulkPostponeBtn,
   bulkMoveBtn,
   bulkDeleteBtn,
   floatingActions = null,
@@ -624,7 +625,8 @@ function createSelectionController({
   const state = {
     selected: /* @__PURE__ */ new Set(),
     lastIndex: null,
-    videos: []
+    videos: [],
+    canPostpone: true
   };
   const getVideoByIndex = (index) => {
     if (!Number.isFinite(index) || index < 0 || index >= state.videos.length) {
@@ -657,6 +659,7 @@ function createSelectionController({
       });
     }
     updateBulkButton(bulkMoveBtn, count);
+    updateBulkButton(bulkPostponeBtn, state.canPostpone ? count : 0);
     updateBulkButton(bulkDeleteBtn, count);
     if (floatingActions) {
       floatingActions.hidden = count === 0;
@@ -670,8 +673,9 @@ function createSelectionController({
       queueSection.classList.toggle("queue--floating-actions", count > 0);
     }
   };
-  const setVideos = (videos) => {
+  const setVideos = (videos, { canPostpone = true } = {}) => {
     state.videos = normalizeVideos(videos);
+    state.canPostpone = canPostpone;
     const availableIds = new Set(state.videos.map((video) => video.id));
     state.selected = new Set(
       Array.from(state.selected).filter((id) => availableIds.has(id))
@@ -1679,7 +1683,7 @@ function registerManagerBulkActions({
   showMoveMenu: showMoveMenu2,
   updateRemoveWatchedButton: updateRemoveWatchedButton2
 }) {
-  const { bulkDeleteBtn, bulkMoveBtn, clearListBtn, removeWatchedBtn } = buttons;
+  const { bulkDeleteBtn, bulkMoveBtn, bulkPostponeBtn, clearListBtn, removeWatchedBtn } = buttons;
   async function removeFromSelectedList(videoIds) {
     const selectedListDetails2 = getSelectedListDetails();
     if (!selectedListDetails2?.id || !videoIds.length) return false;
@@ -1737,6 +1741,33 @@ function registerManagerBulkActions({
       const selectedIds = selectionController2.getSelectedIds();
       if (!selectedListDetails2 || selectedIds.length === 0) return;
       showMoveMenu2(selectedIds, selectedListDetails2.id, event.currentTarget);
+    });
+  }
+  if (bulkPostponeBtn) {
+    bulkPostponeBtn.addEventListener("click", async () => {
+      const selectedListDetails2 = getSelectedListDetails();
+      const videoIds = selectionController2.getSelectedIds();
+      if (!selectedListDetails2?.id || videoIds.length === 0) return;
+      if (selectedListDetails2.freeze) {
+        setStatus2("\u0414\u043B\u044F \u0437\u0430\u043A\u0440\u0435\u043F\u043B\u0451\u043D\u043D\u043E\u0433\u043E \u0441\u043F\u0438\u0441\u043A\u0430 \u043E\u0442\u043A\u043B\u0430\u0434\u044B\u0432\u0430\u043D\u0438\u0435 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E", "info", 3e3);
+        return;
+      }
+      const count = videoIds.length;
+      bulkPostponeBtn.disabled = true;
+      try {
+        await sendMessage3("playlist:postponeVideos", {
+          videoIds,
+          listId: selectedListDetails2.id
+        });
+        clearSelection2();
+        await loadState();
+        setStatus2(count > 1 ? `\u041E\u0442\u043B\u043E\u0436\u0435\u043D\u043E ${count} \u0432\u0438\u0434\u0435\u043E` : "\u0412\u0438\u0434\u0435\u043E \u043E\u0442\u043B\u043E\u0436\u0435\u043D\u043E", "success", 2500);
+      } catch (err) {
+        console.error("Failed to postpone selected videos", err);
+        setStatus2("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043B\u043E\u0436\u0438\u0442\u044C", "error", 3500);
+        loadState().catch(() => {
+        });
+      }
     });
   }
   if (bulkDeleteBtn) {
@@ -2446,7 +2477,7 @@ function createManagerStateController({
     if (openAddLinksModalBtn) openAddLinksModalBtn.disabled = !hasList;
     const videos = Array.isArray(details?.queue) ? details.queue : [];
     if (openYtdlpModalBtn) openYtdlpModalBtn.disabled = videos.length === 0;
-    selectionController2.setVideos(videos);
+    selectionController2.setVideos(videos, { canPostpone: !details?.freeze });
     if (clearListBtn) clearListBtn.disabled = videos.length === 0;
     updateRemoveWatchedButton2();
     if (!videos.length) {
@@ -2872,6 +2903,7 @@ var MANAGER_ELEMENT_IDS = [
   "selectAllBtn",
   "removeWatchedBtn",
   "clearSelectionBtn",
+  "bulkPostponeBtn",
   "bulkMoveBtn",
   "bulkDeleteBtn",
   "clearListBtn",
@@ -4622,6 +4654,7 @@ var { setStatus } = createStatusController({
 });
 var selectionController = createSelectionController({
   detailList: elements.detailList,
+  bulkPostponeBtn: elements.bulkPostponeBtn,
   bulkMoveBtn: elements.bulkMoveBtn,
   bulkDeleteBtn: elements.bulkDeleteBtn,
   floatingActions: elements.floatingSelectionActions,

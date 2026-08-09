@@ -149,7 +149,7 @@ export function createManagerStateController({
     if (openAddLinksModalBtn) openAddLinksModalBtn.disabled = !hasList;
     const videos = Array.isArray(details?.queue) ? details.queue : [];
     if (openYtdlpModalBtn) openYtdlpModalBtn.disabled = videos.length === 0;
-    selectionController.setVideos(videos);
+    selectionController.setVideos(videos, { canPostpone: !details?.freeze });
     if (clearListBtn) clearListBtn.disabled = videos.length === 0;
     updateRemoveWatchedButton();
     if (!videos.length) {

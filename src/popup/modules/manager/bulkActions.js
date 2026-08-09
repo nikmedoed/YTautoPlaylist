@@ -1,4 +1,4 @@
-// Manager bulk-action wiring. Contains delete selected, clear list, remove watched, and move selected button behavior.
+// Manager bulk-action wiring. Contains delete, postpone, clear, remove watched, and move selected behavior.
 export function registerManagerBulkActions({
   applyRemoveLocally,
   buttons,
@@ -15,7 +15,7 @@ export function registerManagerBulkActions({
 }) {
   // Bulk manager actions for deleting, clearing, and moving videos in the
   // selected list. Handlers are kept explicit because their UI recovery differs.
-  const { bulkDeleteBtn, bulkMoveBtn, clearListBtn, removeWatchedBtn } = buttons;
+  const { bulkDeleteBtn, bulkMoveBtn, bulkPostponeBtn, clearListBtn, removeWatchedBtn } = buttons;
 
   async function removeFromSelectedList(videoIds) {
     const selectedListDetails = getSelectedListDetails();
@@ -81,6 +81,33 @@ export function registerManagerBulkActions({
       const selectedIds = selectionController.getSelectedIds();
       if (!selectedListDetails || selectedIds.length === 0) return;
       showMoveMenu(selectedIds, selectedListDetails.id, event.currentTarget);
+    });
+  }
+
+  if (bulkPostponeBtn) {
+    bulkPostponeBtn.addEventListener("click", async () => {
+      const selectedListDetails = getSelectedListDetails();
+      const videoIds = selectionController.getSelectedIds();
+      if (!selectedListDetails?.id || videoIds.length === 0) return;
+      if (selectedListDetails.freeze) {
+        setStatus("Для закреплённого списка откладывание недоступно", "info", 3000);
+        return;
+      }
+      const count = videoIds.length;
+      bulkPostponeBtn.disabled = true;
+      try {
+        await sendMessage("playlist:postponeVideos", {
+          videoIds,
+          listId: selectedListDetails.id,
+        });
+        clearSelection();
+        await loadState();
+        setStatus(count > 1 ? `Отложено ${count} видео` : "Видео отложено", "success", 2500);
+      } catch (err) {
+        console.error("Failed to postpone selected videos", err);
+        setStatus("Не удалось отложить", "error", 3500);
+        loadState().catch(() => {});
+      }
     });
   }
 

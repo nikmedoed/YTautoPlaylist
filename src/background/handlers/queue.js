@@ -7,6 +7,7 @@ import {
   moveAllVideos,
   moveVideoToList,
   postponeVideo,
+  postponeVideos,
   reorderQueue,
   restoreDeletedEntry,
   setCurrentList,
@@ -119,6 +120,19 @@ export const queueHandlers = {
     }
     return mutateAndPresent(
       () => postponeVideo(videoId, { listId: message.listId || null }),
+      { notify: true, sync: "immediate" }
+    );
+  },
+
+  async "playlist:postponeVideos"(message) {
+    const videoIds = Array.isArray(message?.videoIds)
+      ? message.videoIds.map(parseVideoId).filter(Boolean)
+      : [];
+    if (!videoIds.length) {
+      return getPresentationState();
+    }
+    return mutateAndPresent(
+      () => postponeVideos(videoIds, { listId: message.listId || null }),
       { notify: true, sync: "immediate" }
     );
   },

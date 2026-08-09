@@ -8,6 +8,7 @@ function normalizeVideos(videos) {
 // Tracks manager row selection, shift ranges, and the bulk-action toolbar state.
 export function createSelectionController({
   detailList,
+  bulkPostponeBtn,
   bulkMoveBtn,
   bulkDeleteBtn,
   floatingActions = null,
@@ -17,6 +18,7 @@ export function createSelectionController({
     selected: new Set(),
     lastIndex: null,
     videos: [],
+    canPostpone: true,
   };
 
   const getVideoByIndex = (index) => {
@@ -53,6 +55,7 @@ export function createSelectionController({
       });
     }
     updateBulkButton(bulkMoveBtn, count);
+    updateBulkButton(bulkPostponeBtn, state.canPostpone ? count : 0);
     updateBulkButton(bulkDeleteBtn, count);
     if (floatingActions) {
       floatingActions.hidden = count === 0;
@@ -67,8 +70,9 @@ export function createSelectionController({
     }
   };
 
-  const setVideos = (videos) => {
+  const setVideos = (videos, { canPostpone = true } = {}) => {
     state.videos = normalizeVideos(videos);
+    state.canPostpone = canPostpone;
     const availableIds = new Set(state.videos.map((video) => video.id));
     state.selected = new Set(
       Array.from(state.selected).filter((id) => availableIds.has(id)),
