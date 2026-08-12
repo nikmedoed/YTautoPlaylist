@@ -1,10 +1,6 @@
 // Google Drive appData sync adapter. Stores one portable snapshot file in the
 // signed-in Google account.
-import { getToken, clearToken, signInUser } from "../../auth.js";
-import {
-  DRIVE_SYNC_FILE_NAME,
-  DRIVE_SYNC_LOCAL_META_STORAGE_KEY,
-} from "./constants.js";
+import { DRIVE_SYNC_LOCAL_META_STORAGE_KEY } from "./constants.js";
 import {
   buildLocalPlaylistSyncSnapshot,
   importPlaylistSyncSnapshot,
@@ -16,34 +12,14 @@ import {
   recordPlaylistSyncError,
   recordPushedPlaylistSyncSnapshot,
 } from "./sync.js";
-import {
-  normalizeSyncTimestamp,
-} from "./syncSnapshot.js";
+import { normalizeSyncTimestamp } from "./syncSnapshot.js";
 import {
   buildPlaylistBackups,
   DRIVE_SYNC_VERSION,
   encodePlaylistSnapshot,
   encodePlaylistSnapshots,
-  parseDrivePayload,
 } from "./driveSyncPayload.js";
-
-const DRIVE_API = "https://www.googleapis.com/drive/v3";
-const DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3";
-
-function formatDriveError(status, text) {
-  try {
-    const parsed = JSON.parse(text);
-    const error = parsed?.error;
-    const reason = error?.errors?.[0]?.reason || error?.status || "";
-    const message = error?.message || text;
-    return [`Drive API failed: ${status}`, reason, message]
-      .filter(Boolean)
-      .join(" - ")
-      .slice(0, 500);
-  } catch {
-    return `Drive API failed: ${status}${text ? ` - ${text.slice(0, 300)}` : ""}`;
-  }
-}
+import { readDrivePayload, writeDrivePayload } from "./driveClient.js";
 
 function hasChromeStorage() {
   return typeof chrome !== "undefined" && chrome?.storage?.local;
@@ -90,102 +66,6 @@ async function ensureDeviceId(meta = null) {
   return deviceId;
 }
 
-async function driveFetch(
-  url,
-  init = {},
-  { interactive = false, shouldContinue = null } = {}
-) {
-  const token = await getToken({ interactive });
-  if (typeof shouldContinue === "function" && !shouldContinue()) {
-    const err = new Error("Playlist sync superseded by newer local changes");
-    err.code = "SYNC_SUPERSEDED";
-    throw err;
-  }
-  const headers = {
-    ...(init.headers || {}),
-    Authorization: `Bearer ${token}`,
-  };
-  let response = await fetch(url, { ...init, headers });
-  if ((response.status === 401 || response.status === 403) && interactive) {
-    clearToken();
-    const refreshed = await signInUser();
-    response = await fetch(url, {
-      ...init,
-      headers: { ...headers, Authorization: `Bearer ${refreshed}` },
-    });
-  }
-  if (!response.ok) {
-    const text = await response.text();
-    const err = new Error(formatDriveError(response.status, text));
-    err.status = response.status;
-    err.body = text;
-    throw err;
-  }
-  return response;
-}
-
-async function findDriveFile({ interactive = false } = {}) {
-  const params = new URLSearchParams({
-    spaces: "appDataFolder",
-    fields: "files(id,name,modifiedTime)",
-    q: `name='${DRIVE_SYNC_FILE_NAME}' and trashed=false`,
-  });
-  const response = await driveFetch(`${DRIVE_API}/files?${params}`, {}, { interactive });
-  const data = await response.json();
-  return Array.isArray(data.files) && data.files.length ? data.files[0] : null;
-}
-
-async function readDrivePayload({ interactive = false } = {}) {
-  const file = await findDriveFile({ interactive });
-  if (!file?.id) return { file: null, payload: null };
-  const response = await driveFetch(
-    `${DRIVE_API}/files/${encodeURIComponent(file.id)}?alt=media`,
-    {},
-    { interactive }
-  );
-  return { file, payload: parseDrivePayload(await response.json()) };
-}
-
-function buildMultipartBody(metadata, payload) {
-  const boundary = `yta_drive_sync_${Date.now()}`;
-  const body = [
-    `--${boundary}`,
-    "Content-Type: application/json; charset=UTF-8",
-    "",
-    JSON.stringify(metadata),
-    `--${boundary}`,
-    "Content-Type: application/json; charset=UTF-8",
-    "",
-    JSON.stringify(payload),
-    `--${boundary}--`,
-    "",
-  ].join("\r\n");
-  return { boundary, body };
-}
-
-async function writeDrivePayload(
-  payload,
-  { interactive = true, existing = null, shouldContinue = null } = {}
-) {
-  const existingFile = existing || (await findDriveFile({ interactive }));
-  const metadata = existingFile?.id
-    ? { name: DRIVE_SYNC_FILE_NAME }
-    : { name: DRIVE_SYNC_FILE_NAME, parents: ["appDataFolder"] };
-  const { boundary, body } = buildMultipartBody(metadata, payload);
-  const target = existingFile?.id
-    ? `${DRIVE_UPLOAD_API}/files/${encodeURIComponent(existingFile.id)}`
-    : `${DRIVE_UPLOAD_API}/files`;
-  const params = new URLSearchParams({
-    uploadType: "multipart",
-    fields: "id,modifiedTime",
-  });
-  const response = await driveFetch(`${target}?${params}`, {
-    method: existingFile?.id ? "PATCH" : "POST",
-    headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
-    body,
-  }, { interactive, shouldContinue });
-  return response.json();
-}
 
 export async function pushLocalDriveSyncNow({
   interactive = true,

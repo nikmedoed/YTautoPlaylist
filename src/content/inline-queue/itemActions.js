@@ -61,6 +61,16 @@ function resolveInlineQueuePostponeFocusTarget(videoItem) {
   return null;
 }
 
+export function requireInlineQueueResponse(response) {
+  if (!response || typeof response !== "object") {
+    throw new Error("QUEUE_ACTION_NO_RESPONSE");
+  }
+  if (response.error) {
+    throw new Error(String(response.error));
+  }
+  return response;
+}
+
 function handleInlineQueueRemove(button, context = {}) {
   const target = button instanceof HTMLButtonElement ? button : null;
   if (!target || target.dataset.loading === "1") {
@@ -87,10 +97,8 @@ function handleInlineQueueRemove(button, context = {}) {
     payload.listId = inlinePlaylistState.currentListId;
   }
   sendMessage("playlist:remove", payload)
-    .then((state) => {
-      if (state && typeof state === "object") {
-        context.updateInlinePlaylistState?.(state);
-      }
+    .then((response) => {
+      context.updateInlinePlaylistState?.(requireInlineQueueResponse(response));
     })
     .catch((err) => {
       console.warn("Failed to remove video from inline queue", err);
@@ -137,10 +145,7 @@ function handleInlineQueuePostpone(button, context = {}) {
     : sendMessage("playlist:postponeVideo", { videoId, listId });
   request
     .then((response) => {
-      if (!response) {
-        context.clearInlineQueuePendingFocus?.();
-        return;
-      }
+      requireInlineQueueResponse(response);
       if (isCurrent) {
         if (response.handled === false) {
           context.clearInlineQueuePendingFocus?.();

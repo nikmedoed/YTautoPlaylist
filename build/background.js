@@ -68,71 +68,6 @@ function getListStorageKey(id) {
   return `${LIST_CONTENT_PREFIX}${id}`;
 }
 
-// src/auth.js
-if (typeof chrome !== "undefined") {
-  chrome.storage.local.set({ authStatus: false });
-}
-var currentToken = null;
-function clearToken() {
-  if (typeof chrome !== "undefined" && currentToken) {
-    chrome.identity.removeCachedAuthToken({ token: currentToken }, () => {
-    });
-  }
-  currentToken = null;
-  if (typeof chrome !== "undefined") {
-    chrome.storage.local.set({ authStatus: false });
-  }
-}
-function signInUser() {
-  if (typeof chrome === "undefined") {
-    return Promise.reject(new Error("chrome API unavailable"));
-  }
-  if (currentToken) {
-    chrome.identity.removeCachedAuthToken({ token: currentToken }, () => {
-    });
-    currentToken = null;
-  }
-  return new Promise((resolve, reject) => {
-    chrome.identity.getAuthToken({ interactive: true }, (token) => {
-      if (chrome.runtime.lastError || !token) {
-        console.error("Failed to obtain token", chrome.runtime.lastError);
-        chrome.storage.local.set({ authStatus: false });
-        reject(chrome.runtime.lastError);
-      } else {
-        currentToken = token;
-        chrome.storage.local.set({ authStatus: true });
-        resolve(token);
-      }
-    });
-  });
-}
-function getToken({ interactive = true } = {}) {
-  if (typeof chrome === "undefined") {
-    return Promise.reject(new Error("chrome API unavailable"));
-  }
-  if (currentToken) return Promise.resolve(currentToken);
-  return new Promise((resolve, reject) => {
-    chrome.identity.getAuthToken({ interactive: false }, async (token) => {
-      if (chrome.runtime.lastError || !token) {
-        if (!interactive) {
-          reject(chrome.runtime.lastError || new Error("Auth token unavailable"));
-          return;
-        }
-        try {
-          const t = await signInUser();
-          resolve(t);
-        } catch (err) {
-          reject(err);
-        }
-      } else {
-        currentToken = token;
-        chrome.storage.local.set({ authStatus: true });
-        resolve(token);
-      }
-    });
-  });
-}
-
 // src/utils.js
 var YOUTUBE_ID_PATTERN = /[\w-]{11}/;
 var PLAYLIST_ID_PATTERN = /[\w-]{13,64}/;
@@ -741,7 +676,7 @@ function ensureListExists(state, listId) {
   }
 }
 
-// src/store/state/syncSnapshot.js
+// src/store/state/syncSnapshotCore.js
 var SYNC_FORMAT_VERSION = 1;
 function byteLength(value) {
   return new TextEncoder().encode(String(value)).length;
@@ -758,23 +693,13 @@ function hashString(value) {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 function normalizeSyncTimestamp(value) {
-  const ts = Number(value);
-  return Number.isFinite(ts) && ts > 0 ? Math.trunc(ts) : 0;
-}
-function normalizeListForSync(list) {
-  return deepClone(list);
-}
-function normalizeListsForSync(lists) {
-  const normalized = {};
-  Object.entries(lists || {}).forEach(([id, list]) => {
-    normalized[id] = normalizeListForSync(list);
-  });
-  return normalized;
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) && timestamp > 0 ? Math.trunc(timestamp) : 0;
 }
 function buildSyncState(stateInput) {
   const state = sanitizeState(stateInput);
   return sanitizeState({
-    lists: normalizeListsForSync(state.lists),
+    lists: deepClone(state.lists),
     listOrder: deepClone(state.listOrder),
     currentListId: state.currentListId,
     currentVideoId: state.currentVideoId,
@@ -793,14 +718,31 @@ function getSyncStateFingerprint2(stateInput) {
 function hasSyncableUserData(stateInput) {
   const state = sanitizeState(stateInput);
   const listIds = Object.keys(state.lists || {});
-  if (listIds.some((id) => id !== DEFAULT_LIST_ID)) {
-    return true;
+  const hasCustomList = listIds.some((id) => id !== DEFAULT_LIST_ID);
+  const hasQueuedVideos = listIds.some((id) => state.lists[id]?.queue?.length);
+  return Boolean(
+    hasCustomList || hasQueuedVideos || state.history?.length || state.deletedHistory?.length || state.queueRemovals?.length || Object.keys(state.videoProgress || {}).length || state.autoCollect?.lastRunAt || state.autoCollect?.seenIds?.length
+  );
+}
+function buildSyncSnapshot(stateInput, { updatedAt, deviceId, maxTotalBytes = Number.POSITIVE_INFINITY } = {}) {
+  const state = buildSyncState(stateInput);
+  const hash = hashString(JSON.stringify(state));
+  const manifest = {
+    version: SYNC_FORMAT_VERSION,
+    updatedAt: normalizeSyncTimestamp(updatedAt) || Date.now(),
+    deviceId: typeof deviceId === "string" && deviceId ? deviceId : null,
+    hash
+  };
+  const totalBytes = byteLength(JSON.stringify({ manifest, state }));
+  if (Number.isFinite(maxTotalBytes) && totalBytes > maxTotalBytes) {
+    throw new Error(`Playlist sync snapshot is too large (${totalBytes} bytes)`);
   }
-  const hasQueuedVideos = listIds.some((id) => {
-    const queue = state.lists[id]?.queue;
-    return Array.isArray(queue) && queue.length > 0;
-  });
-  return hasQueuedVideos || Boolean(state.history?.length) || Boolean(state.deletedHistory?.length) || Boolean(state.queueRemovals?.length) || Boolean(Object.keys(state.videoProgress || {}).length) || Boolean(state.autoCollect?.lastRunAt) || Boolean(state.autoCollect?.seenIds?.length);
+  return { manifest, state, hash, totalBytes };
+}
+
+// src/store/state/syncSnapshot.js
+function normalizeListForSync(list) {
+  return deepClone(list);
 }
 function findVideoInLists(lists, videoId) {
   if (!videoId || !lists || typeof lists !== "object") {
@@ -1114,24 +1056,6 @@ function mergeRemoteSyncState(localInput, remoteInput) {
     merged.currentListId = DEFAULT_LIST_ID;
   }
   return sanitizeState(merged);
-}
-function buildSyncSnapshot(stateInput, { updatedAt, deviceId, maxTotalBytes = Number.POSITIVE_INFINITY } = {}) {
-  const payload = buildSyncState(stateInput);
-  const json = JSON.stringify(payload);
-  const hash = hashString(json);
-  const manifest = {
-    version: SYNC_FORMAT_VERSION,
-    updatedAt: normalizeSyncTimestamp(updatedAt) || Date.now(),
-    deviceId: typeof deviceId === "string" && deviceId ? deviceId : null,
-    hash
-  };
-  const totalBytes = byteLength(JSON.stringify({ manifest, state: payload }));
-  if (Number.isFinite(maxTotalBytes) && totalBytes > maxTotalBytes) {
-    throw new Error(
-      `Playlist sync snapshot is too large (${totalBytes} bytes)`
-    );
-  }
-  return { manifest, state: payload, hash, totalBytes };
 }
 
 // src/store/state/sync.js
@@ -1713,20 +1637,162 @@ function buildPlaylistBackups(remotePayload, nextPlaylistHash) {
   return backups.slice(0, DRIVE_PLAYLIST_BACKUP_LIMIT);
 }
 
-// src/store/state/driveSync.js
-var DRIVE_API = "https://www.googleapis.com/drive/v3";
-var DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3";
-function formatDriveError(status, text) {
-  try {
-    const parsed = JSON.parse(text);
-    const error = parsed?.error;
-    const reason = error?.errors?.[0]?.reason || error?.status || "";
-    const message = error?.message || text;
-    return [`Drive API failed: ${status}`, reason, message].filter(Boolean).join(" - ").slice(0, 500);
-  } catch {
-    return `Drive API failed: ${status}${text ? ` - ${text.slice(0, 300)}` : ""}`;
+// src/auth.js
+if (typeof chrome !== "undefined") {
+  chrome.storage.local.set({ authStatus: false });
+}
+var currentToken = null;
+function clearToken() {
+  if (typeof chrome !== "undefined" && currentToken) {
+    chrome.identity.removeCachedAuthToken({ token: currentToken }, () => {
+    });
+  }
+  currentToken = null;
+  if (typeof chrome !== "undefined") {
+    chrome.storage.local.set({ authStatus: false });
   }
 }
+function signInUser() {
+  if (typeof chrome === "undefined") {
+    return Promise.reject(new Error("chrome API unavailable"));
+  }
+  if (currentToken) {
+    chrome.identity.removeCachedAuthToken({ token: currentToken }, () => {
+    });
+    currentToken = null;
+  }
+  return new Promise((resolve, reject) => {
+    chrome.identity.getAuthToken({ interactive: true }, (token) => {
+      if (chrome.runtime.lastError || !token) {
+        console.error("Failed to obtain token", chrome.runtime.lastError);
+        chrome.storage.local.set({ authStatus: false });
+        reject(chrome.runtime.lastError);
+      } else {
+        currentToken = token;
+        chrome.storage.local.set({ authStatus: true });
+        resolve(token);
+      }
+    });
+  });
+}
+function getToken({ interactive = true } = {}) {
+  if (typeof chrome === "undefined") {
+    return Promise.reject(new Error("chrome API unavailable"));
+  }
+  if (currentToken) return Promise.resolve(currentToken);
+  return new Promise((resolve, reject) => {
+    chrome.identity.getAuthToken({ interactive: false }, async (token) => {
+      if (chrome.runtime.lastError || !token) {
+        if (!interactive) {
+          reject(chrome.runtime.lastError || new Error("Auth token unavailable"));
+          return;
+        }
+        try {
+          const t = await signInUser();
+          resolve(t);
+        } catch (err) {
+          reject(err);
+        }
+      } else {
+        currentToken = token;
+        chrome.storage.local.set({ authStatus: true });
+        resolve(token);
+      }
+    });
+  });
+}
+
+// src/store/state/driveClient.js
+var DRIVE_API = "https://www.googleapis.com/drive/v3";
+var DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3";
+function formatDriveError(status, textValue) {
+  try {
+    const parsed = JSON.parse(textValue);
+    const error = parsed?.error;
+    const reason = error?.errors?.[0]?.reason || error?.status || "";
+    const message = error?.message || textValue;
+    return [`Drive API failed: ${status}`, reason, message].filter(Boolean).join(" - ").slice(0, 500);
+  } catch {
+    return `Drive API failed: ${status}${textValue ? ` - ${textValue.slice(0, 300)}` : ""}`;
+  }
+}
+async function driveFetch(url, init = {}, { interactive = false, shouldContinue = null } = {}) {
+  const token = await getToken({ interactive });
+  if (typeof shouldContinue === "function" && !shouldContinue()) {
+    const error = new Error("Playlist sync superseded by newer local changes");
+    error.code = "SYNC_SUPERSEDED";
+    throw error;
+  }
+  const headers = { ...init.headers || {}, Authorization: `Bearer ${token}` };
+  let response = await fetch(url, { ...init, headers });
+  if ((response.status === 401 || response.status === 403) && interactive) {
+    clearToken();
+    const refreshed = await signInUser();
+    response = await fetch(url, {
+      ...init,
+      headers: { ...headers, Authorization: `Bearer ${refreshed}` }
+    });
+  }
+  if (!response.ok) {
+    const textValue = await response.text();
+    const error = new Error(formatDriveError(response.status, textValue));
+    error.status = response.status;
+    error.body = textValue;
+    throw error;
+  }
+  return response;
+}
+async function findDriveFile({ interactive = false } = {}) {
+  const params = new URLSearchParams({
+    spaces: "appDataFolder",
+    fields: "files(id,name,modifiedTime)",
+    q: `name='${DRIVE_SYNC_FILE_NAME}' and trashed=false`
+  });
+  const response = await driveFetch(`${DRIVE_API}/files?${params}`, {}, { interactive });
+  const data = await response.json();
+  return Array.isArray(data.files) && data.files.length ? data.files[0] : null;
+}
+async function readDrivePayload({ interactive = false } = {}) {
+  const file = await findDriveFile({ interactive });
+  if (!file?.id) return { file: null, payload: null };
+  const response = await driveFetch(
+    `${DRIVE_API}/files/${encodeURIComponent(file.id)}?alt=media`,
+    {},
+    { interactive }
+  );
+  return { file, payload: parseDrivePayload(await response.json()) };
+}
+async function writeDrivePayload(payload, { interactive = true, existing = null, shouldContinue = null } = {}) {
+  const existingFile = existing || await findDriveFile({ interactive });
+  const metadata = existingFile?.id ? { name: DRIVE_SYNC_FILE_NAME } : { name: DRIVE_SYNC_FILE_NAME, parents: ["appDataFolder"] };
+  const boundary = `yta_drive_sync_${Date.now()}`;
+  const body = [
+    `--${boundary}`,
+    "Content-Type: application/json; charset=UTF-8",
+    "",
+    JSON.stringify(metadata),
+    `--${boundary}`,
+    "Content-Type: application/json; charset=UTF-8",
+    "",
+    JSON.stringify(payload),
+    `--${boundary}--`,
+    ""
+  ].join("\r\n");
+  const target = existingFile?.id ? `${DRIVE_UPLOAD_API}/files/${encodeURIComponent(existingFile.id)}` : `${DRIVE_UPLOAD_API}/files`;
+  const params = new URLSearchParams({ uploadType: "multipart", fields: "id,modifiedTime" });
+  const response = await driveFetch(
+    `${target}?${params}`,
+    {
+      method: existingFile?.id ? "PATCH" : "POST",
+      headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
+      body
+    },
+    { interactive, shouldContinue }
+  );
+  return response.json();
+}
+
+// src/store/state/driveSync.js
 function hasChromeStorage2() {
   return typeof chrome !== "undefined" && chrome?.storage?.local;
 }
@@ -1761,87 +1827,6 @@ async function ensureDeviceId(meta = null) {
   const deviceId = createDeviceId2();
   await writeLocalMeta({ ...current, deviceId });
   return deviceId;
-}
-async function driveFetch(url, init = {}, { interactive = false, shouldContinue = null } = {}) {
-  const token = await getToken({ interactive });
-  if (typeof shouldContinue === "function" && !shouldContinue()) {
-    const err = new Error("Playlist sync superseded by newer local changes");
-    err.code = "SYNC_SUPERSEDED";
-    throw err;
-  }
-  const headers = {
-    ...init.headers || {},
-    Authorization: `Bearer ${token}`
-  };
-  let response = await fetch(url, { ...init, headers });
-  if ((response.status === 401 || response.status === 403) && interactive) {
-    clearToken();
-    const refreshed = await signInUser();
-    response = await fetch(url, {
-      ...init,
-      headers: { ...headers, Authorization: `Bearer ${refreshed}` }
-    });
-  }
-  if (!response.ok) {
-    const text = await response.text();
-    const err = new Error(formatDriveError(response.status, text));
-    err.status = response.status;
-    err.body = text;
-    throw err;
-  }
-  return response;
-}
-async function findDriveFile({ interactive = false } = {}) {
-  const params = new URLSearchParams({
-    spaces: "appDataFolder",
-    fields: "files(id,name,modifiedTime)",
-    q: `name='${DRIVE_SYNC_FILE_NAME}' and trashed=false`
-  });
-  const response = await driveFetch(`${DRIVE_API}/files?${params}`, {}, { interactive });
-  const data = await response.json();
-  return Array.isArray(data.files) && data.files.length ? data.files[0] : null;
-}
-async function readDrivePayload({ interactive = false } = {}) {
-  const file = await findDriveFile({ interactive });
-  if (!file?.id) return { file: null, payload: null };
-  const response = await driveFetch(
-    `${DRIVE_API}/files/${encodeURIComponent(file.id)}?alt=media`,
-    {},
-    { interactive }
-  );
-  return { file, payload: parseDrivePayload(await response.json()) };
-}
-function buildMultipartBody(metadata, payload) {
-  const boundary = `yta_drive_sync_${Date.now()}`;
-  const body = [
-    `--${boundary}`,
-    "Content-Type: application/json; charset=UTF-8",
-    "",
-    JSON.stringify(metadata),
-    `--${boundary}`,
-    "Content-Type: application/json; charset=UTF-8",
-    "",
-    JSON.stringify(payload),
-    `--${boundary}--`,
-    ""
-  ].join("\r\n");
-  return { boundary, body };
-}
-async function writeDrivePayload(payload, { interactive = true, existing = null, shouldContinue = null } = {}) {
-  const existingFile = existing || await findDriveFile({ interactive });
-  const metadata = existingFile?.id ? { name: DRIVE_SYNC_FILE_NAME } : { name: DRIVE_SYNC_FILE_NAME, parents: ["appDataFolder"] };
-  const { boundary, body } = buildMultipartBody(metadata, payload);
-  const target = existingFile?.id ? `${DRIVE_UPLOAD_API}/files/${encodeURIComponent(existingFile.id)}` : `${DRIVE_UPLOAD_API}/files`;
-  const params = new URLSearchParams({
-    uploadType: "multipart",
-    fields: "id,modifiedTime"
-  });
-  const response = await driveFetch(`${target}?${params}`, {
-    method: existingFile?.id ? "PATCH" : "POST",
-    headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
-    body
-  }, { interactive, shouldContinue });
-  return response.json();
 }
 async function pushLocalDriveSyncNow({
   interactive = true,
@@ -5247,23 +5232,19 @@ var listHandlers = {
       () => addList({
         name: message?.name,
         freeze: Boolean(message?.freeze)
-      }),
-      { sync: "immediate" }
+      })
     );
   },
   async "playlist:renameList"(message) {
     if (!message?.listId || !message?.name) {
       return getPresentationState();
     }
-    return mutateAndPresent(() => renameList(message.listId, message.name), {
-      sync: "immediate"
-    });
+    return mutateAndPresent(() => renameList(message.listId, message.name));
   },
   async "playlist:setFreeze"(message) {
     if (!message?.listId) return getPresentationState();
     return mutateAndPresent(
-      () => setListFreeze(message.listId, Boolean(message.freeze)),
-      { sync: "immediate" }
+      () => setListFreeze(message.listId, Boolean(message.freeze))
     );
   },
   async "playlist:removeList"(message) {
@@ -5272,7 +5253,7 @@ var listHandlers = {
       () => removeList(message.listId, {
         mode: message.mode === "discard" ? "delete" : "move"
       }),
-      { dispatch: true, sync: "immediate" }
+      { dispatch: true }
     );
   },
   async "playlist:getList"(message) {
@@ -5344,7 +5325,7 @@ var listHandlers = {
         mode: message.mode === "append" ? "append" : "new",
         targetListId: message.targetListId || null
       }),
-      { dispatch: true, ensureDefault: true, sync: "immediate" }
+      { dispatch: true, ensureDefault: true }
     );
   }
 };
@@ -6117,7 +6098,7 @@ var queueHandlers = {
     }
     return mutateAndPresent(
       () => postponeVideo(videoId, { listId: message.listId || null }),
-      { notify: true, sync: "immediate" }
+      { notify: true }
     );
   },
   async "playlist:postponeVideos"(message) {
@@ -6127,15 +6108,14 @@ var queueHandlers = {
     }
     return mutateAndPresent(
       () => postponeVideos(videoIds, { listId: message.listId || null }),
-      { notify: true, sync: "immediate" }
+      { notify: true }
     );
   },
   async "playlist:restoreDeleted"(message) {
     const position = typeof message?.position === "number" && Number.isInteger(message.position) ? message.position : 0;
     return mutateAndPresent(() => restoreDeletedEntry(position), {
       dispatch: true,
-      ensureDefault: true,
-      sync: "immediate"
+      ensureDefault: true
     });
   },
   async "playlist:getNext"() {
@@ -6150,8 +6130,7 @@ var queueHandlers = {
       return getPresentationState();
     }
     return mutateAndPresent(
-      () => reorderQueue(message.videoId, message.targetIndex, message.listId || null),
-      { sync: "immediate" }
+      () => reorderQueue(message.videoId, message.targetIndex, message.listId || null)
     );
   },
   async "playlist:moveVideo"(message) {
@@ -6160,7 +6139,7 @@ var queueHandlers = {
     }
     return mutateAndPresent(
       () => moveVideoToList(message.videoId, message.targetListId),
-      { dispatch: true, ensureDefault: true, sync: "immediate" }
+      { dispatch: true, ensureDefault: true }
     );
   },
   async "playlist:moveVideos"(message) {
@@ -6172,7 +6151,7 @@ var queueHandlers = {
     }
     return mutateAndPresent(
       () => moveAllVideos(message.sourceListId, message.targetListId),
-      { dispatch: true, ensureDefault: true, sync: "immediate" }
+      { dispatch: true, ensureDefault: true }
     );
   }
 };

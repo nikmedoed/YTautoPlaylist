@@ -9,83 +9,30 @@ import {
 } from "./constants.js";
 import { sanitizeState } from "./sanitizers.js";
 import { deepClone } from "../../utils.js";
+import {
+  buildSyncSnapshot,
+  buildSyncState,
+  getSyncStateFingerprint,
+  hasSyncableUserData,
+  hashString,
+  normalizeSyncTimestamp,
+  storageItemBytes,
+  SYNC_FORMAT_VERSION,
+} from "./syncSnapshotCore.js";
 
-export const SYNC_FORMAT_VERSION = 1;
-
-function byteLength(value) {
-  return new TextEncoder().encode(String(value)).length;
-}
-
-export function storageItemBytes(key, value) {
-  return byteLength(key) + byteLength(JSON.stringify(value));
-}
-
-export function hashString(value) {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-}
-
-export function normalizeSyncTimestamp(value) {
-  const ts = Number(value);
-  return Number.isFinite(ts) && ts > 0 ? Math.trunc(ts) : 0;
-}
+export {
+  buildSyncSnapshot,
+  buildSyncState,
+  getSyncStateFingerprint,
+  hasSyncableUserData,
+  hashString,
+  normalizeSyncTimestamp,
+  storageItemBytes,
+  SYNC_FORMAT_VERSION,
+} from "./syncSnapshotCore.js";
 
 function normalizeListForSync(list) {
   return deepClone(list);
-}
-
-function normalizeListsForSync(lists) {
-  const normalized = {};
-  Object.entries(lists || {}).forEach(([id, list]) => {
-    normalized[id] = normalizeListForSync(list);
-  });
-  return normalized;
-}
-
-export function buildSyncState(stateInput) {
-  const state = sanitizeState(stateInput);
-  return sanitizeState({
-    lists: normalizeListsForSync(state.lists),
-    listOrder: deepClone(state.listOrder),
-    currentListId: state.currentListId,
-    currentVideoId: state.currentVideoId,
-    currentTabId: null,
-    history: deepClone(state.history),
-    deletedHistory: deepClone(state.deletedHistory),
-    deletedLists: deepClone(state.deletedLists),
-    queueRemovals: deepClone(state.queueRemovals),
-    autoCollect: deepClone(state.autoCollect),
-    videoProgress: deepClone(state.videoProgress),
-  });
-}
-
-export function getSyncStateFingerprint(stateInput) {
-  return hashString(JSON.stringify(buildSyncState(stateInput)));
-}
-
-export function hasSyncableUserData(stateInput) {
-  const state = sanitizeState(stateInput);
-  const listIds = Object.keys(state.lists || {});
-  if (listIds.some((id) => id !== DEFAULT_LIST_ID)) {
-    return true;
-  }
-  const hasQueuedVideos = listIds.some((id) => {
-    const queue = state.lists[id]?.queue;
-    return Array.isArray(queue) && queue.length > 0;
-  });
-  return (
-    hasQueuedVideos ||
-    Boolean(state.history?.length) ||
-    Boolean(state.deletedHistory?.length) ||
-    Boolean(state.queueRemovals?.length) ||
-    Boolean(Object.keys(state.videoProgress || {}).length) ||
-    Boolean(state.autoCollect?.lastRunAt) ||
-    Boolean(state.autoCollect?.seenIds?.length)
-  );
 }
 
 function findVideoInLists(lists, videoId) {
@@ -443,26 +390,4 @@ export function mergeRemoteSyncState(localInput, remoteInput) {
   }
 
   return sanitizeState(merged);
-}
-
-export function buildSyncSnapshot(
-  stateInput,
-  { updatedAt, deviceId, maxTotalBytes = Number.POSITIVE_INFINITY } = {}
-) {
-  const payload = buildSyncState(stateInput);
-  const json = JSON.stringify(payload);
-  const hash = hashString(json);
-  const manifest = {
-    version: SYNC_FORMAT_VERSION,
-    updatedAt: normalizeSyncTimestamp(updatedAt) || Date.now(),
-    deviceId: typeof deviceId === "string" && deviceId ? deviceId : null,
-    hash,
-  };
-  const totalBytes = byteLength(JSON.stringify({ manifest, state: payload }));
-  if (Number.isFinite(maxTotalBytes) && totalBytes > maxTotalBytes) {
-    throw new Error(
-      `Playlist sync snapshot is too large (${totalBytes} bytes)`
-    );
-  }
-  return { manifest, state: payload, hash, totalBytes };
 }

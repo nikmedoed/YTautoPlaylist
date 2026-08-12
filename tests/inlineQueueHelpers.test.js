@@ -2,6 +2,7 @@
 import assert from "assert";
 import { getProgressPercent } from "../src/progress.js";
 import { resolveInlineQueueCurrentEntry } from "../src/content/inline-queue/renderer.js";
+import { requireInlineQueueResponse } from "../src/content/inline-queue/itemActions.js";
 
 {
   const progress = {
@@ -43,4 +44,18 @@ import { resolveInlineQueueCurrentEntry } from "../src/content/inline-queue/rend
   console.log(
     "inline queue render metadata helpers resolve progress and current entries"
   );
+}
+
+{
+  const response = { currentQueue: { queue: [] } };
+  assert.strictEqual(requireInlineQueueResponse(response), response);
+  assert.throws(
+    () => requireInlineQueueResponse(null),
+    /QUEUE_ACTION_NO_RESPONSE/
+  );
+  assert.throws(
+    () => requireInlineQueueResponse({ error: "mutation failed" }),
+    /mutation failed/
+  );
+  console.log("inline queue actions reject missing and error responses");
 }

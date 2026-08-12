@@ -120,7 +120,7 @@ export const queueHandlers = {
     }
     return mutateAndPresent(
       () => postponeVideo(videoId, { listId: message.listId || null }),
-      { notify: true, sync: "immediate" }
+      { notify: true }
     );
   },
 
@@ -133,7 +133,7 @@ export const queueHandlers = {
     }
     return mutateAndPresent(
       () => postponeVideos(videoIds, { listId: message.listId || null }),
-      { notify: true, sync: "immediate" }
+      { notify: true }
     );
   },
 
@@ -145,7 +145,6 @@ export const queueHandlers = {
     return mutateAndPresent(() => restoreDeletedEntry(position), {
       dispatch: true,
       ensureDefault: true,
-      sync: "immediate",
     });
   },
 
@@ -164,8 +163,7 @@ export const queueHandlers = {
     }
     return mutateAndPresent(
       () =>
-        reorderQueue(message.videoId, message.targetIndex, message.listId || null),
-      { sync: "immediate" }
+        reorderQueue(message.videoId, message.targetIndex, message.listId || null)
     );
   },
 
@@ -175,7 +173,7 @@ export const queueHandlers = {
     }
     return mutateAndPresent(
       () => moveVideoToList(message.videoId, message.targetListId),
-      { dispatch: true, ensureDefault: true, sync: "immediate" }
+      { dispatch: true, ensureDefault: true }
     );
   },
 
@@ -189,7 +187,7 @@ export const queueHandlers = {
     }
     return mutateAndPresent(
       () => moveAllVideos(message.sourceListId, message.targetListId),
-      { dispatch: true, ensureDefault: true, sync: "immediate" }
+      { dispatch: true, ensureDefault: true }
     );
   },
 };

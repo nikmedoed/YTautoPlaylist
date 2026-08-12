@@ -237,7 +237,7 @@ var defaultState = {
   videoProgress: {}
 };
 
-// src/store/state/syncSnapshot.js
+// src/store/state/syncSnapshotCore.js
 function hashString(value) {
   let hash = 2166136261;
   for (let index = 0; index < value.length; index += 1) {
@@ -247,8 +247,8 @@ function hashString(value) {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 function normalizeSyncTimestamp(value) {
-  const ts = Number(value);
-  return Number.isFinite(ts) && ts > 0 ? Math.trunc(ts) : 0;
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) && timestamp > 0 ? Math.trunc(timestamp) : 0;
 }
 
 // src/store/state/syncImportDecision.js
