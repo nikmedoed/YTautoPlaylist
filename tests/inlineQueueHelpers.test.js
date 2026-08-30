@@ -3,6 +3,13 @@ import assert from "assert";
 import { getProgressPercent } from "../src/progress.js";
 import { resolveInlineQueueCurrentEntry } from "../src/content/inline-queue/renderer.js";
 import { requireInlineQueueResponse } from "../src/content/inline-queue/itemActions.js";
+import {
+  filterPendingInlineQueueRemovals,
+  finishInlineQueueRemovals,
+  isInlineQueueRenderLocked,
+  markInlineQueueRemovalPending,
+  releaseInlineQueueRenderLock,
+} from "../src/content/inline-queue/pendingRemovals.js";
 
 {
   const progress = {
@@ -44,6 +51,26 @@ import { requireInlineQueueResponse } from "../src/content/inline-queue/itemActi
   console.log(
     "inline queue render metadata helpers resolve progress and current entries"
   );
+}
+
+{
+  const entries = [{ id: "first" }, { id: "second" }, { id: "third" }];
+  markInlineQueueRemovalPending("list-a", "second");
+  assert.strictEqual(isInlineQueueRenderLocked("list-a"), true);
+  assert.deepStrictEqual(
+    filterPendingInlineQueueRemovals(entries, "list-a").map((entry) => entry.id),
+    ["first", "third"]
+  );
+  assert.deepStrictEqual(
+    filterPendingInlineQueueRemovals(entries, "list-b").map((entry) => entry.id),
+    ["first", "second", "third"]
+  );
+  finishInlineQueueRemovals("list-a", ["second"]);
+  assert.strictEqual(filterPendingInlineQueueRemovals(entries, "list-a"), entries);
+  assert.strictEqual(isInlineQueueRenderLocked("list-a"), true);
+  releaseInlineQueueRenderLock("list-a");
+  assert.strictEqual(isInlineQueueRenderLocked("list-a"), false);
+  console.log("inline queue pending removals suppress stale state per list");
 }
 
 {

@@ -4387,6 +4387,58 @@
     });
   }
 
+  // src/content/inline-queue/pendingRemovals.js
+  var pendingRemovalIdsByList = /* @__PURE__ */ new Map();
+  var renderLockedListIds = /* @__PURE__ */ new Set();
+  function normalizeListId(listId) {
+    return typeof listId === "string" && listId ? listId : null;
+  }
+  function markInlineQueueRemovalPending(listId, videoId) {
+    const normalizedListId = normalizeListId(listId);
+    if (!normalizedListId || typeof videoId !== "string" || !videoId) {
+      return;
+    }
+    let ids = pendingRemovalIdsByList.get(normalizedListId);
+    if (!ids) {
+      ids = /* @__PURE__ */ new Set();
+      pendingRemovalIdsByList.set(normalizedListId, ids);
+    }
+    ids.add(videoId);
+    renderLockedListIds.add(normalizedListId);
+  }
+  function finishInlineQueueRemovals(listId, videoIds) {
+    const normalizedListId = normalizeListId(listId);
+    const ids = pendingRemovalIdsByList.get(normalizedListId);
+    if (!ids) {
+      return;
+    }
+    videoIds.forEach((videoId) => ids.delete(videoId));
+    if (!ids.size) {
+      pendingRemovalIdsByList.delete(normalizedListId);
+    }
+  }
+  function filterPendingInlineQueueRemovals(entries, listId) {
+    const ids = pendingRemovalIdsByList.get(normalizeListId(listId));
+    if (!ids?.size) {
+      return entries;
+    }
+    return entries.filter((entry) => !ids.has(entry?.id));
+  }
+  function isInlineQueueRenderLocked(listId) {
+    const normalizedListId = normalizeListId(listId);
+    return Boolean(normalizedListId && renderLockedListIds.has(normalizedListId));
+  }
+  function releaseInlineQueueRenderLock(listId) {
+    const normalizedListId = normalizeListId(listId);
+    if (normalizedListId) {
+      renderLockedListIds.delete(normalizedListId);
+    }
+  }
+  function clearInlineQueueRemovalState() {
+    pendingRemovalIdsByList.clear();
+    renderLockedListIds.clear();
+  }
+
   // src/content/inline-queue/state.js
   var pendingInlineRefresh = false;
   function syncAllInlineButtons() {
@@ -4458,9 +4510,15 @@
       scheduleInlinePlaylistRefresh(context);
       return;
     }
-    const queueEntries = Array.isArray(presentation?.currentQueue?.queue) ? presentation.currentQueue.queue : [];
-    const { normalizedEntries, orderedIds } = normalizeQueueEntries(queueEntries);
     const listId = presentation?.currentQueue?.id || presentation?.currentListId || null;
+    const rawQueueEntries = Array.isArray(presentation?.currentQueue?.queue) ? presentation.currentQueue.queue : [];
+    const queueEntries = filterPendingInlineQueueRemovals(rawQueueEntries, listId);
+    const { normalizedEntries, orderedIds } = normalizeQueueEntries(queueEntries);
+    const previousListId = inlinePlaylistState.currentListId;
+    if (previousListId && previousListId !== listId) {
+      releaseInlineQueueRenderLock(previousListId);
+    }
+    const suppressInlineQueueRender = previousListId === listId && isInlineQueueRenderLocked(listId);
     const listFrozen = Boolean(presentation?.currentQueue?.freeze);
     const rawIndex = presentation?.currentQueue?.currentIndex;
     const normalizedIndex = Number.isInteger(rawIndex) && rawIndex >= 0 && rawIndex < orderedIds.length ? rawIndex : orderedIds.length ? 0 : null;
@@ -4505,7 +4563,9 @@
       syncVideoCardProgress2();
     }
     context.updatePlayerControlsUI?.();
-    context.updateInlineQueueUI?.();
+    if (!suppressInlineQueueRender) {
+      context.updateInlineQueueUI?.();
+    }
     context.updatePageActions?.();
     context.ensurePlaybackWatchdog?.();
   }
@@ -4665,6 +4725,10 @@
   }
 
   // src/content/inline-queue/itemActions.js
+  var INLINE_QUEUE_REMOVE_BATCH_DELAY_MS = 240;
+  var queuedRemovalIdsByList = /* @__PURE__ */ new Map();
+  var removalBatchTimers = /* @__PURE__ */ new Map();
+  var flushingRemovalLists = /* @__PURE__ */ new Set();
   function activateInlineQueueItem(node) {
     const videoItem = node instanceof HTMLElement ? node : null;
     if (!videoItem) {
@@ -4726,6 +4790,45 @@
     }
     return response;
   }
+  function scheduleInlineQueueRemovalBatch(listId, context) {
+    if (removalBatchTimers.has(listId) || flushingRemovalLists.has(listId)) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      removalBatchTimers.delete(listId);
+      void flushInlineQueueRemovalBatch(listId, context);
+    }, INLINE_QUEUE_REMOVE_BATCH_DELAY_MS);
+    removalBatchTimers.set(listId, timer);
+  }
+  async function flushInlineQueueRemovalBatch(listId, context) {
+    if (flushingRemovalLists.has(listId)) {
+      return;
+    }
+    const queuedIds = queuedRemovalIdsByList.get(listId);
+    if (!queuedIds?.size) {
+      return;
+    }
+    const videoIds = Array.from(queuedIds);
+    queuedRemovalIdsByList.delete(listId);
+    flushingRemovalLists.add(listId);
+    try {
+      const response = requireInlineQueueResponse(
+        await sendMessage("playlist:remove", { videoIds, listId })
+      );
+      finishInlineQueueRemovals(listId, videoIds);
+      context.updateInlinePlaylistState?.(response);
+    } catch (err) {
+      console.warn("Failed to remove videos from inline queue", err);
+      finishInlineQueueRemovals(listId, videoIds);
+      releaseInlineQueueRenderLock(listId);
+      await context.refreshInlinePlaylistState?.();
+    } finally {
+      flushingRemovalLists.delete(listId);
+      if (queuedRemovalIdsByList.get(listId)?.size) {
+        scheduleInlineQueueRemovalBatch(listId, context);
+      }
+    }
+  }
   function handleInlineQueueRemove(button, context = {}) {
     const target = button instanceof HTMLButtonElement ? button : null;
     if (!target || target.dataset.loading === "1") {
@@ -4739,34 +4842,20 @@
     if (!videoId) {
       return;
     }
-    const focusTargetId = resolveInlineQueuePostponeFocusTarget(videoItem);
     const row = videoItem.closest(".yta-inline-queue__item") || videoItem;
-    const parent = row.parentNode;
-    const nextSibling = row.nextSibling;
-    target.dataset.loading = "1";
-    target.disabled = true;
-    row.remove();
-    context.setInlineQueuePendingFocus?.(focusTargetId || videoId);
-    const payload = { videoId };
-    if (inlinePlaylistState.currentListId) {
-      payload.listId = inlinePlaylistState.currentListId;
+    const listId = inlinePlaylistState.currentListId || null;
+    if (!listId) {
+      return;
     }
-    sendMessage("playlist:remove", payload).then((response) => {
-      context.updateInlinePlaylistState?.(requireInlineQueueResponse(response));
-    }).catch((err) => {
-      console.warn("Failed to remove video from inline queue", err);
-      if (parent && !row.isConnected) {
-        parent.insertBefore(row, nextSibling?.parentNode === parent ? nextSibling : null);
-      }
-      target.disabled = false;
-      delete target.dataset.loading;
-    }).finally(() => {
-      if (!target.isConnected) {
-        return;
-      }
-      target.disabled = false;
-      delete target.dataset.loading;
-    });
+    markInlineQueueRemovalPending(listId, videoId);
+    row.remove();
+    let queuedIds = queuedRemovalIdsByList.get(listId);
+    if (!queuedIds) {
+      queuedIds = /* @__PURE__ */ new Set();
+      queuedRemovalIdsByList.set(listId, queuedIds);
+    }
+    queuedIds.add(videoId);
+    scheduleInlineQueueRemovalBatch(listId, context);
   }
   function handleInlineQueuePostpone(button, context = {}) {
     const target = button instanceof HTMLButtonElement ? button : null;
@@ -6193,6 +6282,9 @@
       resetAutoScrollState();
     }
     function updateInlineQueueUI2() {
+      if (isInlineQueueRenderLocked(inlinePlaylistState.currentListId)) {
+        return;
+      }
       const context = typeof options.determinePageContext === "function" ? options.determinePageContext() : "other";
       const controlsActive = Boolean(state && state.controlsActive);
       if (context !== "watch" || !controlsActive) {
@@ -6282,6 +6374,7 @@
     updateInlinePlaylistState
   });
   function teardownInlineQueue() {
+    clearInlineQueueRemovalState();
     teardownInlineQueueShell();
     inlineQueueRenderer.resetAutoScrollState();
   }
@@ -6290,6 +6383,7 @@
     hideInlineMoveMenu,
     setInlineQueuePendingFocus,
     showInlineMoveMenu,
+    refreshInlinePlaylistState,
     updateInlinePlaylistState
   };
   function handleInlineQueueListClick2(event2) {

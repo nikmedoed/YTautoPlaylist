@@ -18,6 +18,7 @@ import {
   hideInlineQueueSoft,
   inlineQueueUI,
 } from "./ui.js";
+import { isInlineQueueRenderLocked } from "./pendingRemovals.js";
 
 const inlineQueueCountFormatter = new Intl.NumberFormat("ru-RU");
 
@@ -139,6 +140,9 @@ export function createInlineQueueRenderer(options = {}) {
 
   // Re-renders the mounted inline queue from the already-normalized state object.
   function updateInlineQueueUI() {
+    if (isInlineQueueRenderLocked(inlinePlaylistState.currentListId)) {
+      return;
+    }
     const context =
       typeof options.determinePageContext === "function"
         ? options.determinePageContext()

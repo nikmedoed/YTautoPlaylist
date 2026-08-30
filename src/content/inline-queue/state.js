@@ -9,6 +9,11 @@ import {
 import {
   syncVideoCardProgress as syncVideoCardProgressBase,
 } from "../video-cards/progress.js";
+import {
+  filterPendingInlineQueueRemovals,
+  isInlineQueueRenderLocked,
+  releaseInlineQueueRenderLock,
+} from "./pendingRemovals.js";
 
 let pendingInlineRefresh = false;
 
@@ -102,11 +107,18 @@ export function updateInlinePlaylistState(rawPresentation, context = {}) {
     scheduleInlinePlaylistRefresh(context);
     return;
   }
-  const queueEntries = Array.isArray(presentation?.currentQueue?.queue)
+  const listId = presentation?.currentQueue?.id || presentation?.currentListId || null;
+  const rawQueueEntries = Array.isArray(presentation?.currentQueue?.queue)
     ? presentation.currentQueue.queue
     : [];
+  const queueEntries = filterPendingInlineQueueRemovals(rawQueueEntries, listId);
   const { normalizedEntries, orderedIds } = normalizeQueueEntries(queueEntries);
-  const listId = presentation?.currentQueue?.id || presentation?.currentListId || null;
+  const previousListId = inlinePlaylistState.currentListId;
+  if (previousListId && previousListId !== listId) {
+    releaseInlineQueueRenderLock(previousListId);
+  }
+  const suppressInlineQueueRender =
+    previousListId === listId && isInlineQueueRenderLocked(listId);
   const listFrozen = Boolean(presentation?.currentQueue?.freeze);
   const rawIndex = presentation?.currentQueue?.currentIndex;
   const normalizedIndex =
@@ -181,7 +193,9 @@ export function updateInlinePlaylistState(rawPresentation, context = {}) {
     syncVideoCardProgress();
   }
   context.updatePlayerControlsUI?.();
-  context.updateInlineQueueUI?.();
+  if (!suppressInlineQueueRender) {
+    context.updateInlineQueueUI?.();
+  }
   context.updatePageActions?.();
   context.ensurePlaybackWatchdog?.();
 }

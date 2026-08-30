@@ -44,6 +44,7 @@ import {
   teardownInlineQueueShell,
 } from "./ui.js";
 import { createInlineQueueRenderer } from "./renderer.js";
+import { clearInlineQueueRemovalState } from "./pendingRemovals.js";
 
 const inlineQueueRenderer = createInlineQueueRenderer({
   determinePageContext,
@@ -75,6 +76,7 @@ configureInlineMoveMenu({
 });
 
 export function teardownInlineQueue() {
+  clearInlineQueueRemovalState();
   teardownInlineQueueShell();
   inlineQueueRenderer.resetAutoScrollState();
 }
@@ -84,6 +86,7 @@ const inlineQueueItemActionContext = {
   hideInlineMoveMenu,
   setInlineQueuePendingFocus,
   showInlineMoveMenu,
+  refreshInlinePlaylistState,
   updateInlinePlaylistState,
 };
 

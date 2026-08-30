@@ -4,6 +4,16 @@ import {
   sendMessage,
 } from "../core/base.js";
 import { openQuickFilterForVideo } from "./navigation.js";
+import {
+  finishInlineQueueRemovals,
+  markInlineQueueRemovalPending,
+  releaseInlineQueueRenderLock,
+} from "./pendingRemovals.js";
+
+const INLINE_QUEUE_REMOVE_BATCH_DELAY_MS = 240;
+const queuedRemovalIdsByList = new Map();
+const removalBatchTimers = new Map();
+const flushingRemovalLists = new Set();
 
 function activateInlineQueueItem(node) {
   const videoItem = node instanceof HTMLElement ? node : null;
@@ -71,6 +81,47 @@ export function requireInlineQueueResponse(response) {
   return response;
 }
 
+function scheduleInlineQueueRemovalBatch(listId, context) {
+  if (removalBatchTimers.has(listId) || flushingRemovalLists.has(listId)) {
+    return;
+  }
+  const timer = window.setTimeout(() => {
+    removalBatchTimers.delete(listId);
+    void flushInlineQueueRemovalBatch(listId, context);
+  }, INLINE_QUEUE_REMOVE_BATCH_DELAY_MS);
+  removalBatchTimers.set(listId, timer);
+}
+
+async function flushInlineQueueRemovalBatch(listId, context) {
+  if (flushingRemovalLists.has(listId)) {
+    return;
+  }
+  const queuedIds = queuedRemovalIdsByList.get(listId);
+  if (!queuedIds?.size) {
+    return;
+  }
+  const videoIds = Array.from(queuedIds);
+  queuedRemovalIdsByList.delete(listId);
+  flushingRemovalLists.add(listId);
+  try {
+    const response = requireInlineQueueResponse(
+      await sendMessage("playlist:remove", { videoIds, listId })
+    );
+    finishInlineQueueRemovals(listId, videoIds);
+    context.updateInlinePlaylistState?.(response);
+  } catch (err) {
+    console.warn("Failed to remove videos from inline queue", err);
+    finishInlineQueueRemovals(listId, videoIds);
+    releaseInlineQueueRenderLock(listId);
+    await context.refreshInlinePlaylistState?.();
+  } finally {
+    flushingRemovalLists.delete(listId);
+    if (queuedRemovalIdsByList.get(listId)?.size) {
+      scheduleInlineQueueRemovalBatch(listId, context);
+    }
+  }
+}
+
 function handleInlineQueueRemove(button, context = {}) {
   const target = button instanceof HTMLButtonElement ? button : null;
   if (!target || target.dataset.loading === "1") {
@@ -84,37 +135,20 @@ function handleInlineQueueRemove(button, context = {}) {
   if (!videoId) {
     return;
   }
-  const focusTargetId = resolveInlineQueuePostponeFocusTarget(videoItem);
   const row = videoItem.closest(".yta-inline-queue__item") || videoItem;
-  const parent = row.parentNode;
-  const nextSibling = row.nextSibling;
-  target.dataset.loading = "1";
-  target.disabled = true;
-  row.remove();
-  context.setInlineQueuePendingFocus?.(focusTargetId || videoId);
-  const payload = { videoId };
-  if (inlinePlaylistState.currentListId) {
-    payload.listId = inlinePlaylistState.currentListId;
+  const listId = inlinePlaylistState.currentListId || null;
+  if (!listId) {
+    return;
   }
-  sendMessage("playlist:remove", payload)
-    .then((response) => {
-      context.updateInlinePlaylistState?.(requireInlineQueueResponse(response));
-    })
-    .catch((err) => {
-      console.warn("Failed to remove video from inline queue", err);
-      if (parent && !row.isConnected) {
-        parent.insertBefore(row, nextSibling?.parentNode === parent ? nextSibling : null);
-      }
-      target.disabled = false;
-      delete target.dataset.loading;
-    })
-    .finally(() => {
-      if (!target.isConnected) {
-        return;
-      }
-      target.disabled = false;
-      delete target.dataset.loading;
-    });
+  markInlineQueueRemovalPending(listId, videoId);
+  row.remove();
+  let queuedIds = queuedRemovalIdsByList.get(listId);
+  if (!queuedIds) {
+    queuedIds = new Set();
+    queuedRemovalIdsByList.set(listId, queuedIds);
+  }
+  queuedIds.add(videoId);
+  scheduleInlineQueueRemovalBatch(listId, context);
 }
 
 function handleInlineQueuePostpone(button, context = {}) {
