@@ -357,6 +357,7 @@
   width: 100%;
 }
 
+
 .manage-list-row.selected .manage-video-item {
   border-color: rgba(25, 118, 210, 0.65);
   background: rgba(25, 118, 210, 0.14);

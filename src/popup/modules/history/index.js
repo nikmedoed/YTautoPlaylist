@@ -144,6 +144,13 @@ export function createHistoryController({
         dataset,
         thumbnail: { fallback: fallbackThumbnail },
         details: detailParts,
+        detailActions: [
+          {
+            className: "video-copy-link",
+            textContent: "",
+            title: "Скопировать ссылку на видео",
+          },
+        ],
         actions: [
           {
             className: "icon-button history-restore",
@@ -164,6 +171,21 @@ export function createHistoryController({
   }
 
   function handleHistoryClick(event) {
+    const copyLinkBtn = event.target.closest(".video-copy-link");
+    if (copyLinkBtn) {
+      event.stopPropagation();
+      const videoId = copyLinkBtn.closest(".video-item")?.dataset.id;
+      if (videoId) {
+        navigator.clipboard
+          .writeText(`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`)
+          .then(() => setStatus("Ссылка на видео скопирована", "success", 2200))
+          .catch((err) => {
+            console.error("Failed to copy video link", err);
+            setStatus("Не удалось скопировать ссылку", "error", 3500);
+          });
+      }
+      return;
+    }
     const restoreBtn = event.target.closest("[data-action='restore']");
     const restoreDeletedBtn = event.target.closest(
       "[data-action='restore-deleted']"

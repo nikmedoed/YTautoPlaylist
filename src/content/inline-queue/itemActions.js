@@ -195,7 +195,35 @@ function handleInlineQueueMove(button, context = {}) {
   context.showInlineMoveMenu?.(videoId, inlinePlaylistState.currentListId, target);
 }
 
+function copyInlineQueueVideoLink(button) {
+  const videoId = button.closest(".video-item")?.dataset.videoId;
+  if (!videoId) {
+    return;
+  }
+  const originalTitle = button.title;
+  navigator.clipboard
+    .writeText(`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`)
+    .then(() => {
+      button.title = "Ссылка скопирована";
+      window.setTimeout(() => {
+        if (button.isConnected) {
+          button.title = originalTitle;
+        }
+      }, 1800);
+    })
+    .catch((err) => {
+      console.warn("Failed to copy video link", err);
+    });
+}
+
 export function handleInlineQueueListClick(event, context = {}) {
+  const copyLinkBtn = event.target.closest(".video-copy-link");
+  if (copyLinkBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    copyInlineQueueVideoLink(copyLinkBtn);
+    return;
+  }
   const quickFilterBtn = event.target.closest(".video-quick-filter");
   if (quickFilterBtn) {
     event.preventDefault();

@@ -16,6 +16,9 @@ export function createManagerDetailActions({
     if (!action || !videoId) return;
     if (action !== "quickFilter" && !listId) return;
     switch (action) {
+      case "copyLink":
+        await copyVideoLink(videoId);
+        break;
       case "quickFilter":
         openQuickFilter(videoId);
         break;
@@ -53,6 +56,17 @@ export function createManagerDetailActions({
         break;
     }
   };
+
+  async function copyVideoLink(videoId) {
+    const url = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setStatus("Ссылка на видео скопирована", "success", 2200);
+    } catch (err) {
+      console.error("Failed to copy video link", err);
+      setStatus("Не удалось скопировать ссылку", "error", 3500);
+    }
+  }
 
   async function postponeVideo({ videoId, listId }) {
     const appState = getAppState();

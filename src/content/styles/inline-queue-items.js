@@ -301,6 +301,47 @@ export function getInlineQueueItemStyles() {
     opacity: 0.5;
     vertical-align: middle;
   }
+  .yta-inline-queue .video-detail-action {
+    position: static;
+    align-self: center;
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    margin: 0 0 0 5px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    opacity: 0.72;
+  }
+  .yta-inline-queue .video-copy-link {
+    position: relative;
+  }
+  .yta-inline-queue .video-copy-link::before,
+  .yta-inline-queue .video-copy-link::after {
+    content: "";
+    position: absolute;
+    width: 6px;
+    height: 7px;
+    border: 1.25px solid currentColor;
+    border-radius: 1px;
+    box-sizing: border-box;
+  }
+  .yta-inline-queue .video-copy-link::before {
+    top: 2px;
+    left: 4px;
+  }
+  .yta-inline-queue .video-copy-link::after {
+    top: 4px;
+    left: 2px;
+  }
+  .yta-inline-queue .video-detail-action:hover,
+  .yta-inline-queue .video-detail-action:focus-visible {
+    background: rgba(255, 255, 255, 0.14);
+    color: var(--yt-spec-text-primary, #fff);
+    opacity: 1;
+  }
   .yta-inline-queue .video-detail__icon {
     display: inline-flex;
     align-items: center;

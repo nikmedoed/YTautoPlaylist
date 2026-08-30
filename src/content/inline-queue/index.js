@@ -67,6 +67,7 @@ configureInlineQueueUI({
 });
 configureInlineQueueDragDrop({
   hideInlineMoveMenu,
+  renderInlineQueue: () => inlineQueueRenderer.updateInlineQueueUI(),
   updateInlinePlaylistState,
 });
 configureInlineMoveMenu({

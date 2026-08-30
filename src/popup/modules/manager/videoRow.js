@@ -90,6 +90,14 @@ export function createManagerVideoRow({
     },
     thumbnail: { fallback: fallbackThumbnail },
     details: buildDetailParts(video),
+    detailActions: [
+      {
+        className: "video-copy-link",
+        textContent: "",
+        title: "Скопировать ссылку на видео",
+        dataset: { action: "copyLink", videoId: video.id, listId },
+      },
+    ],
     actions,
     progress: progressPercent,
   });

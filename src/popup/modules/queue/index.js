@@ -134,6 +134,22 @@ export function createQueueController({
   }
 
   function handleQueueClick(event) {
+    const copyLinkBtn = event.target.closest(".video-copy-link");
+    if (copyLinkBtn) {
+      event.stopPropagation();
+      const item = copyLinkBtn.closest(".video-item");
+      const videoId = item?.dataset.id;
+      if (videoId) {
+        navigator.clipboard
+          .writeText(`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`)
+          .then(() => setStatus("Ссылка на видео скопирована", "success", 2200))
+          .catch((err) => {
+            console.error("Failed to copy video link", err);
+            setStatus("Не удалось скопировать ссылку", "error", 3500);
+          });
+      }
+      return;
+    }
     const quickFilterBtn = event.target.closest(".video-quick-filter");
     if (quickFilterBtn) {
       event.stopPropagation();
@@ -310,6 +326,13 @@ export function createQueueController({
         },
         thumbnail: { fallback: fallbackThumbnail },
         details: detailParts,
+        detailActions: [
+          {
+            className: "video-copy-link",
+            textContent: "",
+            title: "Скопировать ссылку на видео",
+          },
+        ],
         actions,
         progress: progressPercent,
       });

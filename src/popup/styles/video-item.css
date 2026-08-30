@@ -238,6 +238,50 @@
   gap: 6px;
 }
 
+.video-detail-action {
+  position: relative;
+  align-self: center;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin: 0 0 0 5px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.72;
+  cursor: pointer;
+}
+
+.video-copy-link::before,
+.video-copy-link::after {
+  content: "";
+  position: absolute;
+  width: 6px;
+  height: 7px;
+  border: 1.25px solid currentColor;
+  border-radius: 1px;
+  box-sizing: border-box;
+}
+
+.video-copy-link::before {
+  top: 2px;
+  left: 4px;
+}
+
+.video-copy-link::after {
+  top: 4px;
+  left: 2px;
+}
+
+.video-detail-action:hover,
+.video-detail-action:focus-visible {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.14);
+  opacity: 1;
+}
+
 .video-handle {
   position: relative;
   display: flex;

@@ -2,7 +2,7 @@
 import { formatDateTime, formatDuration } from "../../time.js";
 import { resolveThumbnailUrl } from "../../utils.js";
 
-function createInlineQueueDetailContainer(parts) {
+function createInlineQueueDetailContainer(parts, videoId) {
   const details = document.createElement("div");
   details.className = "video-details";
   let hasContent = false;
@@ -51,6 +51,16 @@ function createInlineQueueDetailContainer(parts) {
     hasContent = true;
   });
 
+  if (videoId) {
+    const copyLinkBtn = createInlineQueueActionButton(
+      "video-copy-link video-detail-action",
+      "",
+      "Скопировать ссылку на видео"
+    );
+    details.appendChild(copyLinkBtn);
+    hasContent = true;
+  }
+
   return hasContent ? details : null;
 }
 
@@ -73,7 +83,7 @@ function buildInlineQueueDetails(entry) {
   if (published) {
     parts.push({ text: published, textClassName: "video-detail__text" });
   }
-  return createInlineQueueDetailContainer(parts);
+  return createInlineQueueDetailContainer(parts, entry?.id);
 }
 
 function createInlineQueueActionButton(className, textContent, title) {

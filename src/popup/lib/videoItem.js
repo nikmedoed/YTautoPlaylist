@@ -32,7 +32,7 @@ function createHandle(doc, options = {}) {
   return button;
 }
 
-function createDetails(doc, parts, className = "video-details") {
+function createDetails(doc, parts, className = "video-details", actions = []) {
   const details = doc.createElement("div");
   details.className = className;
   for (const part of parts || []) {
@@ -68,6 +68,13 @@ function createDetails(doc, parts, className = "video-details") {
       details.appendChild(separator);
     }
     details.appendChild(node);
+  }
+  for (const action of actions) {
+    const node = createActionButton(doc, action);
+    if (node) {
+      node.classList.add("video-detail-action");
+      details.appendChild(node);
+    }
   }
   return details;
 }
@@ -126,6 +133,7 @@ export function createVideoItem(video, options = {}) {
     titleClass = "video-title",
     detailsClass = "video-details",
     details = [],
+    detailActions = [],
     actions = [],
     progress: progressOption = null,
     progressClassName = "video-thumb__progress",
@@ -226,7 +234,7 @@ export function createVideoItem(video, options = {}) {
   titleNode.textContent = resolvedTitle || DEFAULT_TITLE;
   body.appendChild(titleNode);
 
-  const detailsNode = createDetails(doc, details, detailsClass);
+  const detailsNode = createDetails(doc, details, detailsClass, detailActions);
   body.appendChild(detailsNode);
 
   element.appendChild(body);

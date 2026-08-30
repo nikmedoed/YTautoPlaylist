@@ -997,6 +997,9 @@ function createManagerDetailActions({
     if (!action || !videoId) return;
     if (action !== "quickFilter" && !listId) return;
     switch (action) {
+      case "copyLink":
+        await copyVideoLink(videoId);
+        break;
       case "quickFilter":
         openQuickFilter2(videoId);
         break;
@@ -1032,6 +1035,16 @@ function createManagerDetailActions({
         break;
     }
   };
+  async function copyVideoLink(videoId) {
+    const url = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setStatus2("\u0421\u0441\u044B\u043B\u043A\u0430 \u043D\u0430 \u0432\u0438\u0434\u0435\u043E \u0441\u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u043D\u0430", "success", 2200);
+    } catch (err) {
+      console.error("Failed to copy video link", err);
+      setStatus2("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0441\u0441\u044B\u043B\u043A\u0443", "error", 3500);
+    }
+  }
   async function postponeVideo({ videoId, listId }) {
     const appState2 = getAppState();
     const isCurrent = appState2?.currentListId === listId && appState2?.currentVideoId === videoId;
@@ -2088,7 +2101,7 @@ function createHandle(doc, options = {}) {
   }
   return button;
 }
-function createDetails(doc, parts, className = "video-details") {
+function createDetails(doc, parts, className = "video-details", actions = []) {
   const details = doc.createElement("div");
   details.className = className;
   for (const part of parts || []) {
@@ -2123,6 +2136,13 @@ function createDetails(doc, parts, className = "video-details") {
       details.appendChild(separator);
     }
     details.appendChild(node);
+  }
+  for (const action of actions) {
+    const node = createActionButton(doc, action);
+    if (node) {
+      node.classList.add("video-detail-action");
+      details.appendChild(node);
+    }
   }
   return details;
 }
@@ -2174,6 +2194,7 @@ function createVideoItem(video, options = {}) {
     titleClass = "video-title",
     detailsClass = "video-details",
     details = [],
+    detailActions = [],
     actions = [],
     progress: progressOption = null,
     progressClassName = "video-thumb__progress",
@@ -2252,7 +2273,7 @@ function createVideoItem(video, options = {}) {
   const resolvedTitle = sanitizeText(rawTitle);
   titleNode.textContent = resolvedTitle || DEFAULT_TITLE;
   body.appendChild(titleNode);
-  const detailsNode = createDetails(doc, details, detailsClass);
+  const detailsNode = createDetails(doc, details, detailsClass, detailActions);
   body.appendChild(detailsNode);
   element.appendChild(body);
   for (const action of actions) {
@@ -2346,6 +2367,14 @@ function createManagerVideoRow({
     },
     thumbnail: { fallback: fallbackThumbnail2 },
     details: buildDetailParts(video),
+    detailActions: [
+      {
+        className: "video-copy-link",
+        textContent: "",
+        title: "\u0421\u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0441\u0441\u044B\u043B\u043A\u0443 \u043D\u0430 \u0432\u0438\u0434\u0435\u043E",
+        dataset: { action: "copyLink", videoId: video.id, listId }
+      }
+    ],
     actions,
     progress: progressPercent
   });

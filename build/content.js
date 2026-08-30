@@ -539,9 +539,9 @@
       return;
     }
     window.__ytaRuntimeInvalidationGuardInstalled = true;
-    window.addEventListener("unhandledrejection", (event) => {
-      if (isRecoverableRuntimeError(event.reason)) {
-        event.preventDefault();
+    window.addEventListener("unhandledrejection", (event2) => {
+      if (isRecoverableRuntimeError(event2.reason)) {
+        event2.preventDefault();
       }
     });
   }
@@ -868,6 +868,47 @@
     line-height: 1;
     opacity: 0.5;
     vertical-align: middle;
+  }
+  .yta-inline-queue .video-detail-action {
+    position: static;
+    align-self: center;
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    margin: 0 0 0 5px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    opacity: 0.72;
+  }
+  .yta-inline-queue .video-copy-link {
+    position: relative;
+  }
+  .yta-inline-queue .video-copy-link::before,
+  .yta-inline-queue .video-copy-link::after {
+    content: "";
+    position: absolute;
+    width: 6px;
+    height: 7px;
+    border: 1.25px solid currentColor;
+    border-radius: 1px;
+    box-sizing: border-box;
+  }
+  .yta-inline-queue .video-copy-link::before {
+    top: 2px;
+    left: 4px;
+  }
+  .yta-inline-queue .video-copy-link::after {
+    top: 4px;
+    left: 2px;
+  }
+  .yta-inline-queue .video-detail-action:hover,
+  .yta-inline-queue .video-detail-action:focus-visible {
+    background: rgba(255, 255, 255, 0.14);
+    color: var(--yt-spec-text-primary, #fff);
+    opacity: 1;
   }
   .yta-inline-queue .video-detail__icon {
     display: inline-flex;
@@ -2039,9 +2080,9 @@
       fallback.textContent = "YT";
       button.appendChild(fallback);
     }
-    button.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
+    button.addEventListener("click", (event2) => {
+      event2.preventDefault();
+      event2.stopPropagation();
       onToggle();
     });
     return button;
@@ -2051,8 +2092,8 @@
     button.type = "button";
     button.className = "yta-page-actions__action";
     button.textContent = label;
-    button.addEventListener("click", (event) => {
-      event.preventDefault();
+    button.addEventListener("click", (event2) => {
+      event2.preventDefault();
       handler();
     });
     return button;
@@ -2063,8 +2104,8 @@
     button.className = "yta-page-actions__stop";
     button.textContent = "\u0421\u0442\u043E\u043F";
     button.hidden = true;
-    button.addEventListener("click", (event) => {
-      event.preventDefault();
+    button.addEventListener("click", (event2) => {
+      event2.preventDefault();
       onCancel();
     });
     return button;
@@ -2244,8 +2285,8 @@
       }
       scheduleCollapsePageActions2(DEFAULT_COLLAPSE_DELAY);
     }
-    function handleContainerFocusOut(event) {
-      if (pageActions2.container && event.relatedTarget && pageActions2.container.contains(event.relatedTarget)) {
+    function handleContainerFocusOut(event2) {
+      if (pageActions2.container && event2.relatedTarget && pageActions2.container.contains(event2.relatedTarget)) {
         return;
       }
       scheduleCollapsePageActions2(DEFAULT_COLLAPSE_DELAY);
@@ -2807,8 +2848,8 @@
     return document.querySelector("video.html5-main-video") || document.querySelector("video");
   }
   function bindAddCurrentButton(addCurrentBtn, context) {
-    addCurrentBtn.addEventListener("click", (event) => {
-      event.preventDefault();
+    addCurrentBtn.addEventListener("click", (event2) => {
+      event2.preventDefault();
       if (addCurrentBtn.disabled || addCurrentBtn.dataset.loading === "1") {
         return;
       }
@@ -2845,8 +2886,8 @@
     startBtn.textContent = "\u25B6 \u041F\u043B\u0435\u0439\u043B\u0438\u0441\u0442";
     startBtn.title = "\u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u043B\u0435\u0439\u043B\u0438\u0441\u0442";
     startBtn.setAttribute("aria-label", "\u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043F\u043B\u0435\u0439\u043B\u0438\u0441\u0442");
-    startBtn.addEventListener("click", (event) => {
-      event.preventDefault();
+    startBtn.addEventListener("click", (event2) => {
+      event2.preventDefault();
       context.requestStartPlayback?.();
     });
     const addCurrentBtn = document.createElement("button");
@@ -2874,8 +2915,8 @@
     const postponeLabel = document.createElement("span");
     postponeLabel.textContent = "\u041E\u0442\u043B\u043E\u0436\u0438\u0442\u044C";
     postponeBtn.append(postponeIcon, postponeLabel);
-    postponeBtn.addEventListener("click", (event) => {
-      event.preventDefault();
+    postponeBtn.addEventListener("click", (event2) => {
+      event2.preventDefault();
       context.requestPostpone?.();
     });
     const prevBtn = document.createElement("button");
@@ -2884,8 +2925,8 @@
     prevBtn.textContent = "\u23EE";
     prevBtn.title = "\u041F\u0440\u0435\u0434\u044B\u0434\u0443\u0449\u0435\u0435";
     prevBtn.setAttribute("aria-label", "\u041F\u0440\u0435\u0434\u044B\u0434\u0443\u0449\u0435\u0435 \u0432\u0438\u0434\u0435\u043E");
-    prevBtn.addEventListener("click", (event) => {
-      event.preventDefault();
+    prevBtn.addEventListener("click", (event2) => {
+      event2.preventDefault();
       context.requestPrevious?.();
     });
     const nextBtn = document.createElement("button");
@@ -2894,8 +2935,8 @@
     nextBtn.textContent = "\u23ED";
     nextBtn.title = "\u0421\u043B\u0435\u0434\u0443\u044E\u0449\u0435\u0435";
     nextBtn.setAttribute("aria-label", "\u0421\u043B\u0435\u0434\u0443\u044E\u0449\u0435\u0435 \u0432\u0438\u0434\u0435\u043E");
-    nextBtn.addEventListener("click", (event) => {
-      event.preventDefault();
+    nextBtn.addEventListener("click", (event2) => {
+      event2.preventDefault();
       context.requestNext?.();
     });
     topRow.append(addCurrentBtn);
@@ -3285,12 +3326,12 @@
     if (playerErrorEventsBound) {
       return;
     }
-    const errorListener = (event) => {
-      if (!event) return;
-      handleVideoUnavailable(event.detail || event, context);
+    const errorListener = (event2) => {
+      if (!event2) return;
+      handleVideoUnavailable(event2.detail || event2, context);
     };
-    const pageDataListener = (event) => {
-      const detail = event?.detail;
+    const pageDataListener = (event2) => {
+      const detail = event2?.detail;
       if (!detail) {
         return;
       }
@@ -4089,8 +4130,8 @@
       maybeShowQueueEndAnnouncement(videoId);
     });
   }
-  function handleVideoError(event) {
-    const mediaError = event?.target?.error;
+  function handleVideoError(event2) {
+    const mediaError = event2?.target?.error;
     if (mediaError && typeof mediaError === "object") {
       const detail = {};
       if (typeof mediaError.message === "string") {
@@ -4102,11 +4143,11 @@
       handleVideoUnavailable2(detail);
       return;
     }
-    if (event?.detail) {
-      handleVideoUnavailable2(event.detail);
+    if (event2?.detail) {
+      handleVideoUnavailable2(event2.detail);
       return;
     }
-    handleVideoUnavailable2(event || {});
+    handleVideoUnavailable2(event2 || {});
   }
   function handleVideoPaused() {
     resetVideoEndFallbackMatch();
@@ -4798,11 +4839,35 @@
     }
     context.showInlineMoveMenu?.(videoId, inlinePlaylistState.currentListId, target);
   }
-  function handleInlineQueueListClick(event, context = {}) {
-    const quickFilterBtn = event.target.closest(".video-quick-filter");
+  function copyInlineQueueVideoLink(button) {
+    const videoId = button.closest(".video-item")?.dataset.videoId;
+    if (!videoId) {
+      return;
+    }
+    const originalTitle = button.title;
+    navigator.clipboard.writeText(`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`).then(() => {
+      button.title = "\u0421\u0441\u044B\u043B\u043A\u0430 \u0441\u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u043D\u0430";
+      window.setTimeout(() => {
+        if (button.isConnected) {
+          button.title = originalTitle;
+        }
+      }, 1800);
+    }).catch((err) => {
+      console.warn("Failed to copy video link", err);
+    });
+  }
+  function handleInlineQueueListClick(event2, context = {}) {
+    const copyLinkBtn = event2.target.closest(".video-copy-link");
+    if (copyLinkBtn) {
+      event2.preventDefault();
+      event2.stopPropagation();
+      copyInlineQueueVideoLink(copyLinkBtn);
+      return;
+    }
+    const quickFilterBtn = event2.target.closest(".video-quick-filter");
     if (quickFilterBtn) {
-      event.preventDefault();
-      event.stopPropagation();
+      event2.preventDefault();
+      event2.stopPropagation();
       const videoItem2 = quickFilterBtn.closest(".video-item");
       const videoId = quickFilterBtn.dataset.videoId || videoItem2?.dataset.videoId || "";
       if (videoId) {
@@ -4810,48 +4875,48 @@
       }
       return;
     }
-    const removeBtn = event.target.closest(".video-remove");
+    const removeBtn = event2.target.closest(".video-remove");
     if (removeBtn) {
-      event.preventDefault();
-      event.stopPropagation();
+      event2.preventDefault();
+      event2.stopPropagation();
       handleInlineQueueRemove(removeBtn, context);
       return;
     }
-    const postponeBtn = event.target.closest(".video-postpone");
+    const postponeBtn = event2.target.closest(".video-postpone");
     if (postponeBtn) {
-      event.preventDefault();
-      event.stopPropagation();
+      event2.preventDefault();
+      event2.stopPropagation();
       handleInlineQueuePostpone(postponeBtn, context);
       return;
     }
-    const moveBtn = event.target.closest(".video-move");
+    const moveBtn = event2.target.closest(".video-move");
     if (moveBtn) {
-      event.preventDefault();
-      event.stopPropagation();
+      event2.preventDefault();
+      event2.stopPropagation();
       handleInlineQueueMove(moveBtn, context);
       return;
     }
-    if (event.target.closest(".video-handle")) {
+    if (event2.target.closest(".video-handle")) {
       return;
     }
-    const videoItem = event.target.closest(".video-item");
+    const videoItem = event2.target.closest(".video-item");
     if (!videoItem) {
       return;
     }
-    event.preventDefault();
+    event2.preventDefault();
     context.hideInlineMoveMenu?.();
     activateInlineQueueItem(videoItem);
   }
-  function handleInlineQueueListKeyDown(event, context = {}) {
-    if (event.defaultPrevented) {
+  function handleInlineQueueListKeyDown(event2, context = {}) {
+    if (event2.defaultPrevented) {
       return;
     }
-    const videoItem = event.target.closest(".video-item");
+    const videoItem = event2.target.closest(".video-item");
     if (!videoItem) {
       return;
     }
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
+    if (event2.key === "Enter" || event2.key === " ") {
+      event2.preventDefault();
       context.hideInlineMoveMenu?.();
       activateInlineQueueItem(videoItem);
     }
@@ -4917,32 +4982,32 @@
     inlineMoveMenu.anchor = null;
     removeInlineMoveMenuListeners();
   }
-  function handleInlineMoveMenuPointerDown(event) {
+  function handleInlineMoveMenuPointerDown(event2) {
     if (!inlineMoveMenu.visible || !inlineMoveMenu.container) {
       return;
     }
-    if (inlineMoveMenu.container.contains(event.target)) {
+    if (inlineMoveMenu.container.contains(event2.target)) {
       return;
     }
-    if (inlineMoveMenu.anchor && inlineMoveMenu.anchor instanceof HTMLElement && inlineMoveMenu.anchor.contains(event.target)) {
+    if (inlineMoveMenu.anchor && inlineMoveMenu.anchor instanceof HTMLElement && inlineMoveMenu.anchor.contains(event2.target)) {
       return;
     }
     hideInlineMoveMenu();
   }
-  function handleInlineMoveMenuKeyDown(event) {
-    if (event.key === "Escape") {
+  function handleInlineMoveMenuKeyDown(event2) {
+    if (event2.key === "Escape") {
       hideInlineMoveMenu();
     }
   }
   function handleInlineMoveMenuScroll() {
     hideInlineMoveMenu();
   }
-  function handleInlineMoveMenuClick(event) {
-    const button = event.target.closest("button[data-target-list]");
+  function handleInlineMoveMenuClick(event2) {
+    const button = event2.target.closest("button[data-target-list]");
     if (!button) {
       return;
     }
-    event.preventDefault();
+    event2.preventDefault();
     const targetListId = button.dataset.targetList;
     if (!targetListId) {
       return;
@@ -5056,10 +5121,6 @@
     const ui = getInlineQueueUI();
     return ui.list instanceof HTMLElement ? ui.list : null;
   }
-  function getInlineQueueContainer() {
-    const ui = getInlineQueueUI();
-    return ui.container instanceof HTMLElement ? ui.container : null;
-  }
   function setInlineQueuePendingFocus(videoId) {
     if (typeof videoId !== "string" || !videoId) {
       return;
@@ -5103,142 +5164,6 @@
     }
     element.scrollTop = next;
     return Math.abs(element.scrollTop - prev) > INLINE_QUEUE_SCROLL_EPSILON;
-  }
-  function getInlineQueueParent(node) {
-    if (!node) {
-      return null;
-    }
-    if (node.parentElement instanceof HTMLElement) {
-      return node.parentElement;
-    }
-    if (typeof ShadowRoot !== "undefined" && node.parentNode && node.parentNode instanceof ShadowRoot) {
-      return node.parentNode.host || null;
-    }
-    return null;
-  }
-  function maybeScrollInlineQueueAncestors(delta) {
-    let current = getInlineQueueContainer();
-    while (current) {
-      if (scrollElementBy(current, delta)) {
-        return true;
-      }
-      current = getInlineQueueParent(current);
-      if (!current || current === document.body || current === document.documentElement) {
-        break;
-      }
-    }
-    return false;
-  }
-  function maybeScrollDocument(delta) {
-    const scrollingElement = document.scrollingElement || document.documentElement || document.body;
-    if (!scrollingElement) {
-      return false;
-    }
-    const prev = scrollingElement.scrollTop;
-    const maxScroll = Math.max(
-      0,
-      scrollingElement.scrollHeight - scrollingElement.clientHeight
-    );
-    if (maxScroll <= INLINE_QUEUE_SCROLL_EPSILON) {
-      return false;
-    }
-    const next = Math.max(0, Math.min(maxScroll, prev + delta));
-    if (Math.abs(next - prev) <= INLINE_QUEUE_SCROLL_EPSILON) {
-      return false;
-    }
-    scrollingElement.scrollTop = next;
-    return Math.abs(scrollingElement.scrollTop - prev) > INLINE_QUEUE_SCROLL_EPSILON;
-  }
-  function ensureInlineQueueFullyVisible() {
-    const container = getInlineQueueContainer();
-    if (!container) {
-      return false;
-    }
-    const viewportHeight = window.innerHeight || document.documentElement && document.documentElement.clientHeight || 0;
-    if (!viewportHeight) {
-      return false;
-    }
-    const rect = container.getBoundingClientRect();
-    if (rect.top < 0) {
-      if (Math.abs(rect.top) <= INLINE_QUEUE_SCROLL_EPSILON) {
-        return false;
-      }
-      return maybeScrollDocument(rect.top);
-    }
-    if (rect.bottom > viewportHeight) {
-      const delta = rect.bottom - viewportHeight;
-      if (Math.abs(delta) <= INLINE_QUEUE_SCROLL_EPSILON) {
-        return false;
-      }
-      return maybeScrollDocument(delta);
-    }
-    return false;
-  }
-  function maybeScrollDocumentForInlineQueue(delta) {
-    const container = getInlineQueueContainer();
-    if (!container || typeof delta !== "number" || delta === 0) {
-      return false;
-    }
-    const viewportHeight = window.innerHeight || document.documentElement && document.documentElement.clientHeight || 0;
-    if (!viewportHeight) {
-      return maybeScrollDocument(delta);
-    }
-    const rect = container.getBoundingClientRect();
-    if (delta < 0) {
-      if (rect.top >= 0) {
-        return false;
-      }
-      if (Math.abs(rect.top) <= INLINE_QUEUE_SCROLL_EPSILON) {
-        return false;
-      }
-      return maybeScrollDocument(rect.top);
-    }
-    if (delta > 0) {
-      if (rect.bottom <= viewportHeight) {
-        return false;
-      }
-      const needed = rect.bottom - viewportHeight;
-      if (Math.abs(needed) <= INLINE_QUEUE_SCROLL_EPSILON) {
-        return false;
-      }
-      return maybeScrollDocument(needed);
-    }
-    return false;
-  }
-  function maybeAutoScrollInlineQueueList(pointerY, threshold, maxStep) {
-    const list = getInlineQueueList();
-    if (!list || typeof pointerY !== "number") {
-      return false;
-    }
-    const { scrollHeight, clientHeight } = list;
-    if (scrollHeight <= clientHeight) {
-      return false;
-    }
-    const rect = list.getBoundingClientRect();
-    const topDistance = pointerY - rect.top;
-    const bottomDistance = rect.bottom - pointerY;
-    let delta = 0;
-    if (topDistance <= threshold) {
-      const distance = Math.max(0, topDistance);
-      const intensity = (threshold - distance) / threshold;
-      delta = -Math.ceil(intensity * maxStep);
-    } else if (bottomDistance <= threshold) {
-      const distance = Math.max(0, bottomDistance);
-      const intensity = (threshold - distance) / threshold;
-      delta = Math.ceil(intensity * maxStep);
-    }
-    if (delta !== 0) {
-      if (scrollElementBy(list, delta)) {
-        return true;
-      }
-      if (maybeScrollInlineQueueAncestors(delta)) {
-        return true;
-      }
-      if (maybeScrollDocumentForInlineQueue(delta)) {
-        return true;
-      }
-    }
-    return false;
   }
   function restoreInlineQueueScroll(list, desiredScrollTop) {
     if (!list || typeof list.scrollTop !== "number") {
@@ -5304,24 +5229,27 @@
   };
   var inlineQueueAutoScrollState = {
     pointerY: null,
-    rafId: null
+    rafId: null,
+    lastTimestamp: null
   };
-  var INLINE_QUEUE_AUTO_SCROLL_THRESHOLD = 64;
-  var INLINE_QUEUE_AUTO_SCROLL_MAX_STEP = 18;
+  var INLINE_QUEUE_AUTO_SCROLL_THRESHOLD = 48;
+  var INLINE_QUEUE_AUTO_SCROLL_MAX_SPEED = 360;
   var inlineQueueDragDropContext = {
     hideInlineMoveMenu: null,
+    renderInlineQueue: null,
     updateInlinePlaylistState: null
   };
   function configureInlineQueueDragDrop(context = {}) {
     inlineQueueDragDropContext = {
       hideInlineMoveMenu: typeof context.hideInlineMoveMenu === "function" ? context.hideInlineMoveMenu : null,
+      renderInlineQueue: typeof context.renderInlineQueue === "function" ? context.renderInlineQueue : null,
       updateInlinePlaylistState: typeof context.updateInlinePlaylistState === "function" ? context.updateInlinePlaylistState : null
     };
   }
-  function handleInlineQueueDragStart(event) {
-    const handle = event.target.closest(".video-handle");
+  function handleInlineQueueDragStart(event2) {
+    const handle = event2.target.closest(".video-handle");
     if (!handle) {
-      event.preventDefault();
+      event2.preventDefault();
       inlineQueueDragState.pendingVideoId = null;
       inlineQueueDragState.pendingElement = null;
       return;
@@ -5338,13 +5266,13 @@
       inlineQueueDragState.pendingElement = null;
     }
     if (!item) {
-      event.preventDefault();
+      event2.preventDefault();
       inlineQueueDragState.pendingVideoId = null;
       inlineQueueDragState.pendingElement = null;
       return;
     }
     if (typeof videoId !== "string" || !videoId) {
-      event.preventDefault();
+      event2.preventDefault();
       inlineQueueDragState.pendingVideoId = null;
       inlineQueueDragState.pendingElement = null;
       return;
@@ -5356,41 +5284,41 @@
     inlineQueueDragState.dropIndex = null;
     inlineQueueDragState.draggingEl = item;
     item.classList.add("dragging");
-    if (event.dataTransfer) {
-      event.dataTransfer.effectAllowed = "move";
+    if (event2.dataTransfer) {
+      event2.dataTransfer.effectAllowed = "move";
       try {
-        event.dataTransfer.setData("text/plain", videoId);
+        event2.dataTransfer.setData("text/plain", videoId);
       } catch {
       }
       if (item !== targetItem && item instanceof HTMLElement) {
-        setInlineQueueDragImage(event, item);
+        setInlineQueueDragImage(event2, item);
       }
     }
   }
-  function setInlineQueueDragImage(event, item) {
+  function setInlineQueueDragImage(event2, item) {
     try {
       const rect = item.getBoundingClientRect();
-      const offsetX = typeof event.clientX === "number" ? event.clientX - rect.left : rect.width / 2;
-      const offsetY = typeof event.clientY === "number" ? event.clientY - rect.top : rect.height / 2;
-      event.dataTransfer.setDragImage(item, offsetX, offsetY);
+      const offsetX = typeof event2.clientX === "number" ? event2.clientX - rect.left : rect.width / 2;
+      const offsetY = typeof event2.clientY === "number" ? event2.clientY - rect.top : rect.height / 2;
+      event2.dataTransfer.setDragImage(item, offsetX, offsetY);
     } catch {
       try {
-        event.dataTransfer.setDragImage(item, 0, 0);
+        event2.dataTransfer.setDragImage(item, 0, 0);
       } catch {
       }
     }
   }
-  function handleInlineQueueHandlePointerDown(event) {
-    if (!event) {
+  function handleInlineQueueHandlePointerDown(event2) {
+    if (!event2) {
       return;
     }
-    if (event.type === "mousedown" && typeof window.PointerEvent === "function") {
+    if (event2.type === "mousedown" && typeof window.PointerEvent === "function") {
       return;
     }
-    if (typeof event.button === "number" && event.button !== 0) {
+    if (typeof event2.button === "number" && event2.button !== 0) {
       return;
     }
-    const handle = event.currentTarget instanceof HTMLElement ? event.currentTarget : event.target instanceof HTMLElement ? event.target.closest(".video-handle") : null;
+    const handle = event2.currentTarget instanceof HTMLElement ? event2.currentTarget : event2.target instanceof HTMLElement ? event2.target.closest(".video-handle") : null;
     const item = handle instanceof HTMLElement ? handle.closest(".video-item") : null;
     if (item instanceof HTMLElement && item.dataset.videoId) {
       inlineQueueDragState.pendingVideoId = item.dataset.videoId;
@@ -5399,30 +5327,27 @@
       inlineQueueDragState.pendingVideoId = null;
       inlineQueueDragState.pendingElement = null;
     }
-    ensureInlineQueueFullyVisible();
   }
-  function handleInlineQueueDragOver(event) {
+  function handleInlineQueueDragOver(event2) {
     if (!inlineQueueDragState.videoId) {
       return;
     }
-    event.preventDefault();
-    if (event.dataTransfer) {
-      event.dataTransfer.dropEffect = "move";
+    event2.preventDefault();
+    if (event2.dataTransfer) {
+      event2.dataTransfer.dropEffect = "move";
     }
-    const pointerY = event.clientY;
-    const scrolledNow = maybeAutoScrollInlineQueueList(
-      pointerY,
-      INLINE_QUEUE_AUTO_SCROLL_THRESHOLD,
-      INLINE_QUEUE_AUTO_SCROLL_MAX_STEP
-    );
-    scheduleInlineQueueAutoScroll(pointerY, scrolledNow);
+    const pointerY = event2.clientY;
+    scheduleInlineQueueAutoScroll(pointerY);
+    updateInlineQueueDropTarget(event2.target, pointerY);
+  }
+  function updateInlineQueueDropTarget(eventTarget, pointerY) {
     clearInlineQueueDropIndicators();
     const list = getInlineQueueList();
     if (!list) {
       inlineQueueDragState.dropIndex = null;
       return;
     }
-    const targetItem = event.target.closest(".video-item");
+    const targetItem = eventTarget instanceof Element ? eventTarget.closest(".video-item") : null;
     const items = Array.from(list.querySelectorAll(".video-item"));
     if (!targetItem || targetItem === inlineQueueDragState.draggingEl) {
       const dropTarget = computeInlineQueuePointerDropTarget(pointerY, items);
@@ -5440,11 +5365,11 @@
     const baseIndex = items.indexOf(targetItem);
     inlineQueueDragState.dropIndex = before ? baseIndex : baseIndex + 1;
   }
-  function handleInlineQueueDrop(event) {
+  function handleInlineQueueDrop(event2) {
     if (!inlineQueueDragState.videoId) {
       return;
     }
-    event.preventDefault();
+    event2.preventDefault();
     const queueIds = Array.isArray(inlinePlaylistState.orderedVideoIds) ? inlinePlaylistState.orderedVideoIds : [];
     const videoId = inlineQueueDragState.videoId;
     const fromIndex = queueIds.indexOf(videoId);
@@ -5454,7 +5379,7 @@
     }
     let targetIndex = inlineQueueDragState.dropIndex;
     if (typeof targetIndex !== "number") {
-      targetIndex = resolveInlineQueueDropIndex(event, queueIds.length);
+      targetIndex = resolveInlineQueueDropIndex(event2, queueIds.length);
     }
     const bounded = Math.max(0, Math.min(queueIds.length, Number(targetIndex)));
     resetInlineQueueDragState();
@@ -5471,15 +5396,15 @@
     }
     reorderInlineQueueVideo(videoId, adjustedIndex);
   }
-  function resolveInlineQueueDropIndex(event, fallbackIndex) {
-    const direct = event.target.closest(".video-item");
+  function resolveInlineQueueDropIndex(event2, fallbackIndex) {
+    const direct = event2.target.closest(".video-item");
     const list = getInlineQueueList();
     if (!direct || !list) {
       return fallbackIndex;
     }
     const items = Array.from(list.querySelectorAll(".video-item"));
     const rect = direct.getBoundingClientRect();
-    const before = event.clientY < rect.top + rect.height / 2;
+    const before = event2.clientY < rect.top + rect.height / 2;
     const baseIndex = items.indexOf(direct);
     return before ? baseIndex : baseIndex + 1;
   }
@@ -5488,17 +5413,40 @@
     if (inlinePlaylistState.currentListId) {
       payload.listId = inlinePlaylistState.currentListId;
     }
-    setInlineQueuePendingFocus(videoId);
+    applyOptimisticInlineQueueReorder(videoId, targetIndex);
     sendMessage("playlist:reorder", payload).then((state2) => {
       if (state2 && typeof state2 === "object") {
         inlineQueueDragDropContext.updateInlinePlaylistState?.(state2);
-      } else {
-        clearInlineQueuePendingFocus();
       }
     }).catch((err) => {
       console.warn("Failed to reorder inline queue", err);
-      clearInlineQueuePendingFocus();
     });
+  }
+  function applyOptimisticInlineQueueReorder(videoId, targetIndex) {
+    const ids = Array.isArray(inlinePlaylistState.orderedVideoIds) ? inlinePlaylistState.orderedVideoIds : null;
+    const entries = Array.isArray(inlinePlaylistState.queueEntries) ? inlinePlaylistState.queueEntries : null;
+    if (!ids || !entries) {
+      return;
+    }
+    const fromIndex = ids.indexOf(videoId);
+    if (fromIndex < 0 || fromIndex === targetIndex) {
+      return;
+    }
+    const boundedTarget = Math.max(0, Math.min(ids.length - 1, targetIndex));
+    const currentEntryId = Number.isInteger(inlinePlaylistState.currentIndex) ? ids[inlinePlaylistState.currentIndex] : null;
+    const nextIds = ids.slice();
+    const [movedId] = nextIds.splice(fromIndex, 1);
+    nextIds.splice(boundedTarget, 0, movedId);
+    const entryById = new Map(entries.map((entry) => [entry?.id, entry]));
+    inlinePlaylistState.orderedVideoIds = nextIds;
+    inlinePlaylistState.indexById = new Map(
+      nextIds.map((id, index) => [id, index])
+    );
+    inlinePlaylistState.queueEntries = nextIds.map((id) => entryById.get(id)).filter(Boolean);
+    if (currentEntryId) {
+      inlinePlaylistState.currentIndex = nextIds.indexOf(currentEntryId);
+    }
+    inlineQueueDragDropContext.renderInlineQueue?.();
   }
   function handleInlineQueueDragEnd() {
     resetInlineQueueDragState();
@@ -5546,7 +5494,7 @@
     }
     return { index: 0, element: null, before: null };
   }
-  function runInlineQueueAutoScroll() {
+  function runInlineQueueAutoScroll(timestamp) {
     inlineQueueAutoScrollState.rafId = null;
     if (!inlineQueueDragState.videoId) {
       inlineQueueAutoScrollState.pointerY = null;
@@ -5556,11 +5504,10 @@
     if (typeof pointerY !== "number") {
       return;
     }
-    const scrolled = maybeAutoScrollInlineQueueList(
-      pointerY,
-      INLINE_QUEUE_AUTO_SCROLL_THRESHOLD,
-      INLINE_QUEUE_AUTO_SCROLL_MAX_STEP
-    );
+    const previousTimestamp = inlineQueueAutoScrollState.lastTimestamp;
+    inlineQueueAutoScrollState.lastTimestamp = timestamp;
+    const elapsed = previousTimestamp === null ? 16 : Math.min(32, Math.max(0, timestamp - previousTimestamp));
+    const scrolled = autoScrollInlineQueueList(pointerY, elapsed);
     if (!scrolled) {
       inlineQueueAutoScrollState.pointerY = null;
       return;
@@ -5569,14 +5516,29 @@
       runInlineQueueAutoScroll
     );
   }
-  function scheduleInlineQueueAutoScroll(pointerY, alreadyScrolled) {
+  function autoScrollInlineQueueList(pointerY, elapsed) {
+    const list = getInlineQueueList();
+    if (!list || list.scrollHeight <= list.clientHeight) {
+      return false;
+    }
+    const rect = list.getBoundingClientRect();
+    let intensity = 0;
+    if (pointerY >= rect.top && pointerY < rect.top + INLINE_QUEUE_AUTO_SCROLL_THRESHOLD) {
+      intensity = -(rect.top + INLINE_QUEUE_AUTO_SCROLL_THRESHOLD - pointerY) / INLINE_QUEUE_AUTO_SCROLL_THRESHOLD;
+    } else if (pointerY <= rect.bottom && pointerY > rect.bottom - INLINE_QUEUE_AUTO_SCROLL_THRESHOLD) {
+      intensity = (pointerY - (rect.bottom - INLINE_QUEUE_AUTO_SCROLL_THRESHOLD)) / INLINE_QUEUE_AUTO_SCROLL_THRESHOLD;
+    }
+    if (Math.abs(intensity) < 0.12) {
+      return false;
+    }
+    const delta = intensity * INLINE_QUEUE_AUTO_SCROLL_MAX_SPEED * (elapsed / 1e3);
+    return scrollElementBy(list, delta);
+  }
+  function scheduleInlineQueueAutoScroll(pointerY) {
     if (typeof pointerY !== "number") {
       return;
     }
     inlineQueueAutoScrollState.pointerY = pointerY;
-    if (alreadyScrolled && inlineQueueAutoScrollState.rafId) {
-      return;
-    }
     if (!inlineQueueAutoScrollState.rafId) {
       inlineQueueAutoScrollState.rafId = window.requestAnimationFrame(
         runInlineQueueAutoScroll
@@ -5589,6 +5551,7 @@
       inlineQueueAutoScrollState.rafId = null;
     }
     inlineQueueAutoScrollState.pointerY = null;
+    inlineQueueAutoScrollState.lastTimestamp = null;
   }
 
   // src/content/inline-queue/ui.js
@@ -5614,11 +5577,11 @@
   function configureInlineQueueUI(handlers = {}) {
     shellHandlers = { ...shellHandlers, ...handlers };
   }
-  function handleInlineQueueTitleClick(event) {
-    if (event) {
-      event.preventDefault();
+  function handleInlineQueueTitleClick(event2) {
+    if (event2) {
+      event2.preventDefault();
     }
-    const target = event?.currentTarget;
+    const target = event2?.currentTarget;
     const listId = target?.dataset?.listId || inlinePlaylistState.currentListId || "";
     const listName = target?.dataset?.listName || inlinePlaylistState.currentListName || "";
     if (!listId) {
@@ -5626,27 +5589,27 @@
     }
     openListManager(listId, listName);
   }
-  function handleInlineQueueTitleKeyDown(event) {
-    if (!event) return;
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      handleInlineQueueTitleClick(event);
+  function handleInlineQueueTitleKeyDown(event2) {
+    if (!event2) return;
+    if (event2.key === "Enter" || event2.key === " ") {
+      event2.preventDefault();
+      handleInlineQueueTitleClick(event2);
     }
   }
-  function handleInlineQueueProgressClick(event) {
-    if (event) {
-      event.preventDefault();
-      event.stopPropagation();
+  function handleInlineQueueProgressClick(event2) {
+    if (event2) {
+      event2.preventDefault();
+      event2.stopPropagation();
     }
     autoScrollInlineQueueToCurrentItem(inlinePlaylistState.currentVideoId || null);
   }
-  function handleInlineQueueProgressKeyDown(event) {
-    if (!event) {
+  function handleInlineQueueProgressKeyDown(event2) {
+    if (!event2) {
       return;
     }
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      event.stopPropagation();
+    if (event2.key === "Enter" || event2.key === " ") {
+      event2.preventDefault();
+      event2.stopPropagation();
       autoScrollInlineQueueToCurrentItem(inlinePlaylistState.currentVideoId || null);
     }
   }
@@ -5914,7 +5877,7 @@
   }
 
   // src/content/inline-queue/item.js
-  function createInlineQueueDetailContainer(parts) {
+  function createInlineQueueDetailContainer(parts, videoId) {
     const details = document.createElement("div");
     details.className = "video-details";
     let hasContent = false;
@@ -5961,6 +5924,15 @@
       details.appendChild(span);
       hasContent = true;
     });
+    if (videoId) {
+      const copyLinkBtn = createInlineQueueActionButton(
+        "video-copy-link video-detail-action",
+        "",
+        "\u0421\u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0441\u0441\u044B\u043B\u043A\u0443 \u043D\u0430 \u0432\u0438\u0434\u0435\u043E"
+      );
+      details.appendChild(copyLinkBtn);
+      hasContent = true;
+    }
     return hasContent ? details : null;
   }
   function buildInlineQueueDetails(entry) {
@@ -5982,7 +5954,7 @@
     if (published) {
       parts.push({ text: published, textClassName: "video-detail__text" });
     }
-    return createInlineQueueDetailContainer(parts);
+    return createInlineQueueDetailContainer(parts, entry?.id);
   }
   function createInlineQueueActionButton(className, textContent, title) {
     const button = document.createElement("button");
@@ -6303,6 +6275,7 @@
   });
   configureInlineQueueDragDrop({
     hideInlineMoveMenu,
+    renderInlineQueue: () => inlineQueueRenderer.updateInlineQueueUI(),
     updateInlinePlaylistState
   });
   configureInlineMoveMenu({
@@ -6319,11 +6292,11 @@
     showInlineMoveMenu,
     updateInlinePlaylistState
   };
-  function handleInlineQueueListClick2(event) {
-    handleInlineQueueListClick(event, inlineQueueItemActionContext);
+  function handleInlineQueueListClick2(event2) {
+    handleInlineQueueListClick(event2, inlineQueueItemActionContext);
   }
-  function handleInlineQueueListKeyDown2(event) {
-    handleInlineQueueListKeyDown(event, inlineQueueItemActionContext);
+  function handleInlineQueueListKeyDown2(event2) {
+    handleInlineQueueListKeyDown(event2, inlineQueueItemActionContext);
   }
   var updateInlineQueueUI = inlineQueueRenderer.updateInlineQueueUI;
   var inlinePlaylistStateSyncContext = {
@@ -7013,10 +6986,10 @@
       }
       return null;
     }
-    async function handleAddButtonClick(event, button) {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
+    async function handleAddButtonClick(event2, button) {
+      event2.preventDefault();
+      event2.stopPropagation();
+      event2.stopImmediatePropagation();
       const freshTarget = resolveFreshTargetForButton(button);
       if (!freshTarget) return;
       buttonOwnership.bindButtonTarget(button, freshTarget);
@@ -7063,8 +7036,8 @@
       button.className = ADD_BUTTON_CLASS;
       button.addEventListener(
         "click",
-        (event) => {
-          void handleAddButtonClick(event, button);
+        (event2) => {
+          void handleAddButtonClick(event2, button);
         },
         true
       );
@@ -7300,8 +7273,8 @@
       scheduleUiUpdate({ scan: needsScan });
     });
   });
-  function resetStateForNavigation(event = null) {
-    const eventType = typeof event?.type === "string" ? event.type : "";
+  function resetStateForNavigation(event2 = null) {
+    const eventType = typeof event2?.type === "string" ? event2.type : "";
     const isNavigateStart = eventType === "yt-navigate-start";
     ytaDiagMeasure("navigation.resetStateForNavigation", () => {
       maybeFinalizeVideoEndedBeforeNavigation2();
@@ -7347,9 +7320,9 @@
   function setupControlInterceptors() {
     document.addEventListener(
       "click",
-      (event) => {
+      (event2) => {
         if (!canHandlePlaybackActions()) return;
-        const path = event.composedPath();
+        const path = event2.composedPath();
         const hasNext = path.some(
           (node) => node?.classList && node.classList.contains("ytp-next-button")
         );
@@ -7357,14 +7330,14 @@
           (node) => node?.classList && node.classList.contains("ytp-prev-button")
         );
         if (hasNext) {
-          event.preventDefault();
-          event.stopPropagation();
-          event.stopImmediatePropagation();
+          event2.preventDefault();
+          event2.stopPropagation();
+          event2.stopImmediatePropagation();
           requestNext2();
         } else if (hasPrev) {
-          event.preventDefault();
-          event.stopPropagation();
-          event.stopImmediatePropagation();
+          event2.preventDefault();
+          event2.stopPropagation();
+          event2.stopImmediatePropagation();
           requestPrevious2();
         }
       },
@@ -7372,16 +7345,16 @@
     );
     document.addEventListener(
       "keydown",
-      (event) => {
-        const code = event.code;
-        const key = event.key;
+      (event2) => {
+        const code = event2.code;
+        const key = event2.key;
         const isMediaNext = code === "MediaTrackNext" || key === "MediaTrackNext";
         const isMediaPrevious = code === "MediaTrackPrevious" || key === "MediaTrackPrevious";
         if (isMediaNext || isMediaPrevious) {
           if (!canHandlePlaybackActions()) return;
-          event.preventDefault();
-          event.stopPropagation();
-          event.stopImmediatePropagation();
+          event2.preventDefault();
+          event2.stopPropagation();
+          event2.stopImmediatePropagation();
           if (isMediaNext) {
             requestNext2();
           } else {
@@ -7390,13 +7363,13 @@
           return;
         }
         if (!canHandlePlaybackActions()) return;
-        if (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
-          const lower = (event.key || "").toLowerCase();
+        if (event2.shiftKey && !event2.ctrlKey && !event2.metaKey && !event2.altKey) {
+          const lower = (event2.key || "").toLowerCase();
           if (lower === "n") {
-            event.preventDefault();
+            event2.preventDefault();
             requestNext2();
           } else if (lower === "p") {
-            event.preventDefault();
+            event2.preventDefault();
             requestPrevious2();
           }
         }
@@ -7409,53 +7382,53 @@
   var autoCollectDisplay = {
     active: false
   };
-  function formatAutoCollectProgress(event = {}) {
-    switch (event.phase) {
+  function formatAutoCollectProgress(event2 = {}) {
+    switch (event2.phase) {
       case "start":
         return "\u0418\u0449\u0443 \u043D\u043E\u0432\u044B\u0435 \u0432\u0438\u0434\u0435\u043E...";
       case "channelsLoaded":
-        return `\u041F\u043E\u0434\u043F\u0438\u0441\u043E\u043A: ${event.channelCount || 0}, \u043F\u043B\u0435\u0439\u043B\u0438\u0441\u0442\u043E\u0432: ${event.playlistCount || 0}`;
+        return `\u041F\u043E\u0434\u043F\u0438\u0441\u043E\u043A: ${event2.channelCount || 0}, \u043F\u043B\u0435\u0439\u043B\u0438\u0441\u0442\u043E\u0432: ${event2.playlistCount || 0}`;
       case "playlistFetch":
-        return `\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043C \u043F\u043B\u0435\u0439\u043B\u0438\u0441\u0442 ${event.index || 0}/${event.total || 0}`;
+        return `\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043C \u043F\u043B\u0435\u0439\u043B\u0438\u0441\u0442 ${event2.index || 0}/${event2.total || 0}`;
       case "playlistFetched":
-        return `\u041F\u043B\u0435\u0439\u043B\u0438\u0441\u0442 ${event.index || 0}/${event.total || 0}: +${event.videoCount || 0}`;
+        return `\u041F\u043B\u0435\u0439\u043B\u0438\u0441\u0442 ${event2.index || 0}/${event2.total || 0}: +${event2.videoCount || 0}`;
       case "aggregate":
-        return `\u0421\u043E\u0431\u0440\u0430\u043D\u043E ${event.videoCount || 0} \u0432\u0438\u0434\u0435\u043E`;
+        return `\u0421\u043E\u0431\u0440\u0430\u043D\u043E ${event2.videoCount || 0} \u0432\u0438\u0434\u0435\u043E`;
       case "subscriptionsRechecked":
-        return event.skippedUnsubscribed ? `\u041E\u0442\u043F\u0438\u0441\u0430\u043D\u043D\u044B\u0435 \u043A\u0430\u043D\u0430\u043B\u044B: -${event.skippedUnsubscribed} \u0432\u0438\u0434\u0435\u043E` : "\u041F\u043E\u0434\u043F\u0438\u0441\u043A\u0438 \u0441\u0432\u0435\u0440\u0435\u043D\u044B";
+        return event2.skippedUnsubscribed ? `\u041E\u0442\u043F\u0438\u0441\u0430\u043D\u043D\u044B\u0435 \u043A\u0430\u043D\u0430\u043B\u044B: -${event2.skippedUnsubscribed} \u0432\u0438\u0434\u0435\u043E` : "\u041F\u043E\u0434\u043F\u0438\u0441\u043A\u0438 \u0441\u0432\u0435\u0440\u0435\u043D\u044B";
       case "filtering":
-        return `\u0424\u0438\u043B\u044C\u0442\u0440\u0443\u044E ${event.videoCount || 0} \u0432\u0438\u0434\u0435\u043E`;
+        return `\u0424\u0438\u043B\u044C\u0442\u0440\u0443\u044E ${event2.videoCount || 0} \u0432\u0438\u0434\u0435\u043E`;
       case "filterProgress": {
-        const processed = Number(event.processed) || 0;
-        const total = Number(event.total) || processed;
+        const processed = Number(event2.processed) || 0;
+        const total = Number(event2.total) || processed;
         return `\u0424\u0438\u043B\u044C\u0442\u0440\u0443\u044E ${processed}/${total}`;
       }
       case "filterStats": {
-        const totals = event.totals || {};
-        const total = Number(event.total) || Number(event.initialCount) || 0;
-        const passed = totals.passed || event.videoCount || 0;
+        const totals = event2.totals || {};
+        const total = Number(event2.total) || Number(event2.initialCount) || 0;
+        const passed = totals.passed || event2.videoCount || 0;
         return total ? `\u041F\u043E\u0441\u043B\u0435 \u0444\u0438\u043B\u044C\u0442\u0440\u0430 ${passed}/${total}` : `\u041F\u043E\u0441\u043B\u0435 \u0444\u0438\u043B\u044C\u0442\u0440\u0430 ${passed}`;
       }
       case "filtered":
-        return `\u041F\u043E\u0441\u043B\u0435 \u0444\u0438\u043B\u044C\u0442\u0440\u0430 \u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C ${event.videoCount || 0}`;
+        return `\u041F\u043E\u0441\u043B\u0435 \u0444\u0438\u043B\u044C\u0442\u0440\u0430 \u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C ${event2.videoCount || 0}`;
       case "readyToAdd":
-        return event.skippedExisting ? `\u0413\u043E\u0442\u043E\u0432\u043E \u043A \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u0438\u044E ${event.videoCount || 0} \u0432\u0438\u0434\u0435\u043E (\u0443\u0436\u0435 \u0432 \u043E\u0447\u0435\u0440\u0435\u0434\u0438 ${event.skippedExisting})` : `\u0413\u043E\u0442\u043E\u0432\u043E \u043A \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u0438\u044E ${event.videoCount || 0} \u0432\u0438\u0434\u0435\u043E`;
+        return event2.skippedExisting ? `\u0413\u043E\u0442\u043E\u0432\u043E \u043A \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u0438\u044E ${event2.videoCount || 0} \u0432\u0438\u0434\u0435\u043E (\u0443\u0436\u0435 \u0432 \u043E\u0447\u0435\u0440\u0435\u0434\u0438 ${event2.skippedExisting})` : `\u0413\u043E\u0442\u043E\u0432\u043E \u043A \u0434\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u0438\u044E ${event2.videoCount || 0} \u0432\u0438\u0434\u0435\u043E`;
       case "adding":
-        return `\u0414\u043E\u0431\u0430\u0432\u043B\u044F\u044E ${event.addCount || 0} \u0432\u0438\u0434\u0435\u043E \u0432 \u043E\u0447\u0435\u0440\u0435\u0434\u044C`;
+        return `\u0414\u043E\u0431\u0430\u0432\u043B\u044F\u044E ${event2.addCount || 0} \u0432\u0438\u0434\u0435\u043E \u0432 \u043E\u0447\u0435\u0440\u0435\u0434\u044C`;
       default:
         return "";
     }
   }
-  function handleCollectionProgressEvent(event = {}) {
-    if (!event || event.origin !== "auto") {
+  function handleCollectionProgressEvent(event2 = {}) {
+    if (!event2 || event2.origin !== "auto") {
       return;
     }
-    const phase = event.phase || "";
+    const phase = event2.phase || "";
     if (phase === "start") {
       autoCollectDisplay.active = true;
       showPlaybackNotification({
         title: "\u0421\u0431\u043E\u0440 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A",
-        body: formatAutoCollectProgress(event) || "\u0417\u0430\u043F\u0443\u0441\u043A\u0430\u044E \u0441\u0431\u043E\u0440 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A...",
+        body: formatAutoCollectProgress(event2) || "\u0417\u0430\u043F\u0443\u0441\u043A\u0430\u044E \u0441\u0431\u043E\u0440 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A...",
         persist: true
       });
       return;
@@ -7465,9 +7438,9 @@
     }
     if (phase === "complete") {
       autoCollectDisplay.active = false;
-      const added = Number(event.added) || 0;
-      const fetched = Number(event.fetched) || added;
-      const queueLength = Number(event.queueLength) || 0;
+      const added = Number(event2.added) || 0;
+      const fetched = Number(event2.fetched) || added;
+      const queueLength = Number(event2.queueLength) || 0;
       const summary = added ? `\u0414\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E ${added} \u0438\u0437 ${fetched}` : "\u041D\u043E\u0432\u044B\u0445 \u0432\u0438\u0434\u0435\u043E \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E";
       const queueLabel = queueLength ? ` \xB7 \u0412 \u043E\u0447\u0435\u0440\u0435\u0434\u0438 ${queueLength}` : "";
       showPlaybackNotification({
@@ -7479,7 +7452,7 @@
     }
     if (phase === "error") {
       autoCollectDisplay.active = false;
-      const message = event.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0431\u0440\u0430\u0442\u044C \u043F\u043E\u0434\u043F\u0438\u0441\u043A\u0438";
+      const message = event2.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0431\u0440\u0430\u0442\u044C \u043F\u043E\u0434\u043F\u0438\u0441\u043A\u0438";
       showPlaybackNotification({
         title: "\u0421\u0431\u043E\u0440 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A",
         body: message,
@@ -7487,7 +7460,7 @@
       });
       return;
     }
-    const progress = formatAutoCollectProgress(event);
+    const progress = formatAutoCollectProgress(event2);
     if (progress) {
       showPlaybackNotification({
         title: "\u0421\u0431\u043E\u0440 \u043F\u043E\u0434\u043F\u0438\u0441\u043E\u043A",

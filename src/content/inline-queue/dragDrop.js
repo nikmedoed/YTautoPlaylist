@@ -4,11 +4,8 @@ import {
   sendMessage,
 } from "../core/base.js";
 import {
-  clearInlineQueuePendingFocus,
-  ensureInlineQueueFullyVisible,
   getInlineQueueList,
-  maybeAutoScrollInlineQueueList,
-  setInlineQueuePendingFocus,
+  scrollElementBy,
 } from "./scrollFocus.js";
 
 const inlineQueueDragState = {
@@ -22,13 +19,15 @@ const inlineQueueDragState = {
 const inlineQueueAutoScrollState = {
   pointerY: null,
   rafId: null,
+  lastTimestamp: null,
 };
 
-const INLINE_QUEUE_AUTO_SCROLL_THRESHOLD = 64;
-const INLINE_QUEUE_AUTO_SCROLL_MAX_STEP = 18;
+const INLINE_QUEUE_AUTO_SCROLL_THRESHOLD = 48;
+const INLINE_QUEUE_AUTO_SCROLL_MAX_SPEED = 360;
 
 let inlineQueueDragDropContext = {
   hideInlineMoveMenu: null,
+  renderInlineQueue: null,
   updateInlinePlaylistState: null,
 };
 
@@ -37,6 +36,10 @@ export function configureInlineQueueDragDrop(context = {}) {
     hideInlineMoveMenu:
       typeof context.hideInlineMoveMenu === "function"
         ? context.hideInlineMoveMenu
+        : null,
+    renderInlineQueue:
+      typeof context.renderInlineQueue === "function"
+        ? context.renderInlineQueue
         : null,
     updateInlinePlaylistState:
       typeof context.updateInlinePlaylistState === "function"
@@ -145,7 +148,6 @@ export function handleInlineQueueHandlePointerDown(event) {
     inlineQueueDragState.pendingVideoId = null;
     inlineQueueDragState.pendingElement = null;
   }
-  ensureInlineQueueFullyVisible();
 }
 
 export function handleInlineQueueDragOver(event) {
@@ -157,19 +159,19 @@ export function handleInlineQueueDragOver(event) {
     event.dataTransfer.dropEffect = "move";
   }
   const pointerY = event.clientY;
-  const scrolledNow = maybeAutoScrollInlineQueueList(
-    pointerY,
-    INLINE_QUEUE_AUTO_SCROLL_THRESHOLD,
-    INLINE_QUEUE_AUTO_SCROLL_MAX_STEP
-  );
-  scheduleInlineQueueAutoScroll(pointerY, scrolledNow);
+  scheduleInlineQueueAutoScroll(pointerY);
+  updateInlineQueueDropTarget(event.target, pointerY);
+}
+
+function updateInlineQueueDropTarget(eventTarget, pointerY) {
   clearInlineQueueDropIndicators();
   const list = getInlineQueueList();
   if (!list) {
     inlineQueueDragState.dropIndex = null;
     return;
   }
-  const targetItem = event.target.closest(".video-item");
+  const targetItem =
+    eventTarget instanceof Element ? eventTarget.closest(".video-item") : null;
   const items = Array.from(list.querySelectorAll(".video-item"));
   if (!targetItem || targetItem === inlineQueueDragState.draggingEl) {
     const dropTarget = computeInlineQueuePointerDropTarget(pointerY, items);
@@ -240,19 +242,51 @@ function reorderInlineQueueVideo(videoId, targetIndex) {
   if (inlinePlaylistState.currentListId) {
     payload.listId = inlinePlaylistState.currentListId;
   }
-  setInlineQueuePendingFocus(videoId);
+  applyOptimisticInlineQueueReorder(videoId, targetIndex);
   sendMessage("playlist:reorder", payload)
     .then((state) => {
       if (state && typeof state === "object") {
         inlineQueueDragDropContext.updateInlinePlaylistState?.(state);
-      } else {
-        clearInlineQueuePendingFocus();
       }
     })
     .catch((err) => {
       console.warn("Failed to reorder inline queue", err);
-      clearInlineQueuePendingFocus();
     });
+}
+
+function applyOptimisticInlineQueueReorder(videoId, targetIndex) {
+  const ids = Array.isArray(inlinePlaylistState.orderedVideoIds)
+    ? inlinePlaylistState.orderedVideoIds
+    : null;
+  const entries = Array.isArray(inlinePlaylistState.queueEntries)
+    ? inlinePlaylistState.queueEntries
+    : null;
+  if (!ids || !entries) {
+    return;
+  }
+  const fromIndex = ids.indexOf(videoId);
+  if (fromIndex < 0 || fromIndex === targetIndex) {
+    return;
+  }
+  const boundedTarget = Math.max(0, Math.min(ids.length - 1, targetIndex));
+  const currentEntryId = Number.isInteger(inlinePlaylistState.currentIndex)
+    ? ids[inlinePlaylistState.currentIndex]
+    : null;
+  const nextIds = ids.slice();
+  const [movedId] = nextIds.splice(fromIndex, 1);
+  nextIds.splice(boundedTarget, 0, movedId);
+  const entryById = new Map(entries.map((entry) => [entry?.id, entry]));
+  inlinePlaylistState.orderedVideoIds = nextIds;
+  inlinePlaylistState.indexById = new Map(
+    nextIds.map((id, index) => [id, index])
+  );
+  inlinePlaylistState.queueEntries = nextIds
+    .map((id) => entryById.get(id))
+    .filter(Boolean);
+  if (currentEntryId) {
+    inlinePlaylistState.currentIndex = nextIds.indexOf(currentEntryId);
+  }
+  inlineQueueDragDropContext.renderInlineQueue?.();
 }
 
 export function handleInlineQueueDragEnd() {
@@ -307,7 +341,7 @@ function computeInlineQueuePointerDropTarget(pointerY, items) {
   return { index: 0, element: null, before: null };
 }
 
-function runInlineQueueAutoScroll() {
+function runInlineQueueAutoScroll(timestamp) {
   inlineQueueAutoScrollState.rafId = null;
   if (!inlineQueueDragState.videoId) {
     inlineQueueAutoScrollState.pointerY = null;
@@ -317,11 +351,12 @@ function runInlineQueueAutoScroll() {
   if (typeof pointerY !== "number") {
     return;
   }
-  const scrolled = maybeAutoScrollInlineQueueList(
-    pointerY,
-    INLINE_QUEUE_AUTO_SCROLL_THRESHOLD,
-    INLINE_QUEUE_AUTO_SCROLL_MAX_STEP
-  );
+  const previousTimestamp = inlineQueueAutoScrollState.lastTimestamp;
+  inlineQueueAutoScrollState.lastTimestamp = timestamp;
+  const elapsed = previousTimestamp === null
+    ? 16
+    : Math.min(32, Math.max(0, timestamp - previousTimestamp));
+  const scrolled = autoScrollInlineQueueList(pointerY, elapsed);
   if (!scrolled) {
     inlineQueueAutoScrollState.pointerY = null;
     return;
@@ -331,14 +366,35 @@ function runInlineQueueAutoScroll() {
   );
 }
 
-function scheduleInlineQueueAutoScroll(pointerY, alreadyScrolled) {
+function autoScrollInlineQueueList(pointerY, elapsed) {
+  const list = getInlineQueueList();
+  if (!list || list.scrollHeight <= list.clientHeight) {
+    return false;
+  }
+  const rect = list.getBoundingClientRect();
+  let intensity = 0;
+  if (pointerY >= rect.top && pointerY < rect.top + INLINE_QUEUE_AUTO_SCROLL_THRESHOLD) {
+    intensity = -(rect.top + INLINE_QUEUE_AUTO_SCROLL_THRESHOLD - pointerY) /
+      INLINE_QUEUE_AUTO_SCROLL_THRESHOLD;
+  } else if (
+    pointerY <= rect.bottom &&
+    pointerY > rect.bottom - INLINE_QUEUE_AUTO_SCROLL_THRESHOLD
+  ) {
+    intensity = (pointerY - (rect.bottom - INLINE_QUEUE_AUTO_SCROLL_THRESHOLD)) /
+      INLINE_QUEUE_AUTO_SCROLL_THRESHOLD;
+  }
+  if (Math.abs(intensity) < 0.12) {
+    return false;
+  }
+  const delta = intensity * INLINE_QUEUE_AUTO_SCROLL_MAX_SPEED * (elapsed / 1000);
+  return scrollElementBy(list, delta);
+}
+
+function scheduleInlineQueueAutoScroll(pointerY) {
   if (typeof pointerY !== "number") {
     return;
   }
   inlineQueueAutoScrollState.pointerY = pointerY;
-  if (alreadyScrolled && inlineQueueAutoScrollState.rafId) {
-    return;
-  }
   if (!inlineQueueAutoScrollState.rafId) {
     inlineQueueAutoScrollState.rafId = window.requestAnimationFrame(
       runInlineQueueAutoScroll
@@ -352,4 +408,5 @@ function stopInlineQueueAutoScroll() {
     inlineQueueAutoScrollState.rafId = null;
   }
   inlineQueueAutoScrollState.pointerY = null;
+  inlineQueueAutoScrollState.lastTimestamp = null;
 }
