@@ -218,17 +218,18 @@ export function getInlineQueueItemStyles() {
   .yta-inline-queue .video-thumb-wrapper {
     position: relative;
     width: 100%;
+    aspect-ratio: 16 / 9;
     display: flex;
     align-items: center;
     justify-content: center;
-    align-self: stretch;
+    align-self: center;
     justify-self: stretch;
   }
   .yta-inline-queue .video-thumb {
     width: 100%;
     aspect-ratio: 16 / 9;
-    height: auto;
-    object-fit: contain;
+    height: 100%;
+    object-fit: cover;
     object-position: center;
     background: #000;
     flex-shrink: 0;

@@ -17,6 +17,7 @@ import { createCollectionAvailabilityController } from "./modules/collection/ava
 import { createPopupSyncController } from "./modules/sync/index.js";
 import { sendMessage as sendRuntimeMessage } from "./lib/runtimeMessages.js";
 import { setButtonLoading } from "./modules/manager/runtime.js";
+import { createRemovalGuard } from "./modules/shared/removalGuard.js";
 import { getWatchedVideoIds as getWatchedVideoIdsFromDetails, updateRemoveWatchedButton as updateRemoveWatchedButtonState } from "./modules/manager/detailHelpers.js";
 import {
   highlightSelectedList,
@@ -33,13 +34,12 @@ const elements = getManagerElements(document);
 const searchParams = new URLSearchParams(window.location.search);
 const requestedListId = (searchParams.get("listId") || "").trim();
 const requestedListName = (searchParams.get("listName") || "").trim();
-
 let appState = null;
 let selectedListId = null;
 let selectedListDetails = null;
 let managerStateController;
 let managerSection;
-
+const managerRemovalGuard = createRemovalGuard();
 const dragController = createDragReorderController({
   container: elements.detailList,
   itemSelector: ".manage-list-row",
@@ -100,7 +100,7 @@ const handleDetailAction = createManagerDetailActions({
   applyRemoveLocally,
   getAppState: () => appState,
   handleRemoveResult,
-  loadState: () => managerStateController.loadState(),
+  loadState: recoverManagerState,
   openQuickFilter,
   sendMessage,
   setStatus,
@@ -124,9 +124,13 @@ managerStateController = createManagerStateController({
     selectedListDetails = details;
   },
   setSelectedListId: (listId) => {
+    if (selectedListId && selectedListId !== listId) {
+      managerRemovalGuard.release(selectedListId);
+    }
     selectedListId = listId;
   },
   setStatus,
+  isDetailRenderLocked: (listId) => managerRemovalGuard.isLocked(listId),
   highlightSelectedList: (listId) => highlightSelectedList(elements.listsBody, listId),
   populateImportTargets,
   renderLists,
@@ -258,6 +262,7 @@ function buildDetailsAfterRemoval(videoIds, listId) {
 function applyRemoveLocally(videoIds, listId) {
   const details = buildDetailsAfterRemoval(videoIds, listId);
   if (!details) return false;
+  managerRemovalGuard.mark(listId, videoIds);
   const idSet = new Set((Array.isArray(videoIds) ? videoIds : [videoIds]).filter(Boolean));
   const nextState = appState && Array.isArray(appState.lists)
     ? {
@@ -285,26 +290,21 @@ function applyRemoveLocally(videoIds, listId) {
       }
     : null;
   if (nextState) {
-    managerStateController.applyStateSnapshot(nextState, { details });
+    managerStateController.applyRemovalWithoutRender(nextState, details, videoIds);
   } else {
-    managerStateController.applySelectedListDetails(details);
+    managerStateController.applyRemovalWithoutRender(null, details, videoIds);
   }
   return true;
 }
 
-function handleRemoveResult(state, videoIds, listId) {
-  const details = buildDetailsAfterRemoval(videoIds, listId);
-  if (state && Array.isArray(state.lists)) {
-    managerStateController.applyStateSnapshot(state, { details });
-    return;
-  }
-  if (details) {
-    managerStateController.applySelectedListDetails(details);
-    return;
-  }
-  managerStateController.loadState().catch(() => {});
+function handleRemoveResult(state) {
+  if (state && Array.isArray(state.lists)) managerStateController.applyStateWithoutRender(state);
 }
 
+function recoverManagerState() {
+  managerRemovalGuard.clear();
+  return managerStateController.loadState();
+}
 async function reorderVideo({ videoId, targetIndex, listId }) {
   if (!videoId || typeof targetIndex !== "number") {
     return;
@@ -340,7 +340,7 @@ registerManagerBulkActions({
   getWatchedVideoIds: (details = selectedListDetails) =>
     getWatchedVideoIdsFromDetails(details, appState?.videoProgress),
   handleRemoveResult,
-  loadState: managerStateController.loadState,
+  loadState: recoverManagerState,
   selectionController,
   sendMessage,
   setStatus,

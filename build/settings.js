@@ -251,11 +251,11 @@ function normalizeSyncTimestamp(value) {
   return Number.isFinite(timestamp) && timestamp > 0 ? Math.trunc(timestamp) : 0;
 }
 
-// src/store/state/syncImportDecision.js
-var STARTUP_PENDING_GRACE_MS = 2 * 60 * 1e3;
-
 // src/store/state/storage.js
 var stateWriteQueue = Promise.resolve();
+
+// src/store/state/driveSync.js
+var driveOperation = Promise.resolve();
 
 // src/store/state/settingsSyncSnapshot.js
 var SETTINGS_SYNC_FORMAT_VERSION = 1;

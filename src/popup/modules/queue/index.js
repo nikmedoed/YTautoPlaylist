@@ -4,6 +4,7 @@ import { createVideoItem } from "../../lib/videoItem.js";
 import { buildDetailParts } from "../../lib/detailParts.js";
 import { openQuickFilter } from "../../lib/quickFilter.js";
 import { createDragReorderController } from "../../lib/dragReorder.js";
+import { createRemovalGuard } from "../shared/removalGuard.js";
 
 // Owns popup queue rendering, row actions, active markers, and queue reorder messages.
 export function createQueueController({
@@ -22,6 +23,10 @@ export function createQueueController({
   if (!queueList || typeof sendMessage !== "function") {
     return { render() {} };
   }
+
+  const removalGuard = createRemovalGuard();
+  let renderedListId = null;
+  let renderedCurrentVideoId = null;
 
   const dragController = createDragReorderController({
     container: queueList,
@@ -69,6 +74,7 @@ export function createQueueController({
     const listId = item.dataset.listId || playlistState?.currentQueue?.id;
     const parent = item.parentNode;
     const nextSibling = item.nextSibling;
+    removalGuard.mark(listId, [videoId]);
     item.remove();
     try {
       const state = await sendMessage("playlist:remove", { videoId, listId });
@@ -78,6 +84,7 @@ export function createQueueController({
       }
     } catch (err) {
       console.error(err);
+      removalGuard.unmark(listId, [videoId]);
       if (parent && !item.isConnected) {
         parent.insertBefore(item, nextSibling?.parentNode === parent ? nextSibling : null);
       }
@@ -207,18 +214,31 @@ export function createQueueController({
 
   // Rebuilds the queue list from current presentation state and keeps drag state pointed at the same queue data.
   function render(queueState, playlistState) {
-    dragController.reset();
-    queueList.textContent = "";
     const listId =
       queueState?.id ||
       playlistState?.currentQueue?.id ||
       playlistState?.currentListId ||
       null;
+    const currentVideoId = playlistState?.currentVideoId || null;
+    if (renderedListId && renderedListId !== listId) {
+      removalGuard.release(renderedListId);
+    }
+    if (removalGuard.isLocked(listId)) {
+      const playbackChanged =
+        Boolean(currentVideoId) &&
+        currentVideoId !== renderedCurrentVideoId;
+      if (!playbackChanged && renderedListId === listId) {
+        return false;
+      }
+      removalGuard.release(listId);
+    }
+    dragController.reset();
+    queueList.textContent = "";
     const listName =
       queueState?.name ||
       playlistState?.currentQueue?.name ||
       "";
-    const items = Array.isArray(queueState?.queue) ? queueState.queue : [];
+    const items = removalGuard.filter(listId, queueState?.queue);
     const lists = Array.isArray(playlistState?.lists) ? playlistState.lists : [];
     const listMeta = lists.find((item) => item.id === listId) || null;
     const isActiveList =
@@ -261,7 +281,9 @@ export function createQueueController({
       if (queueEmpty) {
         queueEmpty.hidden = false;
       }
-      return;
+      renderedListId = listId;
+      renderedCurrentVideoId = currentVideoId;
+      return true;
     }
     if (queueEmpty) {
       queueEmpty.hidden = true;
@@ -343,6 +365,9 @@ export function createQueueController({
 
       queueList.appendChild(element);
     });
+    renderedListId = listId;
+    renderedCurrentVideoId = currentVideoId;
+    return true;
   }
 
   queueList.addEventListener("click", handleQueueClick);

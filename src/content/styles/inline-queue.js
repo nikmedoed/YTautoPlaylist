@@ -10,6 +10,7 @@ export function getInlineQueueShellStyles() {
     color: var(--yt-spec-text-primary, #fff);
     box-sizing: border-box;
     isolation: isolate;
+    container: yta-queue / inline-size;
   }
   .yta-inline-queue > * {
     position: relative;

@@ -2,6 +2,7 @@
 import { STYLE_ID } from "../core/base.js";
 import { getInlineQueueItemStyles } from "./inline-queue-items.js";
 import { getInlineQueueShellStyles } from "./inline-queue.js";
+import { getInlineQueueCompactStyles } from "./inline-queue-compact.js";
 import { getPageActionStyles } from "./page-actions.js";
 import { getPlaybackStyles } from "./playback.js";
 import { getVideoCardStyles } from "./video-cards.js";
@@ -14,6 +15,7 @@ export function injectStyles() {
   ${getPlaybackStyles()}
   ${getInlineQueueShellStyles()}
   ${getInlineQueueItemStyles()}
+  ${getInlineQueueCompactStyles()}
   ${getPageActionStyles()}`;
   document.head.appendChild(style);
 }

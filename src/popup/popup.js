@@ -285,7 +285,6 @@ function selectList(listId) {
 function renderState(state) {
   playlistState = state || {};
   moveMenu.hide();
-  renderLists(playlistState);
   const queueState =
     playlistState?.currentQueue || {
       id: playlistState?.currentListId,
@@ -294,8 +293,11 @@ function renderState(state) {
       queue: [],
       currentIndex: null,
     };
-  queueController.render(queueState, playlistState);
-  historyController.render(playlistState);
+  const queueRendered = queueController.render(queueState, playlistState);
+  if (queueRendered !== false) {
+    renderLists(playlistState);
+    historyController.render(playlistState);
+  }
   playbackController.syncState(playlistState);
   collectionAvailabilityController.updateAvailability();
   popupSyncController.scheduleRefresh();

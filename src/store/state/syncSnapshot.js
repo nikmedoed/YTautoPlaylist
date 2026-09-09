@@ -351,10 +351,10 @@ export function mergeSyncStatesConservatively(localInput, remoteInput) {
   });
 }
 
-export function mergeRemoteSyncState(localInput, remoteInput) {
+export function mergeRemoteSyncState(localInput, remoteInput, { replace = false } = {}) {
   const local = sanitizeState(localInput);
   const remote = sanitizeState(remoteInput);
-  const deletedLists = mergeDeletedLists(remote.deletedLists, local.deletedLists);
+  const deletedLists = mergeDeletedLists(remote.deletedLists, replace ? {} : local.deletedLists);
   const merged = sanitizeState({
     ...remote,
     lists: applyDeletedLists(deepClone(remote.lists), deletedLists),

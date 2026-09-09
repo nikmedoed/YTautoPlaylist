@@ -11,10 +11,6 @@ import {
   SETTINGS_SYNC_MANIFEST_STORAGE_KEY,
 } from "../../store/index.js";
 import { parseVideoId } from "../../utils.js";
-import {
-  flushPendingAccountSync,
-  refreshRemoteAccountSync,
-} from "../accountSync.js";
 import { notifyState } from "../channel.js";
 
 export const optionsHandlers = {
@@ -59,13 +55,6 @@ export const optionsHandlers = {
   },
 
   async "sync:getStatus"(message = {}) {
-    if (message.refreshRemote) {
-      const refreshed = await refreshRemoteAccountSync({ force: true });
-      if (refreshed?.playlistImported) {
-        await notifyState();
-      }
-      await flushPendingAccountSync();
-    }
     const [playlist, settings, drive] = await Promise.all([
       getPlaylistSyncStorageStatus(),
       getSettingsSyncStatus(),
@@ -105,6 +94,7 @@ export const optionsHandlers = {
       importDriveSync({ force: true }),
       importRemoteSettingsSync({ force: true }),
     ]);
+    if (drive.imported) await notifyState();
     return {
       ok: true,
       driveImported: Boolean(drive.imported),
@@ -116,10 +106,10 @@ export const optionsHandlers = {
     };
   },
 
-  async "sync:pushLocal"() {
+  async "sync:pushLocal"(message = {}) {
     const [settings, drive] = await Promise.all([
       pushLocalSettingsSyncNow(),
-      pushLocalDriveSyncNow(),
+      pushLocalDriveSyncNow({ force: message.force === true }),
     ]);
     return {
       ok: true,
@@ -137,7 +127,8 @@ export const optionsHandlers = {
       typeof message.offset === "number" && Number.isFinite(message.offset)
         ? Math.max(1, Math.trunc(message.offset))
         : 1;
-    const drive = await restoreDrivePlaylistBackup({ offset });
+    const drive = await restoreDrivePlaylistBackup({ offset, hash: message.hash });
+    if (drive.restored) await notifyState();
     return {
       ok: true,
       restored: Boolean(drive?.restored),

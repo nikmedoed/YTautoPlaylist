@@ -1,4 +1,5 @@
 // Popup sync strip controller. Shows compact cloud status and routes account sync actions.
+import { chooseCloudVersion } from "./versions.js";
 const AUTO_REFRESH_MS = 20 * 1000;
 
 function maxTimestamp(...values) {
@@ -142,11 +143,25 @@ export function createPopupSyncController({
   setStatus = () => {},
   refreshState = () => {},
 }) {
-  const buttons = [pullBtn, pushBtn, restoreBtn].filter(Boolean);
+  const replaceBtn = document.createElement("button");
+  replaceBtn.type = "button";
+  replaceBtn.className = "popup-sync__text-button";
+  replaceBtn.textContent = "Заменить из облака";
+  replaceBtn.title = "Полностью заменить локальные списки облачной версией";
+  pullBtn?.parentElement?.append(replaceBtn);
+  if (restoreBtn) {
+    restoreBtn.className = "popup-sync__text-button";
+    restoreBtn.textContent = "Версии";
+    restoreBtn.title = "Посмотреть и восстановить сохранённые версии";
+  }
+  if (pushBtn) {
+    pushBtn.title = "Заменить облачные списки локальными (с сохранением облачной версии)";
+  }
+  if (pullBtn) pullBtn.title = "Загрузить облачные списки при отсутствии локальных изменений";
+  const buttons = [pullBtn, pushBtn, restoreBtn, replaceBtn].filter(Boolean);
   let refreshTimer = null;
   let refreshInFlight = false;
   let busy = false;
-  let restoreAvailable = false;
 
   function updateButtonState() {
     buttons.forEach((button) => {
@@ -154,7 +169,7 @@ export function createPopupSyncController({
       button.classList.toggle("is-loading", busy);
     });
     if (restoreBtn) {
-      restoreBtn.disabled = busy || !restoreAvailable;
+      restoreBtn.disabled = busy;
     }
   }
 
@@ -166,7 +181,6 @@ export function createPopupSyncController({
   function renderStatus(status) {
     if (!stateEl) return;
     const summary = describeSyncStatus(status);
-    restoreAvailable = Number(status?.drive?.playlistBackupCount) > 0;
     stateEl.textContent = summary.text;
     stateEl.dataset.kind = summary.kind;
     stateEl.title = summary.title;
@@ -218,7 +232,7 @@ export function createPopupSyncController({
       setBusy(true);
       const result = await action();
       await refresh({ refreshRemote: true });
-      if (afterLocalChange && (result?.playlistImported || result?.driveImported)) {
+      if (afterLocalChange && (result?.playlistImported || result?.driveImported || result?.restored)) {
         await refreshState();
       }
       const outcome = message(result);
@@ -239,15 +253,18 @@ export function createPopupSyncController({
       () => sendMessage("sync:pullRemote"),
       (result) =>
         result?.playlistImported || result?.settingsImported
-          ? "Данные слиты с облаком"
-          : "Облачной версии пока нет",
+          ? "Данные загружены из облака"
+          : { text: result?.driveReason === "local-pending"
+              ? "Конфликт: есть локальные изменения. Выберите замену из облака или сохранённую версию."
+              : result?.driveReason || "Списки уже актуальны", kind: "warning" },
       true
     );
   });
 
   pushBtn?.addEventListener("click", () => {
+    if (!window.confirm("Заменить облачные списки списками с этого устройства? Текущая облачная версия будет сохранена.")) return;
     runAction(
-      () => sendMessage("sync:pushLocal"),
+      () => sendMessage("sync:pushLocal", { force: true }),
       (result) =>
         result?.drivePushed || result?.playlistPushed || result?.settingsPushed
           ? "Данные отправлены в облако"
@@ -255,21 +272,25 @@ export function createPopupSyncController({
     );
   });
 
-  restoreBtn?.addEventListener("click", () => {
-    if (!restoreAvailable) {
-      setStatus("В облаке пока нет резервной версии", "error", 2500);
-      return;
-    }
-    const confirmed = window.confirm(
-      "Откатить облачный список на предыдущую версию и заменить локальные списки?"
-    );
-    if (!confirmed) {
-      return;
-    }
+  replaceBtn.addEventListener("click", () => {
+    if (!window.confirm("Полностью заменить локальные списки из облака? Локальная копия будет сохранена перед заменой.")) return;
     runAction(
-      () => sendMessage("sync:restoreCloudVersion", { offset: 1 }),
+      () => sendMessage("sync:replaceLocalFromRemote"),
+      (result) => result?.playlistImported
+        ? "Локальные списки заменены из облака"
+        : { text: result?.driveReason || "Не удалось заменить списки", kind: "error" },
+      true
+    );
+  });
+
+  restoreBtn?.addEventListener("click", () => {
+    runAction(
+      async () => {
+        const hash = await chooseCloudVersion(sendMessage);
+        return hash ? sendMessage("sync:restoreCloudVersion", { hash }) : { cancelled: true };
+      },
       (result) =>
-        result?.restored
+        result?.cancelled ? "Восстановление отменено" : result?.restored
           ? "Откат выполнен"
           : { text: result?.reason || "Резервная версия не найдена", kind: "error" },
       true

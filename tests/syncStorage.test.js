@@ -206,12 +206,13 @@ function installChromeStorageMock() {
       updatedAt: remoteSnapshot.manifest.updatedAt,
     });
     const state = await getState();
-    assert.strictEqual(imported.imported, true);
+    assert.strictEqual(imported.imported, false);
+    assert.strictEqual(imported.reason, 'local-pending');
     assert.deepStrictEqual(
       state.lists.default.queue.map((entry) => entry.id),
-      ['raceRemote']
+      ['raceLocal1']
     );
-    console.log('fresh startup runtime pending does not block newer Drive import');
+    console.log('startup pending changes are preserved until explicit conflict resolution');
   } finally {
     chromeMock.restore();
   }

@@ -263,7 +263,7 @@ export async function writePendingPlaylistSync(stateInput = null, options = {}) 
     return { wrote: false, reason: "debounced" };
   }
   const localHash = getSyncStateFingerprint(stateInput);
-  if (!force && localHash === localMeta.localHash) {
+  if (!force && localHash === localMeta.remoteHash) {
     await writeLocalSyncMeta({
       ...localMeta,
       pending: false,

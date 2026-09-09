@@ -24,6 +24,7 @@ export function createManagerStateController({
   setSelectedListId,
   setStatus,
   highlightSelectedList,
+  isDetailRenderLocked = () => false,
   populateImportTargets,
   renderLists,
   updateCollectionAvailability = () => {},
@@ -141,6 +142,38 @@ export function createManagerStateController({
     return true;
   }
 
+  function applyStateWithoutRender(state) {
+    if (!state || !Array.isArray(state.lists)) return false;
+    setAppState(state);
+    ensureSelectedList(state);
+    highlightSelectedList(getSelectedListId());
+    updateDetailActiveVideo();
+    updateRemoveWatchedButton();
+    updateCollectionAvailability();
+    return true;
+  }
+
+  function applyRemovalWithoutRender(state, details, videoIds) {
+    if (!details?.id) return false;
+    if (state && Array.isArray(state.lists)) {
+      setAppState(state);
+    }
+    setSelectedListDetails(details);
+    const removedIds = new Set(videoIds.filter(Boolean));
+    detailList.querySelectorAll(".manage-list-row").forEach((row) => {
+      if (removedIds.has(row.dataset.id)) row.remove();
+    });
+    const videos = Array.isArray(details.queue) ? details.queue : [];
+    selectionController.setVideos(videos, { canPostpone: !details.freeze });
+    detailEmpty.hidden = videos.length > 0;
+    if (clearListBtn) clearListBtn.disabled = videos.length === 0;
+    if (openYtdlpModalBtn) openYtdlpModalBtn.disabled = videos.length === 0;
+    updateRemoveWatchedButton();
+    updateCollectionAvailability();
+    updateDetailActiveVideo();
+    return true;
+  }
+
   function renderDetailVideos(details) {
     moveMenu.hide();
     dragController.reset();
@@ -240,7 +273,8 @@ export function createManagerStateController({
     setAppState(state);
     ensureSelectedList(state);
     const listsChanged = haveListMetaChanged(previousState?.lists, state.lists);
-    if (listsChanged) {
+    const detailRenderLocked = isDetailRenderLocked(getSelectedListId());
+    if (listsChanged && !detailRenderLocked) {
       renderLists();
       populateImportTargets();
     } else {
@@ -248,7 +282,8 @@ export function createManagerStateController({
     }
     if (
       getSelectedListId() &&
-      shouldReloadDetails(state, getSelectedListId(), getSelectedListDetails())
+      shouldReloadDetails(state, getSelectedListId(), getSelectedListDetails()) &&
+      !detailRenderLocked
     ) {
       loadListDetails(getSelectedListId(), { syncCurrent: false }).catch(() => {});
     } else {
@@ -259,8 +294,10 @@ export function createManagerStateController({
   }
 
   return {
+    applyRemovalWithoutRender,
     applySelectedListDetails,
     applyStateSnapshot,
+    applyStateWithoutRender,
     ensureSelectedList,
     handleStateUpdated,
     loadListDetails,

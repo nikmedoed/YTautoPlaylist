@@ -9,9 +9,11 @@ import {
   importDriveSync,
   notePlaylistSyncMutation,
   pushLocalDriveSyncNow,
+  pushLocalPlaylistSyncNow,
   replaceState,
   restoreDrivePlaylistBackup,
 } from '../src/store/index.js';
+import { optionsHandlers } from '../src/background/handlers/options.js';
 
 function installChromeStorageMock() {
   const stores = { local: {}, sync: {} };
@@ -205,6 +207,15 @@ function installDriveFetchMock({ onUpload = null } = {}) {
       ['driveBack03', 'driveBack01']
     );
     assert.ok(chromeMock.stores.local[DRIVE_SYNC_LOCAL_META_STORAGE_KEY].playlistBackupCount);
+    const selectedHash = driveMock.payload.playlistBackups[1].manifest.hash;
+    const status = await optionsHandlers['sync:getStatus']({ refreshRemote: true });
+    assert.strictEqual(status.drive.playlistBackups[1].hash, selectedHash);
+    assert.strictEqual(status.drive.playlistBackups[1].videoCount, 1);
+    const missingVersion = await restoreDrivePlaylistBackup({ hash: 'missing-version', interactive: false });
+    assert.strictEqual(missingVersion.restored, false);
+    const exactVersion = await restoreDrivePlaylistBackup({ hash: selectedHash, offset: 1, interactive: false });
+    assert.strictEqual(exactVersion.restored, true);
+    assert.deepStrictEqual((await getState()).lists.default.queue.map((entry) => entry.id), ['driveBack01']);
     console.log('Drive playlist sync keeps backup versions and restores version -1');
   } finally {
     driveMock.restore();
@@ -268,13 +279,36 @@ function installDriveFetchMock({ onUpload = null } = {}) {
 
     const imported = await importDriveSync({ interactive: false });
     const state = await getState();
-    assert.strictEqual(imported.playlistImported, true);
+    assert.strictEqual(imported.playlistImported, false);
+    assert.strictEqual(imported.reason, 'local-pending');
     assert.deepStrictEqual(
       state.lists.default.queue.map((entry) => entry.id),
-      ['sharedBase1', 'remoteOnly1', 'localOnly1']
+      ['sharedBase1', 'localOnly1']
     );
 
-    console.log('Drive pull merges newer remote changes when local pending exists');
+    const cloudBefore = JSON.stringify(driveMock.payload);
+    const localBeforeStatus = JSON.stringify(await getState());
+    await optionsHandlers['sync:getStatus']({ refreshRemote: true });
+    assert.strictEqual(JSON.stringify(await getState()), localBeforeStatus);
+    assert.strictEqual(JSON.stringify(driveMock.payload), cloudBefore);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await pushLocalPlaylistSyncNow();
+      const pushed = await pushLocalDriveSyncNow({ interactive: false });
+      assert.strictEqual(pushed.pushed, false);
+      assert.strictEqual((await getPlaylistSyncStatus()).pending, true);
+      assert.strictEqual(JSON.stringify(driveMock.payload), cloudBefore);
+    }
+    const replaced = await importDriveSync({ force: true, interactive: false });
+    assert.strictEqual(replaced.imported, true);
+    assert.deepStrictEqual((await getState()).lists.default.queue.map((entry) => entry.id), ['sharedBase1', 'remoteOnly1']);
+    assert.strictEqual(JSON.stringify(driveMock.payload), cloudBefore);
+    assert.ok(chromeMock.stores.local.playlistBeforeReplacement);
+    await addVideos([{ id: 'keepLocal01', addedAt: 4 }], 'default');
+    const forced = await pushLocalDriveSyncNow({ force: true, interactive: false });
+    assert.strictEqual(forced.pushed, true);
+    assert.ok(driveMock.payload.playlist.state.lists.default.queue.some((entry) => entry.id === 'keepLocal01'));
+    assert.ok(driveMock.payload.playlistBackups.some((snapshot) => snapshot.manifest.hash === remoteSnapshot.hash));
+    console.log('Diverged devices preserve both sides until explicit replacement');
   } finally {
     driveMock.restore();
     chromeMock.restore();

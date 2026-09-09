@@ -18,6 +18,19 @@ import {
   buildYtdlpCommand,
 } from '../src/popup/modules/manager/ytdlpCommand.js';
 import { computePlaybackMeta } from '../src/popup/modules/playback/meta.js';
+import { createRemovalGuard } from '../src/popup/modules/shared/removalGuard.js';
+
+{
+  const guard = createRemovalGuard();
+  const entries = [{ id: 'one' }, { id: 'two' }, { id: 'three' }];
+  guard.mark('main', ['two']);
+  assert.strictEqual(guard.isLocked('main'), true);
+  assert.deepStrictEqual(guard.filter('main', entries), [entries[0], entries[2]]);
+  assert.strictEqual(guard.filter('other', entries), entries);
+  guard.unmark('main', ['two']);
+  assert.strictEqual(guard.isLocked('main'), false);
+  console.log('popup removal guard prevents stale rows from returning');
+}
 
 {
   const state = { id: 'state' };

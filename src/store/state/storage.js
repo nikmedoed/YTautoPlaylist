@@ -15,6 +15,7 @@ import { composeRawState, splitStateForStorage } from "./serialization.js";
 import { sanitizeState } from "./sanitizers.js";
 import {
   buildSyncSnapshot,
+  getSyncStateFingerprint,
   getPlaylistSyncStatus,
   hasSyncableUserData,
   mergeRemoteSyncState,
@@ -29,6 +30,15 @@ import {
 import { normalizeSyncTimestamp } from "./syncSnapshot.js";
 import { resolvePlaylistImportDecision } from "./syncImportDecision.js";
 import { deepClone } from "../../utils.js";
+
+function getPlaylistContentFingerprint(state) {
+  const snapshot = deepClone(state || {});
+  // Playback selection changes frequently on each device and must not turn
+  // an otherwise identical playlist into a sync conflict.
+  snapshot.currentListId = null;
+  snapshot.currentVideoId = null;
+  return getSyncStateFingerprint(snapshot);
+}
 
 let memoryState = null;
 let memoryStorageArea = null;
@@ -379,23 +389,40 @@ export async function importPlaylistSyncSnapshot(
         ? snapshot.hash
         : getSyncStateFingerprint(snapshot.state);
     const localHasUserData = hasSyncableUserData(localRaw);
+    // A stale pending marker can survive a browser/device being offline. If
+    // the actual local state still equals the last synchronized state, it is
+    // safe to accept a newer remote snapshot instead of reporting a conflict.
+    const localFingerprint = getSyncStateFingerprint(localRaw);
+    const localContentFingerprint = getPlaylistContentFingerprint(localRaw);
+    const remoteContentFingerprint = getPlaylistContentFingerprint(snapshot.state);
+    const effectiveStatus =
+      status.pending && status.syncedHash &&
+      (localFingerprint === status.syncedHash ||
+        localContentFingerprint === remoteContentFingerprint)
+        ? { ...status, pending: false }
+        : status;
     const decision = resolvePlaylistImportDecision({
       force,
       localHasUserData,
       mergePending,
       remoteHash,
       remoteUpdatedAt,
-      status,
+      status: effectiveStatus,
     });
     const shouldImport = decision.shouldImport;
     if (!shouldImport) {
       return {
         imported: false,
-        reason: status.pending ? "local-pending" : "local-newer",
+        reason: effectiveStatus.pending ? "local-pending" : "local-newer",
       };
     }
+    if (force && typeof chrome !== "undefined" && chrome?.storage?.local) {
+      await chrome.storage.local.set({ playlistBeforeReplacement: {
+        savedAt: Date.now(), state: localRaw,
+      } });
+    }
     const nextState = decision.shouldReplace
-      ? mergeRemoteSyncState(localRaw, snapshot.state)
+      ? mergeRemoteSyncState(localRaw, snapshot.state, { replace: force })
       : mergeSyncStatesConservatively(localRaw, snapshot.state);
     await persistState(nextState, { scheduleSync: false });
     await recordImportedPlaylistSyncSnapshot(snapshot, nextState, {

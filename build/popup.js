@@ -1228,6 +1228,41 @@ function normalizeQueue(queue) {
   return Array.isArray(queue) ? queue : [];
 }
 
+// src/popup/modules/shared/removalGuard.js
+function createRemovalGuard() {
+  const removedIdsByList = /* @__PURE__ */ new Map();
+  function mark(listId, videoIds) {
+    if (!listId) return;
+    let ids = removedIdsByList.get(listId);
+    if (!ids) {
+      ids = /* @__PURE__ */ new Set();
+      removedIdsByList.set(listId, ids);
+    }
+    for (const videoId of videoIds) {
+      if (videoId) ids.add(videoId);
+    }
+  }
+  function filter(listId, entries) {
+    const source = Array.isArray(entries) ? entries : [];
+    const ids = removedIdsByList.get(listId);
+    return ids?.size ? source.filter((entry) => !ids.has(entry?.id)) : source;
+  }
+  function unmark(listId, videoIds) {
+    const ids = removedIdsByList.get(listId);
+    if (!ids) return;
+    for (const videoId of videoIds) ids.delete(videoId);
+    if (!ids.size) removedIdsByList.delete(listId);
+  }
+  return {
+    clear: () => removedIdsByList.clear(),
+    filter,
+    isLocked: (listId) => Boolean(removedIdsByList.get(listId)?.size),
+    mark,
+    release: (listId) => removedIdsByList.delete(listId),
+    unmark
+  };
+}
+
 // src/popup/modules/queue/index.js
 function createQueueController({
   queueList: queueList2,
@@ -1250,6 +1285,9 @@ function createQueueController({
     return { render() {
     } };
   }
+  const removalGuard = createRemovalGuard();
+  let renderedListId = null;
+  let renderedCurrentVideoId = null;
   const dragController = createDragReorderController({
     container: queueList2,
     itemSelector: ".video-item",
@@ -1293,6 +1331,7 @@ function createQueueController({
     const listId = item.dataset.listId || playlistState2?.currentQueue?.id;
     const parent = item.parentNode;
     const nextSibling = item.nextSibling;
+    removalGuard.mark(listId, [videoId]);
     item.remove();
     try {
       const state = await sendMessage2("playlist:remove", { videoId, listId });
@@ -1302,6 +1341,7 @@ function createQueueController({
       }
     } catch (err) {
       console.error(err);
+      removalGuard.unmark(listId, [videoId]);
       if (parent && !item.isConnected) {
         parent.insertBefore(item, nextSibling?.parentNode === parent ? nextSibling : null);
       }
@@ -1416,11 +1456,22 @@ function createQueueController({
     });
   }
   function render(queueState, playlistState2) {
+    const listId = queueState?.id || playlistState2?.currentQueue?.id || playlistState2?.currentListId || null;
+    const currentVideoId = playlistState2?.currentVideoId || null;
+    if (renderedListId && renderedListId !== listId) {
+      removalGuard.release(renderedListId);
+    }
+    if (removalGuard.isLocked(listId)) {
+      const playbackChanged = Boolean(currentVideoId) && currentVideoId !== renderedCurrentVideoId;
+      if (!playbackChanged && renderedListId === listId) {
+        return false;
+      }
+      removalGuard.release(listId);
+    }
     dragController.reset();
     queueList2.textContent = "";
-    const listId = queueState?.id || playlistState2?.currentQueue?.id || playlistState2?.currentListId || null;
     const listName = queueState?.name || playlistState2?.currentQueue?.name || "";
-    const items = Array.isArray(queueState?.queue) ? queueState.queue : [];
+    const items = removalGuard.filter(listId, queueState?.queue);
     const lists = Array.isArray(playlistState2?.lists) ? playlistState2.lists : [];
     const listMeta = lists.find((item) => item.id === listId) || null;
     const isActiveList = Boolean(playlistState2?.currentListId) && Boolean(playlistState2?.currentVideoId) && Boolean(listId) && listId === playlistState2.currentListId;
@@ -1451,7 +1502,9 @@ function createQueueController({
       if (queueEmpty2) {
         queueEmpty2.hidden = false;
       }
-      return;
+      renderedListId = listId;
+      renderedCurrentVideoId = currentVideoId;
+      return true;
     }
     if (queueEmpty2) {
       queueEmpty2.hidden = true;
@@ -1525,6 +1578,9 @@ function createQueueController({
       }
       queueList2.appendChild(element);
     });
+    renderedListId = listId;
+    renderedCurrentVideoId = currentVideoId;
+    return true;
   }
   queueList2.addEventListener("click", handleQueueClick);
   return {
@@ -3176,6 +3232,48 @@ function createCollectionAvailabilityController({
   };
 }
 
+// src/popup/modules/sync/versions.js
+async function chooseCloudVersion(sendMessage2) {
+  const status = await sendMessage2("sync:getStatus", { refreshRemote: true });
+  if (status?.drive?.lastError && !status.drive.remoteAvailable) {
+    throw new Error(status.drive.lastError);
+  }
+  const versions = status?.drive?.playlistBackups || [];
+  const dialog = document.createElement("dialog");
+  dialog.style.cssText = "max-width:90vw;width:640px;max-height:80vh;overflow:auto;padding:24px;color:inherit;background:var(--bg-color,#202124);border:1px solid #777;border-radius:12px";
+  const title = document.createElement("h2");
+  title.textContent = "\u0421\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0435 \u0432\u0435\u0440\u0441\u0438\u0438 \u0441\u043F\u0438\u0441\u043A\u043E\u0432";
+  dialog.append(title);
+  const description = document.createElement("p");
+  description.textContent = versions.length ? "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0432\u0435\u0440\u0441\u0438\u044E. \u0412\u043E\u0441\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u0435 \u0437\u0430\u043C\u0435\u043D\u0438\u0442 \u0441\u043F\u0438\u0441\u043A\u0438 \u043D\u0430 \u044D\u0442\u043E\u043C \u0443\u0441\u0442\u0440\u043E\u0439\u0441\u0442\u0432\u0435 \u0438 \u0432 \u043E\u0431\u043B\u0430\u043A\u0435." : "\u0412 \u043E\u0431\u043B\u0430\u043A\u0435 \u043D\u0435\u0442 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0445 \u0432\u0435\u0440\u0441\u0438\u0439.";
+  dialog.append(description);
+  return new Promise((resolve) => {
+    let selected = null;
+    versions.forEach((version) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.style.cssText = "display:block;width:100%;text-align:left;margin:8px 0;padding:12px;white-space:normal";
+      button.textContent = `${new Date(version.updatedAt).toLocaleString("ru-RU")} \xB7 \u0441\u043F\u0438\u0441\u043A\u043E\u0432: ${version.listCount} \xB7 \u0432\u0438\u0434\u0435\u043E: ${version.videoCount} \xB7 ${version.deviceId || "\u0443\u0441\u0442\u0440\u043E\u0439\u0441\u0442\u0432\u043E \u043D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u043E"}`;
+      button.addEventListener("click", () => {
+        if (!window.confirm(`\u0412\u043E\u0441\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u044C \u0432\u0435\u0440\u0441\u0438\u044E \u043E\u0442 ${new Date(version.updatedAt).toLocaleString("ru-RU")}?`)) return;
+        selected = version.hash;
+        dialog.close();
+      });
+      dialog.append(button);
+    });
+    const close = document.createElement("button");
+    close.textContent = "\u0417\u0430\u043A\u0440\u044B\u0442\u044C";
+    close.addEventListener("click", () => dialog.close());
+    dialog.append(close);
+    dialog.addEventListener("close", () => {
+      dialog.remove();
+      resolve(selected);
+    }, { once: true });
+    document.body.append(dialog);
+    dialog.showModal();
+  });
+}
+
 // src/popup/modules/sync/index.js
 var AUTO_REFRESH_MS = 20 * 1e3;
 function maxTimestamp(...values) {
@@ -3291,18 +3389,32 @@ function createPopupSyncController({
   refreshState: refreshState2 = () => {
   }
 }) {
-  const buttons = [pullBtn, pushBtn, restoreBtn].filter(Boolean);
+  const replaceBtn = document.createElement("button");
+  replaceBtn.type = "button";
+  replaceBtn.className = "popup-sync__text-button";
+  replaceBtn.textContent = "\u0417\u0430\u043C\u0435\u043D\u0438\u0442\u044C \u0438\u0437 \u043E\u0431\u043B\u0430\u043A\u0430";
+  replaceBtn.title = "\u041F\u043E\u043B\u043D\u043E\u0441\u0442\u044C\u044E \u0437\u0430\u043C\u0435\u043D\u0438\u0442\u044C \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0441\u043F\u0438\u0441\u043A\u0438 \u043E\u0431\u043B\u0430\u0447\u043D\u043E\u0439 \u0432\u0435\u0440\u0441\u0438\u0435\u0439";
+  pullBtn?.parentElement?.append(replaceBtn);
+  if (restoreBtn) {
+    restoreBtn.className = "popup-sync__text-button";
+    restoreBtn.textContent = "\u0412\u0435\u0440\u0441\u0438\u0438";
+    restoreBtn.title = "\u041F\u043E\u0441\u043C\u043E\u0442\u0440\u0435\u0442\u044C \u0438 \u0432\u043E\u0441\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0435 \u0432\u0435\u0440\u0441\u0438\u0438";
+  }
+  if (pushBtn) {
+    pushBtn.title = "\u0417\u0430\u043C\u0435\u043D\u0438\u0442\u044C \u043E\u0431\u043B\u0430\u0447\u043D\u044B\u0435 \u0441\u043F\u0438\u0441\u043A\u0438 \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u043C\u0438 (\u0441 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u0435\u043C \u043E\u0431\u043B\u0430\u0447\u043D\u043E\u0439 \u0432\u0435\u0440\u0441\u0438\u0438)";
+  }
+  if (pullBtn) pullBtn.title = "\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u043E\u0431\u043B\u0430\u0447\u043D\u044B\u0435 \u0441\u043F\u0438\u0441\u043A\u0438 \u043F\u0440\u0438 \u043E\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0438\u0438 \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0445 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0439";
+  const buttons = [pullBtn, pushBtn, restoreBtn, replaceBtn].filter(Boolean);
   let refreshTimer = null;
   let refreshInFlight = false;
   let busy = false;
-  let restoreAvailable = false;
   function updateButtonState() {
     buttons.forEach((button) => {
       button.disabled = busy;
       button.classList.toggle("is-loading", busy);
     });
     if (restoreBtn) {
-      restoreBtn.disabled = busy || !restoreAvailable;
+      restoreBtn.disabled = busy;
     }
   }
   function setBusy(value) {
@@ -3312,7 +3424,6 @@ function createPopupSyncController({
   function renderStatus(status) {
     if (!stateEl) return;
     const summary = describeSyncStatus(status);
-    restoreAvailable = Number(status?.drive?.playlistBackupCount) > 0;
     stateEl.textContent = summary.text;
     stateEl.dataset.kind = summary.kind;
     stateEl.title = summary.title;
@@ -3360,7 +3471,7 @@ function createPopupSyncController({
       setBusy(true);
       const result = await action();
       await refresh({ refreshRemote: true });
-      if (afterLocalChange && (result?.playlistImported || result?.driveImported)) {
+      if (afterLocalChange && (result?.playlistImported || result?.driveImported || result?.restored)) {
         await refreshState2();
       }
       const outcome = message(result);
@@ -3378,30 +3489,32 @@ function createPopupSyncController({
   pullBtn?.addEventListener("click", () => {
     runAction(
       () => sendMessage2("sync:pullRemote"),
-      (result) => result?.playlistImported || result?.settingsImported ? "\u0414\u0430\u043D\u043D\u044B\u0435 \u0441\u043B\u0438\u0442\u044B \u0441 \u043E\u0431\u043B\u0430\u043A\u043E\u043C" : "\u041E\u0431\u043B\u0430\u0447\u043D\u043E\u0439 \u0432\u0435\u0440\u0441\u0438\u0438 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442",
+      (result) => result?.playlistImported || result?.settingsImported ? "\u0414\u0430\u043D\u043D\u044B\u0435 \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043D\u044B \u0438\u0437 \u043E\u0431\u043B\u0430\u043A\u0430" : { text: result?.driveReason === "local-pending" ? "\u041A\u043E\u043D\u0444\u043B\u0438\u043A\u0442: \u0435\u0441\u0442\u044C \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F. \u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0437\u0430\u043C\u0435\u043D\u0443 \u0438\u0437 \u043E\u0431\u043B\u0430\u043A\u0430 \u0438\u043B\u0438 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u0443\u044E \u0432\u0435\u0440\u0441\u0438\u044E." : result?.driveReason || "\u0421\u043F\u0438\u0441\u043A\u0438 \u0443\u0436\u0435 \u0430\u043A\u0442\u0443\u0430\u043B\u044C\u043D\u044B", kind: "warning" },
       true
     );
   });
   pushBtn?.addEventListener("click", () => {
+    if (!window.confirm("\u0417\u0430\u043C\u0435\u043D\u0438\u0442\u044C \u043E\u0431\u043B\u0430\u0447\u043D\u044B\u0435 \u0441\u043F\u0438\u0441\u043A\u0438 \u0441\u043F\u0438\u0441\u043A\u0430\u043C\u0438 \u0441 \u044D\u0442\u043E\u0433\u043E \u0443\u0441\u0442\u0440\u043E\u0439\u0441\u0442\u0432\u0430? \u0422\u0435\u043A\u0443\u0449\u0430\u044F \u043E\u0431\u043B\u0430\u0447\u043D\u0430\u044F \u0432\u0435\u0440\u0441\u0438\u044F \u0431\u0443\u0434\u0435\u0442 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0430.")) return;
     runAction(
-      () => sendMessage2("sync:pushLocal"),
+      () => sendMessage2("sync:pushLocal", { force: true }),
       (result) => result?.drivePushed || result?.playlistPushed || result?.settingsPushed ? "\u0414\u0430\u043D\u043D\u044B\u0435 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u044B \u0432 \u043E\u0431\u043B\u0430\u043A\u043E" : { text: result?.driveReason || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u0434\u0430\u043D\u043D\u044B\u0435", kind: "error" }
     );
   });
-  restoreBtn?.addEventListener("click", () => {
-    if (!restoreAvailable) {
-      setStatus2("\u0412 \u043E\u0431\u043B\u0430\u043A\u0435 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442 \u0440\u0435\u0437\u0435\u0440\u0432\u043D\u043E\u0439 \u0432\u0435\u0440\u0441\u0438\u0438", "error", 2500);
-      return;
-    }
-    const confirmed = window.confirm(
-      "\u041E\u0442\u043A\u0430\u0442\u0438\u0442\u044C \u043E\u0431\u043B\u0430\u0447\u043D\u044B\u0439 \u0441\u043F\u0438\u0441\u043E\u043A \u043D\u0430 \u043F\u0440\u0435\u0434\u044B\u0434\u0443\u0449\u0443\u044E \u0432\u0435\u0440\u0441\u0438\u044E \u0438 \u0437\u0430\u043C\u0435\u043D\u0438\u0442\u044C \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0441\u043F\u0438\u0441\u043A\u0438?"
-    );
-    if (!confirmed) {
-      return;
-    }
+  replaceBtn.addEventListener("click", () => {
+    if (!window.confirm("\u041F\u043E\u043B\u043D\u043E\u0441\u0442\u044C\u044E \u0437\u0430\u043C\u0435\u043D\u0438\u0442\u044C \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0441\u043F\u0438\u0441\u043A\u0438 \u0438\u0437 \u043E\u0431\u043B\u0430\u043A\u0430? \u041B\u043E\u043A\u0430\u043B\u044C\u043D\u0430\u044F \u043A\u043E\u043F\u0438\u044F \u0431\u0443\u0434\u0435\u0442 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0430 \u043F\u0435\u0440\u0435\u0434 \u0437\u0430\u043C\u0435\u043D\u043E\u0439.")) return;
     runAction(
-      () => sendMessage2("sync:restoreCloudVersion", { offset: 1 }),
-      (result) => result?.restored ? "\u041E\u0442\u043A\u0430\u0442 \u0432\u044B\u043F\u043E\u043B\u043D\u0435\u043D" : { text: result?.reason || "\u0420\u0435\u0437\u0435\u0440\u0432\u043D\u0430\u044F \u0432\u0435\u0440\u0441\u0438\u044F \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430", kind: "error" },
+      () => sendMessage2("sync:replaceLocalFromRemote"),
+      (result) => result?.playlistImported ? "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0441\u043F\u0438\u0441\u043A\u0438 \u0437\u0430\u043C\u0435\u043D\u0435\u043D\u044B \u0438\u0437 \u043E\u0431\u043B\u0430\u043A\u0430" : { text: result?.driveReason || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u043C\u0435\u043D\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043A\u0438", kind: "error" },
+      true
+    );
+  });
+  restoreBtn?.addEventListener("click", () => {
+    runAction(
+      async () => {
+        const hash = await chooseCloudVersion(sendMessage2);
+        return hash ? sendMessage2("sync:restoreCloudVersion", { hash }) : { cancelled: true };
+      },
+      (result) => result?.cancelled ? "\u0412\u043E\u0441\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u0435 \u043E\u0442\u043C\u0435\u043D\u0435\u043D\u043E" : result?.restored ? "\u041E\u0442\u043A\u0430\u0442 \u0432\u044B\u043F\u043E\u043B\u043D\u0435\u043D" : { text: result?.reason || "\u0420\u0435\u0437\u0435\u0440\u0432\u043D\u0430\u044F \u0432\u0435\u0440\u0441\u0438\u044F \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430", kind: "error" },
       true
     );
   });
@@ -4159,7 +4272,6 @@ function selectList(listId) {
 function renderState(state) {
   playlistState = state || {};
   moveMenu.hide();
-  renderLists(playlistState);
   const queueState = playlistState?.currentQueue || {
     id: playlistState?.currentListId,
     name: getListName(playlistState?.currentListId) || "\u041E\u0447\u0435\u0440\u0435\u0434\u044C",
@@ -4167,8 +4279,11 @@ function renderState(state) {
     queue: [],
     currentIndex: null
   };
-  queueController.render(queueState, playlistState);
-  historyController.render(playlistState);
+  const queueRendered = queueController.render(queueState, playlistState);
+  if (queueRendered !== false) {
+    renderLists(playlistState);
+    historyController.render(playlistState);
+  }
   playbackController.syncState(playlistState);
   collectionAvailabilityController.updateAvailability();
   popupSyncController.scheduleRefresh();
