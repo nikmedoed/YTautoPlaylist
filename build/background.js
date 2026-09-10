@@ -20,7 +20,7 @@ var SETTINGS_SYNC_MANIFEST_STORAGE_KEY = "runtimeSettingsSyncManifest";
 var SETTINGS_SYNC_CHUNK_STORAGE_PREFIX = "runtimeSettingsSyncChunk:";
 var DRIVE_SYNC_LOCAL_META_STORAGE_KEY = "runtimeDriveSyncLocal";
 var DRIVE_SYNC_FILE_NAME = "ytautoplaylist-sync.json";
-var DRIVE_PLAYLIST_BACKUP_LIMIT = 50;
+var DRIVE_PLAYLIST_BACKUP_LIMIT = 9;
 var SYNC_ALARM_NAME = "runtimePlaylistSyncFlush";
 var LIST_CONTENT_PREFIX = "runtimePlaylistList:";
 var HISTORY_LIMIT = 10;
@@ -1862,19 +1862,21 @@ async function pushLocalDriveSync({
   const deviceId = await ensureDeviceId(meta);
   try {
     const remote = await readDrivePayload({ interactive });
-    const playlist = await buildLocalPlaylistSyncSnapshot(deviceId);
+    let playlist = await buildLocalPlaylistSyncSnapshot(deviceId);
     const playlistStatus = await getPlaylistSyncStatus();
     const remoteHash = remote.payload?.playlist?.hash || "";
     const knownRemoteHash = typeof playlistStatus.remoteHash === "string" ? playlistStatus.remoteHash : "";
     if (!force && remoteHash && remoteHash !== knownRemoteHash && remoteHash !== playlist.hash) {
-      const imported = await importPlaylistSyncSnapshot(remote.payload.playlist);
+      const imported = await importPlaylistSyncSnapshot(remote.payload.playlist, {
+        mergePending: true
+      });
       if (!imported.imported) {
         if (playlistContentHash(playlist.state) === playlistContentHash(remote.payload.playlist.state)) {
           return { pushed: false, skipped: true, reason: "runtime-only-local-change" };
         }
-        throw new Error("\u041A\u043E\u043D\u0444\u043B\u0438\u043A\u0442 \u0441\u043F\u0438\u0441\u043A\u043E\u0432: \u0432\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u043E\u0431\u043B\u0430\u0447\u043D\u0443\u044E \u0432\u0435\u0440\u0441\u0438\u044E \u0438\u043B\u0438 \u0432\u043E\u0441\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u0435 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u0443\u044E. \u0410\u0432\u0442\u043E\u043E\u0442\u043F\u0440\u0430\u0432\u043A\u0430 \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u0430.");
+        return { pushed: false, skipped: true, reason: imported.reason || "local-newer" };
       }
-      return { pushed: false, skipped: true, reason: "remote-imported" };
+      playlist = await buildLocalPlaylistSyncSnapshot(deviceId);
     }
     const payload = {
       version: DRIVE_SYNC_VERSION,
@@ -1938,7 +1940,6 @@ async function importDriveSyncInternal({
       force,
       mergePending
     }) : { imported: false };
-    const conflict = playlist.reason === "local-pending";
     await writeLocalMeta({
       ...meta,
       deviceId,
@@ -1948,7 +1949,7 @@ async function importDriveSyncInternal({
       remoteAvailable: true,
       playlistBackupCount: payload.playlistBackups?.length || 0,
       lastReadAt: Date.now(),
-      lastError: conflict ? "\u041A\u043E\u043D\u0444\u043B\u0438\u043A\u0442 \u0441\u043F\u0438\u0441\u043A\u043E\u0432: \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u044B. \u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0437\u0430\u043C\u0435\u043D\u0443 \u0438\u0437 \u043E\u0431\u043B\u0430\u043A\u0430, \u043E\u0442\u043F\u0440\u0430\u0432\u043A\u0443 \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u043E\u0439 \u0432\u0435\u0440\u0441\u0438\u0438 \u0438\u043B\u0438 \u0432\u043E\u0441\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u0435." : null
+      lastError: null
     });
     return {
       imported: Boolean(playlist.imported),
@@ -2056,6 +2057,16 @@ async function getDriveSyncStatus({ refreshRemote = false } = {}) {
   try {
     const { file, payload } = await readDrivePayload({ interactive: false });
     const now = Date.now();
+    await writeLocalMeta({
+      ...meta,
+      fileId: file?.id || meta.fileId || null,
+      remoteAvailable: Boolean(payload),
+      remoteUpdatedAt: normalizeSyncTimestamp(payload?.updatedAt),
+      remoteDeviceId: payload?.deviceId || meta.remoteDeviceId || null,
+      playlistBackupCount: payload?.playlistBackups?.length || 0,
+      lastReadAt: now,
+      lastError: null
+    });
     return {
       remoteAvailable: Boolean(payload),
       remoteUpdatedAt: normalizeSyncTimestamp(payload?.updatedAt),
@@ -2063,6 +2074,17 @@ async function getDriveSyncStatus({ refreshRemote = false } = {}) {
       settingsRemoteUpdatedAt: 0,
       remoteDeviceId: payload?.deviceId || null,
       playlistBackupCount: payload?.playlistBackups?.length || 0,
+      playlistVersions: [payload?.playlist, ...payload?.playlistBackups || []].filter(Boolean).map((snapshot, index) => ({
+        current: index === 0,
+        updatedAt: normalizeSyncTimestamp(snapshot?.updatedAt),
+        hash: snapshot?.hash || null,
+        deviceId: snapshot?.manifest?.deviceId || null,
+        listCount: Object.keys(snapshot.state.lists || {}).length,
+        videoCount: Object.values(snapshot.state.lists || {}).reduce(
+          (count, list) => count + (list.queue?.length || 0),
+          0
+        )
+      })),
       playlistBackups: (payload?.playlistBackups || []).map((snapshot) => ({
         updatedAt: normalizeSyncTimestamp(snapshot?.updatedAt),
         hash: snapshot?.hash || null,

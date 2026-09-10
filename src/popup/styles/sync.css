@@ -21,9 +21,8 @@
   font-size: 12px;
   font-weight: 600;
   line-height: 1.2;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .popup-sync__state[data-kind="ok"] {
@@ -35,7 +34,12 @@
 }
 
 .popup-sync__state[data-kind="error"] {
+  flex-basis: 100%;
   color: #ff8a80;
+}
+
+.popup-sync__meta:empty {
+  display: none;
 }
 
 .popup-sync__meta {
@@ -45,9 +49,8 @@
   color: #a8a8a8;
   font-size: 11px;
   line-height: 1.2;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .popup-sync__meta[data-kind="ok"] {

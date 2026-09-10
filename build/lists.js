@@ -4277,14 +4277,14 @@ async function chooseCloudVersion(sendMessage3) {
   if (status?.drive?.lastError && !status.drive.remoteAvailable) {
     throw new Error(status.drive.lastError);
   }
-  const versions = status?.drive?.playlistBackups || [];
+  const versions = status?.drive?.playlistVersions || [];
   const dialog = document.createElement("dialog");
   dialog.style.cssText = "max-width:90vw;width:640px;max-height:80vh;overflow:auto;padding:24px;color:inherit;background:var(--bg-color,#202124);border:1px solid #777;border-radius:12px";
   const title = document.createElement("h2");
   title.textContent = "\u0421\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0435 \u0432\u0435\u0440\u0441\u0438\u0438 \u0441\u043F\u0438\u0441\u043A\u043E\u0432";
   dialog.append(title);
   const description = document.createElement("p");
-  description.textContent = versions.length ? "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0432\u0435\u0440\u0441\u0438\u044E. \u0412\u043E\u0441\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u0435 \u0437\u0430\u043C\u0435\u043D\u0438\u0442 \u0441\u043F\u0438\u0441\u043A\u0438 \u043D\u0430 \u044D\u0442\u043E\u043C \u0443\u0441\u0442\u0440\u043E\u0439\u0441\u0442\u0432\u0435 \u0438 \u0432 \u043E\u0431\u043B\u0430\u043A\u0435." : "\u0412 \u043E\u0431\u043B\u0430\u043A\u0435 \u043D\u0435\u0442 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0445 \u0432\u0435\u0440\u0441\u0438\u0439.";
+  description.textContent = versions.length ? "\u0425\u0440\u0430\u043D\u044F\u0442\u0441\u044F \u0442\u0435\u043A\u0443\u0449\u0430\u044F \u0438 \u0434\u043E 9 \u043F\u0440\u0435\u0434\u044B\u0434\u0443\u0449\u0438\u0445 \u0432\u0435\u0440\u0441\u0438\u0439. \u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u0443\u044E \u0432\u0435\u0440\u0441\u0438\u044E \u0434\u043B\u044F \u0432\u043E\u0441\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u044F." : "\u0412 \u043E\u0431\u043B\u0430\u043A\u0435 \u043D\u0435\u0442 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0445 \u0432\u0435\u0440\u0441\u0438\u0439.";
   dialog.append(description);
   return new Promise((resolve) => {
     let selected = null;
@@ -4292,7 +4292,8 @@ async function chooseCloudVersion(sendMessage3) {
       const button = document.createElement("button");
       button.type = "button";
       button.style.cssText = "display:block;width:100%;text-align:left;margin:8px 0;padding:12px;white-space:normal";
-      button.textContent = `${new Date(version.updatedAt).toLocaleString("ru-RU")} \xB7 \u0441\u043F\u0438\u0441\u043A\u043E\u0432: ${version.listCount} \xB7 \u0432\u0438\u0434\u0435\u043E: ${version.videoCount} \xB7 ${version.deviceId || "\u0443\u0441\u0442\u0440\u043E\u0439\u0441\u0442\u0432\u043E \u043D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u043E"}`;
+      button.textContent = `${version.current ? "\u0422\u0435\u043A\u0443\u0449\u0430\u044F \xB7 " : ""}${new Date(version.updatedAt).toLocaleString("ru-RU")} \xB7 \u0441\u043F\u0438\u0441\u043A\u043E\u0432: ${version.listCount} \xB7 \u0432\u0438\u0434\u0435\u043E: ${version.videoCount} \xB7 ${version.deviceId || "\u0443\u0441\u0442\u0440\u043E\u0439\u0441\u0442\u0432\u043E \u043D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u043E"}`;
+      button.disabled = version.current;
       button.addEventListener("click", () => {
         if (!window.confirm(`\u0412\u043E\u0441\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u044C \u0432\u0435\u0440\u0441\u0438\u044E \u043E\u0442 ${new Date(version.updatedAt).toLocaleString("ru-RU")}?`)) return;
         selected = version.hash;
@@ -4314,7 +4315,7 @@ async function chooseCloudVersion(sendMessage3) {
 }
 
 // src/popup/modules/sync/index.js
-var AUTO_REFRESH_MS = 20 * 1e3;
+var AUTO_REFRESH_MS = 2 * 60 * 1e3;
 function maxTimestamp(...values) {
   return Math.max(...values.map((value) => Number(value) || 0), 0);
 }
@@ -4392,9 +4393,8 @@ function describeSyncStatus(status) {
   ].filter((error) => !isBenignSyncError(error));
   if (errors.length) {
     const metaOverride = String(errors[0]).slice(0, 120);
-    return createSummary("\u041E\u0448\u0438\u0431\u043A\u0430 \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u0438", "error", localUpdatedAt, remoteUpdatedAt, {
-      backupCount,
-      metaOverride
+    return createSummary(metaOverride, "error", localUpdatedAt, remoteUpdatedAt, {
+      backupCount
     });
   }
   if (!remoteUpdatedAt) {
@@ -4467,7 +4467,7 @@ function createPopupSyncController({
     stateEl.dataset.kind = summary.kind;
     stateEl.title = summary.title;
     if (metaEl) {
-      metaEl.textContent = summary.meta;
+      metaEl.textContent = summary.kind === "error" ? "" : summary.meta;
       metaEl.title = summary.title;
       metaEl.dataset.kind = summary.kind;
     }
@@ -4503,7 +4503,7 @@ function createPopupSyncController({
     }, delay2);
   }
   window.setInterval(() => {
-    refresh({ refreshRemote: true });
+    refresh({ refreshRemote: false });
   }, AUTO_REFRESH_MS);
   async function runAction(action, message, afterLocalChange = false) {
     try {
@@ -5103,4 +5103,4 @@ managerStateController.loadState().catch((err) => {
   console.error("Failed to load lists state", err);
   setStatus("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043A\u0438", "error", 4e3);
 });
-managerSyncController.refresh({ refreshRemote: true });
+managerSyncController.refresh();

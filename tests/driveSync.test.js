@@ -291,24 +291,23 @@ function installDriveFetchMock({ onUpload = null } = {}) {
     await optionsHandlers['sync:getStatus']({ refreshRemote: true });
     assert.strictEqual(JSON.stringify(await getState()), localBeforeStatus);
     assert.strictEqual(JSON.stringify(driveMock.payload), cloudBefore);
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      await pushLocalPlaylistSyncNow();
-      const pushed = await pushLocalDriveSyncNow({ interactive: false });
-      assert.strictEqual(pushed.pushed, false);
-      assert.strictEqual((await getPlaylistSyncStatus()).pending, true);
-      assert.strictEqual(JSON.stringify(driveMock.payload), cloudBefore);
-    }
-    const replaced = await importDriveSync({ force: true, interactive: false });
-    assert.strictEqual(replaced.imported, true);
-    assert.deepStrictEqual((await getState()).lists.default.queue.map((entry) => entry.id), ['sharedBase1', 'remoteOnly1']);
-    assert.strictEqual(JSON.stringify(driveMock.payload), cloudBefore);
-    assert.ok(chromeMock.stores.local.playlistBeforeReplacement);
+    await pushLocalPlaylistSyncNow();
+    const pushed = await pushLocalDriveSyncNow({ interactive: false });
+    assert.strictEqual(pushed.pushed, true);
+    assert.strictEqual((await getPlaylistSyncStatus()).pending, false);
+    assert.notStrictEqual(JSON.stringify(driveMock.payload), cloudBefore);
+    assert.deepStrictEqual(
+      (await getState()).lists.default.queue.map((entry) => entry.id),
+      ['sharedBase1', 'remoteOnly1', 'localOnly1']
+    );
+    assert.strictEqual(driveMock.payload.playlistBackups.length, 1);
+    assert.strictEqual(driveMock.payload.playlistBackups[0].manifest.hash, remoteSnapshot.hash);
     await addVideos([{ id: 'keepLocal01', addedAt: 4 }], 'default');
     const forced = await pushLocalDriveSyncNow({ force: true, interactive: false });
     assert.strictEqual(forced.pushed, true);
     assert.ok(driveMock.payload.playlist.state.lists.default.queue.some((entry) => entry.id === 'keepLocal01'));
     assert.ok(driveMock.payload.playlistBackups.some((snapshot) => snapshot.manifest.hash === remoteSnapshot.hash));
-    console.log('Diverged devices preserve both sides until explicit replacement');
+    console.log('Diverged devices merge once and preserve the previous cloud version');
   } finally {
     driveMock.restore();
     chromeMock.restore();

@@ -4,7 +4,7 @@ export async function chooseCloudVersion(sendMessage) {
   if (status?.drive?.lastError && !status.drive.remoteAvailable) {
     throw new Error(status.drive.lastError);
   }
-  const versions = status?.drive?.playlistBackups || [];
+  const versions = status?.drive?.playlistVersions || [];
   const dialog = document.createElement("dialog");
   dialog.style.cssText = "max-width:90vw;width:640px;max-height:80vh;overflow:auto;padding:24px;color:inherit;background:var(--bg-color,#202124);border:1px solid #777;border-radius:12px";
   const title = document.createElement("h2");
@@ -12,7 +12,7 @@ export async function chooseCloudVersion(sendMessage) {
   dialog.append(title);
   const description = document.createElement("p");
   description.textContent = versions.length
-    ? "Выберите версию. Восстановление заменит списки на этом устройстве и в облаке."
+    ? "Хранятся текущая и до 9 предыдущих версий. Выберите сохранённую версию для восстановления."
     : "В облаке нет сохранённых версий.";
   dialog.append(description);
   return new Promise((resolve) => {
@@ -21,7 +21,8 @@ export async function chooseCloudVersion(sendMessage) {
       const button = document.createElement("button");
       button.type = "button";
       button.style.cssText = "display:block;width:100%;text-align:left;margin:8px 0;padding:12px;white-space:normal";
-      button.textContent = `${new Date(version.updatedAt).toLocaleString("ru-RU")} · списков: ${version.listCount} · видео: ${version.videoCount} · ${version.deviceId || "устройство неизвестно"}`;
+      button.textContent = `${version.current ? "Текущая · " : ""}${new Date(version.updatedAt).toLocaleString("ru-RU")} · списков: ${version.listCount} · видео: ${version.videoCount} · ${version.deviceId || "устройство неизвестно"}`;
+      button.disabled = version.current;
       button.addEventListener("click", () => {
         if (!window.confirm(`Восстановить версию от ${new Date(version.updatedAt).toLocaleString("ru-RU")}?`)) return;
         selected = version.hash;

@@ -94,21 +94,22 @@ async function pushLocalDriveSync({
   const deviceId = await ensureDeviceId(meta);
   try {
     const remote = await readDrivePayload({ interactive });
-    const playlist = await buildLocalPlaylistSyncSnapshot(deviceId);
+    let playlist = await buildLocalPlaylistSyncSnapshot(deviceId);
     const playlistStatus = await getPlaylistSyncStatus();
     const remoteHash = remote.payload?.playlist?.hash || "";
     const knownRemoteHash =
       typeof playlistStatus.remoteHash === "string" ? playlistStatus.remoteHash : "";
     if (!force && remoteHash && remoteHash !== knownRemoteHash && remoteHash !== playlist.hash) {
-      const imported = await importPlaylistSyncSnapshot(remote.payload.playlist);
+      const imported = await importPlaylistSyncSnapshot(remote.payload.playlist, {
+        mergePending: true,
+      });
       if (!imported.imported) {
         if (playlistContentHash(playlist.state) === playlistContentHash(remote.payload.playlist.state)) {
           return { pushed: false, skipped: true, reason: "runtime-only-local-change" };
         }
-        throw new Error("Конфликт списков: выберите облачную версию или восстановите сохранённую. Автоотправка остановлена.");
+        return { pushed: false, skipped: true, reason: imported.reason || "local-newer" };
       }
-      // Importing a newer baseline never requires immediately uploading it again.
-      return { pushed: false, skipped: true, reason: "remote-imported" };
+      playlist = await buildLocalPlaylistSyncSnapshot(deviceId);
     }
     const payload = {
       version: DRIVE_SYNC_VERSION,
@@ -181,7 +182,6 @@ async function importDriveSyncInternal({
           mergePending,
         })
       : { imported: false };
-    const conflict = playlist.reason === "local-pending";
     await writeLocalMeta({
       ...meta,
       deviceId,
@@ -191,9 +191,7 @@ async function importDriveSyncInternal({
       remoteAvailable: true,
       playlistBackupCount: payload.playlistBackups?.length || 0,
       lastReadAt: Date.now(),
-      lastError: conflict
-        ? "Конфликт списков: локальные изменения сохранены. Выберите замену из облака, отправку локальной версии или восстановление."
-        : null,
+      lastError: null,
     });
     return {
       imported: Boolean(playlist.imported),
@@ -308,6 +306,16 @@ export async function getDriveSyncStatus({ refreshRemote = false } = {}) {
   try {
     const { file, payload } = await readDrivePayload({ interactive: false });
     const now = Date.now();
+    await writeLocalMeta({
+      ...meta,
+      fileId: file?.id || meta.fileId || null,
+      remoteAvailable: Boolean(payload),
+      remoteUpdatedAt: normalizeSyncTimestamp(payload?.updatedAt),
+      remoteDeviceId: payload?.deviceId || meta.remoteDeviceId || null,
+      playlistBackupCount: payload?.playlistBackups?.length || 0,
+      lastReadAt: now,
+      lastError: null,
+    });
     return {
       remoteAvailable: Boolean(payload),
       remoteUpdatedAt: normalizeSyncTimestamp(payload?.updatedAt),
@@ -315,6 +323,18 @@ export async function getDriveSyncStatus({ refreshRemote = false } = {}) {
       settingsRemoteUpdatedAt: 0,
       remoteDeviceId: payload?.deviceId || null,
       playlistBackupCount: payload?.playlistBackups?.length || 0,
+      playlistVersions: [payload?.playlist, ...(payload?.playlistBackups || [])]
+        .filter(Boolean)
+        .map((snapshot, index) => ({
+          current: index === 0,
+          updatedAt: normalizeSyncTimestamp(snapshot?.updatedAt),
+          hash: snapshot?.hash || null,
+          deviceId: snapshot?.manifest?.deviceId || null,
+          listCount: Object.keys(snapshot.state.lists || {}).length,
+          videoCount: Object.values(snapshot.state.lists || {}).reduce(
+            (count, list) => count + (list.queue?.length || 0), 0
+          ),
+        })),
       playlistBackups: (payload?.playlistBackups || []).map((snapshot) => ({
         updatedAt: normalizeSyncTimestamp(snapshot?.updatedAt),
         hash: snapshot?.hash || null,

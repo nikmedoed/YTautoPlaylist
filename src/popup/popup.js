@@ -241,7 +241,7 @@ chrome.runtime.onMessage.addListener((message) => {
 });
 
 refreshState();
-popupSyncController.refresh({ refreshRemote: true });
+popupSyncController.refresh();
 
 addActionsController.updateControlCapabilities().catch(() => {});
 

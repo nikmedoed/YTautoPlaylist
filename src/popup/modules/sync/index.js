@@ -1,6 +1,6 @@
 // Popup sync strip controller. Shows compact cloud status and routes account sync actions.
 import { chooseCloudVersion } from "./versions.js";
-const AUTO_REFRESH_MS = 20 * 1000;
+const AUTO_REFRESH_MS = 2 * 60 * 1000;
 
 function maxTimestamp(...values) {
   return Math.max(...values.map((value) => Number(value) || 0), 0);
@@ -108,9 +108,8 @@ function describeSyncStatus(status) {
   ].filter((error) => !isBenignSyncError(error));
   if (errors.length) {
     const metaOverride = String(errors[0]).slice(0, 120);
-    return createSummary("Ошибка синхронизации", "error", localUpdatedAt, remoteUpdatedAt, {
+    return createSummary(metaOverride, "error", localUpdatedAt, remoteUpdatedAt, {
       backupCount,
-      metaOverride,
     });
   }
   if (!remoteUpdatedAt) {
@@ -185,7 +184,7 @@ export function createPopupSyncController({
     stateEl.dataset.kind = summary.kind;
     stateEl.title = summary.title;
     if (metaEl) {
-      metaEl.textContent = summary.meta;
+      metaEl.textContent = summary.kind === "error" ? "" : summary.meta;
       metaEl.title = summary.title;
       metaEl.dataset.kind = summary.kind;
     }
@@ -224,7 +223,7 @@ export function createPopupSyncController({
   }
 
   window.setInterval(() => {
-    refresh({ refreshRemote: true });
+    refresh({ refreshRemote: false });
   }, AUTO_REFRESH_MS);
 
   async function runAction(action, message, afterLocalChange = false) {

@@ -396,4 +396,4 @@ managerStateController.loadState().catch((err) => {
   console.error("Failed to load lists state", err);
   setStatus("Не удалось загрузить списки", "error", 4000);
 });
-managerSyncController.refresh({ refreshRemote: true });
+managerSyncController.refresh();
