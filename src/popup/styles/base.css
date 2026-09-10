@@ -140,27 +140,19 @@ body.full-page {
 
 .control-row--add {
   align-items: center;
-  gap: 12px;
-}
-
-.control-row--add .control-label {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  white-space: nowrap;
+  gap: 6px;
 }
 
 .control-group--add {
-  flex: 1 1 auto;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 6px;
 }
 
 .control-group--add > button {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-width: 0;
+  padding: 7px 11px;
 }
 
 .playback-toggle {
@@ -313,7 +305,17 @@ button.playback-control {
   white-space: nowrap;
 }
 button.playback-start {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding-inline: 12px;
   font-weight: 600;
+}
+
+.playback-start .control-icon {
+  font-size: 11px;
+  line-height: 1;
 }
 
 .hidden {
